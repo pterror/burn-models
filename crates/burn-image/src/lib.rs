@@ -14,4 +14,6 @@ pub mod pipeline;
 pub use pipeline::{
     DiffusionPipeline, Img2ImgConfig, SampleConfig, Sd1xConditioning,
     StableDiffusion1x, StableDiffusion1xImg2Img, tensor_to_rgb,
+    // SDXL
+    SdxlConditioning, SdxlSampleConfig, StableDiffusionXL,
 };

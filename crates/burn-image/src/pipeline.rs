@@ -320,6 +320,285 @@ impl<B: Backend> StableDiffusion1xImg2Img<B> {
     }
 }
 
+// ============================================================================
+// SDXL Pipeline
+// ============================================================================
+
+use burn_image_clip::{OpenClipConfig, OpenClipTextEncoder};
+use burn_image_unet::{UNetXL, UNetXLConfig};
+
+/// SDXL sampling configuration
+#[derive(Debug, Clone)]
+pub struct SdxlSampleConfig {
+    pub width: usize,
+    pub height: usize,
+    pub steps: usize,
+    pub guidance_scale: f64,
+    pub seed: Option<u64>,
+}
+
+impl Default for SdxlSampleConfig {
+    fn default() -> Self {
+        Self {
+            width: 1024,
+            height: 1024,
+            steps: 30,
+            guidance_scale: 7.5,
+            seed: None,
+        }
+    }
+}
+
+/// SDXL conditioning (dual text embeddings + pooled)
+pub struct SdxlConditioning<B: Backend> {
+    /// Conditional context [batch, seq_len, 2048]
+    pub cond_context: Tensor<B, 3>,
+    /// Unconditional context [batch, seq_len, 2048]
+    pub uncond_context: Tensor<B, 3>,
+    /// Conditional pooled embedding [batch, pooled_dim]
+    pub cond_pooled: Tensor<B, 2>,
+    /// Unconditional pooled embedding [batch, pooled_dim]
+    pub uncond_pooled: Tensor<B, 2>,
+}
+
+/// Stable Diffusion XL Pipeline
+///
+/// Uses dual text encoders (CLIP + OpenCLIP) for conditioning
+pub struct StableDiffusionXL<B: Backend> {
+    pub tokenizer: ClipTokenizer,
+    pub clip_encoder: ClipTextEncoder<B>,
+    pub open_clip_encoder: OpenClipTextEncoder<B>,
+    pub unet: UNetXL<B>,
+    pub vae_decoder: Decoder<B>,
+    pub scheduler: NoiseSchedule<B>,
+    device: B::Device,
+}
+
+impl<B: Backend> StableDiffusionXL<B> {
+    /// Create a new SDXL pipeline with default configs
+    pub fn new(tokenizer: ClipTokenizer, device: &B::Device) -> Self {
+        let clip_config = ClipConfig::sd1x(); // SDXL uses same CLIP architecture
+        let open_clip_config = OpenClipConfig::sdxl();
+        let unet_config = UNetXLConfig::sdxl_base();
+        let vae_config = DecoderConfig::sd();
+
+        Self {
+            tokenizer,
+            clip_encoder: ClipTextEncoder::new(&clip_config, device),
+            open_clip_encoder: OpenClipTextEncoder::new(&open_clip_config, device),
+            unet: UNetXL::new(&unet_config, device),
+            vae_decoder: Decoder::new(&vae_config, device),
+            scheduler: NoiseSchedule::sdxl(device),
+            device: device.clone(),
+        }
+    }
+
+    /// Create with custom configs
+    pub fn with_configs(
+        tokenizer: ClipTokenizer,
+        clip_config: &ClipConfig,
+        open_clip_config: &OpenClipConfig,
+        unet_config: &UNetXLConfig,
+        vae_config: &DecoderConfig,
+        device: &B::Device,
+    ) -> Self {
+        Self {
+            tokenizer,
+            clip_encoder: ClipTextEncoder::new(clip_config, device),
+            open_clip_encoder: OpenClipTextEncoder::new(open_clip_config, device),
+            unet: UNetXL::new(unet_config, device),
+            vae_decoder: Decoder::new(vae_config, device),
+            scheduler: NoiseSchedule::sdxl(device),
+            device: device.clone(),
+        }
+    }
+
+    /// Encode text using both encoders and return concatenated context + pooled
+    fn encode_text(&self, text: &str) -> (Tensor<B, 3>, Tensor<B, 2>) {
+        let tokens = self.tokenizer.encode_padded(text, 77);
+        let token_tensor: Tensor<B, 1, Int> = Tensor::from_data(
+            TensorData::new(tokens.iter().map(|&t| t as i32).collect::<Vec<_>>(), [77]),
+            &self.device,
+        );
+        let token_tensor = token_tensor.unsqueeze::<2>(); // [1, 77]
+
+        // CLIP encoder output [1, 77, 768]
+        let clip_hidden = self.clip_encoder.forward(token_tensor.clone());
+
+        // OpenCLIP encoder outputs [1, 77, 1280] and pooled [1, 1280]
+        let eos_pos = tokens.iter().position(|&t| t == END_OF_TEXT).unwrap_or(76);
+        let (open_clip_hidden, pooled) = self.open_clip_encoder.forward_with_pooled(
+            token_tensor,
+            &[eos_pos],
+        );
+
+        // Concatenate CLIP and OpenCLIP hidden states [1, 77, 768 + 1280 = 2048]
+        let context = Tensor::cat(vec![clip_hidden, open_clip_hidden], 2);
+
+        (context, pooled)
+    }
+
+    /// Create add_embed from pooled text embedding
+    ///
+    /// SDXL add_embed includes:
+    /// - Pooled text embedding (1280)
+    /// - Original size (height, width) - 256 each
+    /// - Crop coords (top, left) - 256 each
+    /// - Target size (height, width) - 256 each
+    fn create_add_embed(
+        &self,
+        pooled: Tensor<B, 2>,
+        original_size: (usize, usize),
+        crop_coords: (usize, usize),
+        target_size: (usize, usize),
+    ) -> Tensor<B, 2> {
+        let [batch, _] = pooled.dims();
+
+        // Time embeddings for size/coord conditioning (each 256 dim)
+        let orig_h_emb = self.size_embedding(original_size.0);
+        let orig_w_emb = self.size_embedding(original_size.1);
+        let crop_t_emb = self.size_embedding(crop_coords.0);
+        let crop_l_emb = self.size_embedding(crop_coords.1);
+        let target_h_emb = self.size_embedding(target_size.0);
+        let target_w_emb = self.size_embedding(target_size.1);
+
+        // Concatenate: pooled (1280) + size embeddings (6 * 256 = 1536) = 2816
+        Tensor::cat(vec![
+            pooled,
+            orig_h_emb.unsqueeze::<2>(),
+            orig_w_emb.unsqueeze::<2>(),
+            crop_t_emb.unsqueeze::<2>(),
+            crop_l_emb.unsqueeze::<2>(),
+            target_h_emb.unsqueeze::<2>(),
+            target_w_emb.unsqueeze::<2>(),
+        ], 1)
+    }
+
+    /// Create sinusoidal embedding for size/coord values
+    fn size_embedding(&self, value: usize) -> Tensor<B, 1> {
+        // Use timestep-style embedding for size values
+        // 256 dimensions for each value
+        let half_dim = 128;
+        let value = value as f32;
+
+        let mut emb = vec![0.0f32; 256];
+        for i in 0..half_dim {
+            let freq = (-((i as f32) / half_dim as f32) * (10000.0f32).ln()).exp();
+            emb[i] = (value * freq).sin();
+            emb[i + half_dim] = (value * freq).cos();
+        }
+
+        Tensor::from_data(
+            TensorData::new(emb, [256]),
+            &self.device,
+        )
+    }
+
+    /// Encode prompt for SDXL
+    pub fn encode_prompt(&self, prompt: &str, negative_prompt: &str) -> SdxlConditioning<B> {
+        let (cond_context, cond_pooled) = self.encode_text(prompt);
+        let (uncond_context, uncond_pooled) = self.encode_text(
+            if negative_prompt.is_empty() { "" } else { negative_prompt }
+        );
+
+        SdxlConditioning {
+            cond_context,
+            uncond_context,
+            cond_pooled,
+            uncond_pooled,
+        }
+    }
+
+    /// Sample latent from conditioning
+    pub fn sample_latent(
+        &self,
+        conditioning: &SdxlConditioning<B>,
+        config: &SdxlSampleConfig,
+    ) -> Tensor<B, 4> {
+        let latent_height = config.height / 8;
+        let latent_width = config.width / 8;
+
+        // Create DDIM sampler
+        let ddim_config = DdimConfig {
+            num_inference_steps: config.steps,
+            eta: 0.0,
+        };
+        let sampler = DdimSampler::new(
+            NoiseSchedule::sdxl(&self.device),
+            ddim_config,
+        );
+
+        // Initialize with random noise
+        let mut latent = sampler.init_latent(1, 4, latent_height, latent_width, &self.device);
+
+        // Create add_embed for conditioning
+        let cond_add_embed = self.create_add_embed(
+            conditioning.cond_pooled.clone(),
+            (config.height, config.width),
+            (0, 0),
+            (config.height, config.width),
+        );
+        let uncond_add_embed = self.create_add_embed(
+            conditioning.uncond_pooled.clone(),
+            (config.height, config.width),
+            (0, 0),
+            (config.height, config.width),
+        );
+
+        // Sampling loop
+        for step_idx in 0..sampler.num_steps() {
+            let timestep = sampler.timesteps()[step_idx];
+            let t = Tensor::<B, 1>::from_data(
+                TensorData::new(vec![timestep as f32], [1]),
+                &self.device,
+            );
+
+            // Predict noise for unconditional
+            let noise_uncond = self.unet.forward(
+                latent.clone(),
+                t.clone(),
+                conditioning.uncond_context.clone(),
+                uncond_add_embed.clone(),
+            );
+
+            // Predict noise for conditional
+            let noise_cond = self.unet.forward(
+                latent.clone(),
+                t,
+                conditioning.cond_context.clone(),
+                cond_add_embed.clone(),
+            );
+
+            // Apply classifier-free guidance
+            let noise_pred = apply_guidance(noise_uncond, noise_cond, config.guidance_scale);
+
+            // DDIM step
+            latent = sampler.step(latent, noise_pred, step_idx);
+        }
+
+        latent
+    }
+
+    /// Decode latent to image
+    pub fn decode(&self, latent: Tensor<B, 4>) -> Tensor<B, 4> {
+        // SDXL uses different VAE scaling factor (0.13025 vs 0.18215)
+        let latent = latent / 0.13025;
+        self.vae_decoder.forward(latent)
+    }
+
+    /// Full generation pipeline
+    pub fn generate(
+        &self,
+        prompt: &str,
+        negative_prompt: &str,
+        config: &SdxlSampleConfig,
+    ) -> Tensor<B, 4> {
+        let conditioning = self.encode_prompt(prompt, negative_prompt);
+        let latent = self.sample_latent(&conditioning, config);
+        self.decode(latent)
+    }
+}
+
 /// Helper to convert output tensor to image bytes (RGB, 0-255)
 pub fn tensor_to_rgb<B: Backend>(tensor: Tensor<B, 4>) -> Vec<u8> {
     let [_, _, h, w] = tensor.dims();

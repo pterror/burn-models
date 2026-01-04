@@ -44,7 +44,7 @@
 
 ### Phase 5: SDXL Pipeline
 
-- [ ] SDXL text-to-image
+- [x] SDXL text-to-image
 - [ ] SDXL img2img
 - [ ] Inpainting
 - [ ] Base + refiner workflow
