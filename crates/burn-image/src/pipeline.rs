@@ -805,6 +805,214 @@ impl<B: Backend> StableDiffusionXLImg2Img<B> {
     }
 }
 
+// ============================================================================
+// SDXL Refiner
+// ============================================================================
+
+/// SDXL Refiner configuration
+#[derive(Debug, Clone)]
+pub struct RefinerConfig {
+    /// Number of refinement steps
+    pub steps: usize,
+    /// Guidance scale for the refiner
+    pub guidance_scale: f64,
+    /// At what fraction of total steps to hand off from base to refiner (0.0-1.0)
+    /// E.g., 0.8 means refiner takes over at 80% of the way through denoising
+    pub denoise_start: f64,
+}
+
+impl Default for RefinerConfig {
+    fn default() -> Self {
+        Self {
+            steps: 20,
+            guidance_scale: 7.5,
+            denoise_start: 0.8,
+        }
+    }
+}
+
+/// SDXL Refiner Pipeline
+///
+/// Uses only OpenCLIP text encoder (no CLIP) and a different UNet architecture.
+/// Designed to refine the output of the SDXL base model.
+pub struct StableDiffusionXLRefiner<B: Backend> {
+    pub tokenizer: ClipTokenizer,
+    pub text_encoder: OpenClipTextEncoder<B>,
+    pub unet: UNetXL<B>,
+    pub vae_decoder: Decoder<B>,
+    pub scheduler: NoiseSchedule<B>,
+    device: B::Device,
+}
+
+impl<B: Backend> StableDiffusionXLRefiner<B> {
+    /// Create a new SDXL Refiner pipeline
+    pub fn new(tokenizer: ClipTokenizer, device: &B::Device) -> Self {
+        let open_clip_config = OpenClipConfig::sdxl();
+        let unet_config = UNetXLConfig::sdxl_refiner();
+        let vae_config = DecoderConfig::sdxl();
+
+        Self {
+            tokenizer,
+            text_encoder: OpenClipTextEncoder::new(&open_clip_config, device),
+            unet: UNetXL::new(&unet_config, device),
+            vae_decoder: Decoder::new(&vae_config, device),
+            scheduler: NoiseSchedule::sdxl(device),
+            device: device.clone(),
+        }
+    }
+
+    /// Encode text using OpenCLIP only
+    fn encode_text(&self, text: &str) -> (Tensor<B, 3>, Tensor<B, 2>) {
+        let tokens = self.tokenizer.encode_padded(text, 77);
+        let token_tensor: Tensor<B, 1, Int> = Tensor::from_data(
+            TensorData::new(tokens.iter().map(|&t| t as i32).collect::<Vec<_>>(), [77]),
+            &self.device,
+        );
+        let token_tensor = token_tensor.unsqueeze::<2>();
+
+        let eos_pos = tokens.iter().position(|&t| t == END_OF_TEXT).unwrap_or(76);
+        self.text_encoder.forward_with_pooled(token_tensor, &[eos_pos])
+    }
+
+    /// Create add_embed for refiner (includes aesthetic score)
+    fn create_add_embed(
+        &self,
+        pooled: Tensor<B, 2>,
+        original_size: (usize, usize),
+        crop_coords: (usize, usize),
+        target_size: (usize, usize),
+        aesthetic_score: f64,
+    ) -> Tensor<B, 2> {
+        let orig_h_emb = self.size_embedding(original_size.0);
+        let orig_w_emb = self.size_embedding(original_size.1);
+        let crop_t_emb = self.size_embedding(crop_coords.0);
+        let crop_l_emb = self.size_embedding(crop_coords.1);
+        let target_h_emb = self.size_embedding(target_size.0);
+        let target_w_emb = self.size_embedding(target_size.1);
+        let aesthetic_emb = self.aesthetic_embedding(aesthetic_score);
+
+        // Refiner add_embed: pooled + sizes + aesthetic = 2560
+        Tensor::cat(vec![
+            pooled,
+            orig_h_emb.unsqueeze::<2>(),
+            orig_w_emb.unsqueeze::<2>(),
+            crop_t_emb.unsqueeze::<2>(),
+            crop_l_emb.unsqueeze::<2>(),
+            target_h_emb.unsqueeze::<2>(),
+            target_w_emb.unsqueeze::<2>(),
+            aesthetic_emb.unsqueeze::<2>(),
+        ], 1)
+    }
+
+    fn size_embedding(&self, value: usize) -> Tensor<B, 1> {
+        let half_dim = 128;
+        let value = value as f32;
+        let mut emb = vec![0.0f32; 256];
+        for i in 0..half_dim {
+            let freq = (-((i as f32) / half_dim as f32) * (10000.0f32).ln()).exp();
+            emb[i] = (value * freq).sin();
+            emb[i + half_dim] = (value * freq).cos();
+        }
+        Tensor::from_data(TensorData::new(emb, [256]), &self.device)
+    }
+
+    fn aesthetic_embedding(&self, score: f64) -> Tensor<B, 1> {
+        // Aesthetic score embedding (same as size embedding but for score)
+        let half_dim = 128;
+        let value = score as f32;
+        let mut emb = vec![0.0f32; 256];
+        for i in 0..half_dim {
+            let freq = (-((i as f32) / half_dim as f32) * (10000.0f32).ln()).exp();
+            emb[i] = (value * freq).sin();
+            emb[i + half_dim] = (value * freq).cos();
+        }
+        Tensor::from_data(TensorData::new(emb, [256]), &self.device)
+    }
+
+    /// Refine a latent from the base model
+    ///
+    /// Takes a partially denoised latent and continues the denoising process.
+    pub fn refine(
+        &self,
+        latent: Tensor<B, 4>,
+        prompt: &str,
+        negative_prompt: &str,
+        config: &RefinerConfig,
+    ) -> Tensor<B, 4> {
+        let [_, _, height, width] = latent.dims();
+        let image_height = height * 8;
+        let image_width = width * 8;
+
+        // Encode prompts
+        let (cond_context, cond_pooled) = self.encode_text(prompt);
+        let (uncond_context, uncond_pooled) = self.encode_text(
+            if negative_prompt.is_empty() { "" } else { negative_prompt }
+        );
+
+        // Create add_embed with high aesthetic score
+        let aesthetic_score = 6.0; // High aesthetic score for positive
+        let neg_aesthetic_score = 2.5; // Low aesthetic score for negative
+
+        let cond_add_embed = self.create_add_embed(
+            cond_pooled,
+            (image_height, image_width),
+            (0, 0),
+            (image_height, image_width),
+            aesthetic_score,
+        );
+        let uncond_add_embed = self.create_add_embed(
+            uncond_pooled,
+            (image_height, image_width),
+            (0, 0),
+            (image_height, image_width),
+            neg_aesthetic_score,
+        );
+
+        // Create sampler
+        let ddim_config = DdimConfig {
+            num_inference_steps: config.steps,
+            eta: 0.0,
+        };
+        let sampler = DdimSampler::new(NoiseSchedule::sdxl(&self.device), ddim_config);
+
+        // Start from denoise_start
+        let start_step = ((1.0 - config.denoise_start) * config.steps as f64) as usize;
+        let mut latent = latent;
+
+        // Refinement loop
+        for step_idx in start_step..sampler.num_steps() {
+            let timestep = sampler.timesteps()[step_idx];
+            let t = Tensor::<B, 1>::from_data(
+                TensorData::new(vec![timestep as f32], [1]),
+                &self.device,
+            );
+
+            let noise_uncond = self.unet.forward(
+                latent.clone(),
+                t.clone(),
+                uncond_context.clone(),
+                uncond_add_embed.clone(),
+            );
+            let noise_cond = self.unet.forward(
+                latent.clone(),
+                t,
+                cond_context.clone(),
+                cond_add_embed.clone(),
+            );
+            let noise_pred = apply_guidance(noise_uncond, noise_cond, config.guidance_scale);
+
+            latent = sampler.step(latent, noise_pred, step_idx);
+        }
+
+        latent
+    }
+
+    /// Decode latent to image
+    pub fn decode(&self, latent: Tensor<B, 4>) -> Tensor<B, 4> {
+        self.vae_decoder.decode_to_image_sdxl(latent)
+    }
+}
+
 /// Helper to convert output tensor to image bytes (RGB, 0-255)
 pub fn tensor_to_rgb<B: Backend>(tensor: Tensor<B, 4>) -> Vec<u8> {
     let [_, _, h, w] = tensor.dims();

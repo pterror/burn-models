@@ -17,4 +17,6 @@ pub use pipeline::{
     // SDXL
     SdxlConditioning, SdxlSampleConfig, StableDiffusionXL,
     SdxlImg2ImgConfig, StableDiffusionXLImg2Img,
+    // SDXL Refiner
+    RefinerConfig, StableDiffusionXLRefiner,
 };
