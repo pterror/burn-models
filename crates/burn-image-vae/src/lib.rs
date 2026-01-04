@@ -2,5 +2,5 @@ pub mod encoder;
 pub mod decoder;
 pub mod autoencoder;
 
-pub use decoder::{Decoder, DecoderConfig};
+pub use decoder::{Decoder, DecoderConfig, scaling};
 pub use encoder::{Encoder, EncoderConfig};

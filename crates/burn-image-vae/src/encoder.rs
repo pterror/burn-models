@@ -41,10 +41,28 @@ impl Default for EncoderConfig {
 }
 
 impl EncoderConfig {
-    /// SD 1.x / SDXL VAE encoder config
-    pub fn sd() -> Self {
+    /// SD 1.x VAE encoder config
+    pub fn sd1x() -> Self {
         Self::default()
     }
+
+    /// SD 1.x VAE encoder config (alias)
+    pub fn sd() -> Self {
+        Self::sd1x()
+    }
+
+    /// SDXL VAE encoder config (same architecture, different scaling)
+    pub fn sdxl() -> Self {
+        Self::default()
+    }
+}
+
+/// VAE scaling factors for different model versions
+pub mod scaling {
+    /// SD 1.x / SD 2.x scaling factor
+    pub const SD1X: f64 = 0.18215;
+    /// SDXL scaling factor
+    pub const SDXL: f64 = 0.13025;
 }
 
 /// VAE Encoder
@@ -133,11 +151,16 @@ impl<B: Backend> Encoder<B> {
         self.conv_out.forward(h)
     }
 
-    /// Encode image and sample latent using reparameterization trick
+    /// Encode image and sample latent using reparameterization trick (SD 1.x scaling)
     ///
     /// Input: [batch, 3, h, w] image (values in [0, 255])
     /// Output: [batch, 4, h/8, w/8] latent
     pub fn encode(&self, image: Tensor<B, 4>) -> Tensor<B, 4> {
+        self.encode_scaled(image, scaling::SD1X)
+    }
+
+    /// Encode with custom scaling factor
+    pub fn encode_scaled(&self, image: Tensor<B, 4>, scale: f64) -> Tensor<B, 4> {
         // Normalize to [-1, 1]
         let x = image / 127.5 - 1.0;
 
@@ -163,18 +186,33 @@ impl<B: Backend> Encoder<B> {
         let latent = mean + std * noise;
 
         // Apply scaling factor
-        latent * 0.18215
+        latent * scale
     }
 
-    /// Encode without sampling (just return mean)
+    /// Encode with SDXL scaling
+    pub fn encode_sdxl(&self, image: Tensor<B, 4>) -> Tensor<B, 4> {
+        self.encode_scaled(image, scaling::SDXL)
+    }
+
+    /// Encode without sampling (just return mean, SD 1.x scaling)
     pub fn encode_deterministic(&self, image: Tensor<B, 4>) -> Tensor<B, 4> {
+        self.encode_deterministic_scaled(image, scaling::SD1X)
+    }
+
+    /// Encode without sampling with custom scaling
+    pub fn encode_deterministic_scaled(&self, image: Tensor<B, 4>, scale: f64) -> Tensor<B, 4> {
         let x = image / 127.5 - 1.0;
         let moments = self.forward(x);
         let [b, c, h, w] = moments.dims();
         let half_c = c / 2;
 
         let mean = moments.slice([0..b, 0..half_c, 0..h, 0..w]);
-        mean * 0.18215
+        mean * scale
+    }
+
+    /// Encode without sampling with SDXL scaling
+    pub fn encode_deterministic_sdxl(&self, image: Tensor<B, 4>) -> Tensor<B, 4> {
+        self.encode_deterministic_scaled(image, scaling::SDXL)
     }
 }
 

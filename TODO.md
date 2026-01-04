@@ -39,7 +39,7 @@
 
 - [x] OpenCLIP text encoder (second encoder)
 - [x] SDXL UNet (larger, different architecture)
-- [ ] SDXL VAE
+- [x] SDXL VAE (scaling factors: 0.13025 vs 0.18215)
 - [ ] Refiner model
 
 ### Phase 5: SDXL Pipeline

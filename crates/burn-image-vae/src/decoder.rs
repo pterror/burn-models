@@ -39,10 +39,28 @@ impl Default for DecoderConfig {
 }
 
 impl DecoderConfig {
-    /// SD 1.x / SDXL VAE decoder config
-    pub fn sd() -> Self {
+    /// SD 1.x VAE decoder config
+    pub fn sd1x() -> Self {
         Self::default()
     }
+
+    /// SD 1.x VAE decoder config (alias)
+    pub fn sd() -> Self {
+        Self::sd1x()
+    }
+
+    /// SDXL VAE decoder config (same architecture, different scaling)
+    pub fn sdxl() -> Self {
+        Self::default()
+    }
+}
+
+/// VAE scaling factors for different model versions
+pub mod scaling {
+    /// SD 1.x / SD 2.x scaling factor
+    pub const SD1X: f64 = 0.18215;
+    /// SDXL scaling factor
+    pub const SDXL: f64 = 0.13025;
 }
 
 /// VAE Decoder
@@ -110,14 +128,11 @@ impl<B: Backend> Decoder<B> {
         }
     }
 
-    /// Decode latent to image
+    /// Decode latent to image (raw, no scaling applied)
     ///
-    /// Input: [batch, 4, h, w] latent
+    /// Input: [batch, 4, h, w] latent (already unscaled)
     /// Output: [batch, 3, h*8, w*8] image (values in [-1, 1])
-    pub fn forward(&self, z: Tensor<B, 4>) -> Tensor<B, 4> {
-        // Scale latent (SD uses 0.18215 scaling factor)
-        let z = z / 0.18215;
-
+    pub fn forward_raw(&self, z: Tensor<B, 4>) -> Tensor<B, 4> {
         // Input conv
         let mut h = self.conv_in.forward(z);
 
@@ -137,10 +152,36 @@ impl<B: Backend> Decoder<B> {
         self.conv_out.forward(h)
     }
 
-    /// Decode and convert to [0, 255] range
+    /// Decode latent to image with SD 1.x scaling
+    ///
+    /// Input: [batch, 4, h, w] latent
+    /// Output: [batch, 3, h*8, w*8] image (values in [-1, 1])
+    pub fn forward(&self, z: Tensor<B, 4>) -> Tensor<B, 4> {
+        let z = z / scaling::SD1X;
+        self.forward_raw(z)
+    }
+
+    /// Decode latent to image with custom scaling factor
+    pub fn forward_scaled(&self, z: Tensor<B, 4>, scale: f64) -> Tensor<B, 4> {
+        let z = z / scale;
+        self.forward_raw(z)
+    }
+
+    /// Decode latent with SDXL scaling
+    pub fn forward_sdxl(&self, z: Tensor<B, 4>) -> Tensor<B, 4> {
+        self.forward_scaled(z, scaling::SDXL)
+    }
+
+    /// Decode and convert to [0, 255] range (SD 1.x scaling)
     pub fn decode_to_image(&self, z: Tensor<B, 4>) -> Tensor<B, 4> {
         let img = self.forward(z);
         // Convert from [-1, 1] to [0, 255]
+        (img + 1.0) * 127.5
+    }
+
+    /// Decode and convert to [0, 255] range (SDXL scaling)
+    pub fn decode_to_image_sdxl(&self, z: Tensor<B, 4>) -> Tensor<B, 4> {
+        let img = self.forward_sdxl(z);
         (img + 1.0) * 127.5
     }
 }
