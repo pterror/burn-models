@@ -54,7 +54,7 @@
 - [x] Multi-backend support (CUDA, Metal, WGPU)
 - [x] Memory optimization
 - [x] CLI interface
-- [ ] Documentation
+- [x] Documentation
 
 ## Backlog
 
