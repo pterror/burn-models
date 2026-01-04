@@ -12,5 +12,6 @@ pub use burn_image_convert as convert;
 pub mod pipeline;
 
 pub use pipeline::{
-    DiffusionPipeline, SampleConfig, Sd1xConditioning, StableDiffusion1x, tensor_to_rgb,
+    DiffusionPipeline, Img2ImgConfig, SampleConfig, Sd1xConditioning,
+    StableDiffusion1x, StableDiffusion1xImg2Img, tensor_to_rgb,
 };

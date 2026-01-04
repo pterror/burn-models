@@ -32,8 +32,8 @@
 
 - [x] Text-to-image generation
 - [x] Classifier-free guidance
-- [ ] VAE encoder (for img2img)
-- [ ] Image-to-image pipeline
+- [x] VAE encoder (for img2img)
+- [x] Image-to-image pipeline
 
 ### Phase 4: SDXL Components
 
