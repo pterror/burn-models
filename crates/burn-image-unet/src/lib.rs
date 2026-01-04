@@ -8,3 +8,4 @@ pub use blocks::{
     SpatialTransformer, TransformerBlock, Upsample,
 };
 pub use unet_sd::{UNet, UNetConfig};
+pub use unet_sdxl::{UNetXL, UNetXLConfig};

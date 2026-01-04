@@ -38,7 +38,7 @@
 ### Phase 4: SDXL Components
 
 - [x] OpenCLIP text encoder (second encoder)
-- [ ] SDXL UNet (larger, different architecture)
+- [x] SDXL UNet (larger, different architecture)
 - [ ] SDXL VAE
 - [ ] Refiner model
 
