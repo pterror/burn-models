@@ -445,7 +445,7 @@ impl<B: Backend> StableDiffusionXL<B> {
     /// - Original size (height, width) - 256 each
     /// - Crop coords (top, left) - 256 each
     /// - Target size (height, width) - 256 each
-    fn create_add_embed(
+    pub fn create_add_embed(
         &self,
         pooled: Tensor<B, 2>,
         original_size: (usize, usize),
@@ -1010,6 +1010,219 @@ impl<B: Backend> StableDiffusionXLRefiner<B> {
     /// Decode latent to image
     pub fn decode(&self, latent: Tensor<B, 4>) -> Tensor<B, 4> {
         self.vae_decoder.decode_to_image_sdxl(latent)
+    }
+}
+
+// ============================================================================
+// SDXL Base + Refiner Combined Workflow
+// ============================================================================
+
+/// Configuration for combined base + refiner workflow
+#[derive(Debug, Clone)]
+pub struct BaseRefinerConfig {
+    /// Image width
+    pub width: usize,
+    /// Image height
+    pub height: usize,
+    /// Total number of denoising steps (split between base and refiner)
+    pub steps: usize,
+    /// Base model guidance scale
+    pub base_guidance_scale: f64,
+    /// Refiner model guidance scale
+    pub refiner_guidance_scale: f64,
+    /// Fraction of steps for base model (e.g., 0.8 = base does 80% of steps)
+    pub refiner_start: f64,
+    /// Random seed
+    pub seed: Option<u64>,
+}
+
+impl Default for BaseRefinerConfig {
+    fn default() -> Self {
+        Self {
+            width: 1024,
+            height: 1024,
+            steps: 40,
+            base_guidance_scale: 7.5,
+            refiner_guidance_scale: 7.5,
+            refiner_start: 0.8,
+            seed: None,
+        }
+    }
+}
+
+/// Combined SDXL Base + Refiner Pipeline
+///
+/// Runs the base model for initial denoising, then hands off to the refiner
+/// for final quality improvements. This is the recommended workflow for
+/// highest quality SDXL generation.
+pub struct StableDiffusionXLWithRefiner<B: Backend> {
+    pub base: StableDiffusionXL<B>,
+    pub refiner: StableDiffusionXLRefiner<B>,
+    device: B::Device,
+}
+
+impl<B: Backend> StableDiffusionXLWithRefiner<B> {
+    /// Create a new combined pipeline
+    ///
+    /// Requires two tokenizers (same vocabulary, different instances) because
+    /// the base and refiner pipelines each need their own tokenizer.
+    pub fn new(base_tokenizer: ClipTokenizer, refiner_tokenizer: ClipTokenizer, device: &B::Device) -> Self {
+        Self {
+            base: StableDiffusionXL::new(base_tokenizer, device),
+            refiner: StableDiffusionXLRefiner::new(refiner_tokenizer, device),
+            device: device.clone(),
+        }
+    }
+
+    /// Create from pre-constructed base and refiner pipelines
+    pub fn from_pipelines(base: StableDiffusionXL<B>, refiner: StableDiffusionXLRefiner<B>, device: &B::Device) -> Self {
+        Self {
+            base,
+            refiner,
+            device: device.clone(),
+        }
+    }
+
+    /// Generate image using base + refiner workflow
+    pub fn generate(
+        &self,
+        prompt: &str,
+        negative_prompt: &str,
+        config: &BaseRefinerConfig,
+    ) -> Tensor<B, 4> {
+        // Calculate step splits
+        let base_steps = ((config.refiner_start) * config.steps as f64) as usize;
+        let refiner_steps = config.steps - base_steps;
+
+        // Run base model for initial denoising
+        let base_config = SdxlSampleConfig {
+            width: config.width,
+            height: config.height,
+            steps: config.steps, // Full schedule, but we'll stop early
+            guidance_scale: config.base_guidance_scale,
+            seed: config.seed,
+        };
+
+        let latent = self.sample_base_partial(prompt, negative_prompt, &base_config, base_steps);
+
+        // Run refiner for final quality
+        let refiner_config = RefinerConfig {
+            steps: config.steps,
+            guidance_scale: config.refiner_guidance_scale,
+            denoise_start: config.refiner_start,
+        };
+
+        let refined = self.refiner.refine(latent, prompt, negative_prompt, &refiner_config);
+
+        // Decode to image
+        self.refiner.decode(refined)
+    }
+
+    /// Run base model and stop after specified number of steps
+    fn sample_base_partial(
+        &self,
+        prompt: &str,
+        negative_prompt: &str,
+        config: &SdxlSampleConfig,
+        stop_at_step: usize,
+    ) -> Tensor<B, 4> {
+        let conditioning = self.base.encode_prompt(prompt, negative_prompt);
+
+        let latent_height = config.height / 8;
+        let latent_width = config.width / 8;
+
+        // Create DDIM sampler with full schedule
+        let ddim_config = DdimConfig {
+            num_inference_steps: config.steps,
+            eta: 0.0,
+        };
+        let sampler = DdimSampler::new(
+            NoiseSchedule::sdxl(&self.device),
+            ddim_config,
+        );
+
+        // Initialize with random noise
+        let mut latent = sampler.init_latent(1, 4, latent_height, latent_width, &self.device);
+
+        // Create add_embed for conditioning
+        let cond_add_embed = self.base.create_add_embed(
+            conditioning.cond_pooled.clone(),
+            (config.height, config.width),
+            (0, 0),
+            (config.height, config.width),
+        );
+        let uncond_add_embed = self.base.create_add_embed(
+            conditioning.uncond_pooled.clone(),
+            (config.height, config.width),
+            (0, 0),
+            (config.height, config.width),
+        );
+
+        // Sampling loop - stop at specified step
+        for step_idx in 0..stop_at_step {
+            let timestep = sampler.timesteps()[step_idx];
+            let t = Tensor::<B, 1>::from_data(
+                TensorData::new(vec![timestep as f32], [1]),
+                &self.device,
+            );
+
+            // Predict noise for unconditional
+            let noise_uncond = self.base.unet.forward(
+                latent.clone(),
+                t.clone(),
+                conditioning.uncond_context.clone(),
+                uncond_add_embed.clone(),
+            );
+
+            // Predict noise for conditional
+            let noise_cond = self.base.unet.forward(
+                latent.clone(),
+                t,
+                conditioning.cond_context.clone(),
+                cond_add_embed.clone(),
+            );
+
+            // Apply classifier-free guidance
+            let noise_pred = apply_guidance(noise_uncond, noise_cond, config.guidance_scale);
+
+            // DDIM step
+            latent = sampler.step(latent, noise_pred, step_idx);
+        }
+
+        latent
+    }
+
+    /// Generate with separate prompts for base and refiner
+    ///
+    /// Useful when you want different prompts for initial generation vs refinement
+    pub fn generate_with_prompts(
+        &self,
+        base_prompt: &str,
+        base_negative: &str,
+        refiner_prompt: &str,
+        refiner_negative: &str,
+        config: &BaseRefinerConfig,
+    ) -> Tensor<B, 4> {
+        let base_steps = ((config.refiner_start) * config.steps as f64) as usize;
+
+        let base_config = SdxlSampleConfig {
+            width: config.width,
+            height: config.height,
+            steps: config.steps,
+            guidance_scale: config.base_guidance_scale,
+            seed: config.seed,
+        };
+
+        let latent = self.sample_base_partial(base_prompt, base_negative, &base_config, base_steps);
+
+        let refiner_config = RefinerConfig {
+            steps: config.steps,
+            guidance_scale: config.refiner_guidance_scale,
+            denoise_start: config.refiner_start,
+        };
+
+        let refined = self.refiner.refine(latent, refiner_prompt, refiner_negative, &refiner_config);
+        self.refiner.decode(refined)
     }
 }
 

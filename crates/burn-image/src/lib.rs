@@ -19,4 +19,6 @@ pub use pipeline::{
     SdxlImg2ImgConfig, StableDiffusionXLImg2Img,
     // SDXL Refiner
     RefinerConfig, StableDiffusionXLRefiner,
+    // SDXL Base + Refiner Workflow
+    BaseRefinerConfig, StableDiffusionXLWithRefiner,
 };
