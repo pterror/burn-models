@@ -10,7 +10,7 @@
 - [x] Implement CLIP text encoder
 - [x] Implement DDIM sampler
 - [x] Implement VAE decoder
-- [ ] Implement UNet
+- [x] Implement UNet
 
 ## Roadmap
 
@@ -25,7 +25,7 @@
 
 - [x] CLIP text encoder
 - [x] VAE decoder (latent → image)
-- [ ] UNet (diffusion backbone)
+- [x] UNet (diffusion backbone)
 - [x] DDIM sampler
 
 ### Phase 3: SD 1.x Pipeline
