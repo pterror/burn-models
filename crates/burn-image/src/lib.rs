@@ -14,9 +14,13 @@ pub mod pipeline;
 pub use pipeline::{
     DiffusionPipeline, Img2ImgConfig, SampleConfig, Sd1xConditioning,
     StableDiffusion1x, StableDiffusion1xImg2Img, tensor_to_rgb,
+    // Inpainting
+    InpaintConfig, StableDiffusion1xInpaint,
     // SDXL
     SdxlConditioning, SdxlSampleConfig, StableDiffusionXL,
     SdxlImg2ImgConfig, StableDiffusionXLImg2Img,
+    // SDXL Inpainting
+    SdxlInpaintConfig, StableDiffusionXLInpaint,
     // SDXL Refiner
     RefinerConfig, StableDiffusionXLRefiner,
     // SDXL Base + Refiner Workflow

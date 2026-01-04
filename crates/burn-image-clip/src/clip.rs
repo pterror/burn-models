@@ -114,6 +114,38 @@ impl<B: Backend> ClipTextEncoder<B> {
         Tensor::cat(pooled, 0)
     }
 
+    /// Forward pass returning penultimate layer hidden states
+    ///
+    /// Used for SDXL which uses penultimate layer output instead of final
+    pub fn forward_penultimate(&self, token_ids: Tensor<B, 2, Int>) -> Tensor<B, 3> {
+        let [_batch, seq_len] = token_ids.dims();
+
+        // Token embeddings
+        let x = self.token_embedding.forward(token_ids);
+
+        // Add position embeddings
+        let pos_emb = self.position_embedding.val()
+            .slice([0..seq_len])
+            .unsqueeze::<3>();
+        let mut x = x + pos_emb;
+
+        // Create causal mask
+        let mask = Self::create_causal_mask(seq_len, &x.device());
+
+        // Pass through all but the last layer
+        let num_layers = self.layers.len();
+        for (i, layer) in self.layers.iter().enumerate() {
+            x = layer.forward(x.clone(), Some(mask.clone()));
+            if i == num_layers - 2 {
+                // Return after penultimate layer (with layer norm)
+                return self.final_layer_norm.forward(x);
+            }
+        }
+
+        // Fallback if only one layer
+        self.final_layer_norm.forward(x)
+    }
+
     fn create_causal_mask(seq_len: usize, device: &B::Device) -> Tensor<B, 2> {
         // Create lower triangular mask with -inf for masked positions
         let mut mask_data = vec![0.0f32; seq_len * seq_len];
