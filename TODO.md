@@ -5,21 +5,24 @@
 - [x] Explore stable-diffusion-burn source to understand architecture
 - [x] Explore stable-diffusion-xl-burn source for SDXL differences
 - [x] Define crate structure (workspace with 7 crates)
-- [ ] Implement weight loading from safetensors
-- [ ] Implement basic attention mechanism
-- [ ] Implement CLIP tokenizer
+- [x] Implement weight loading from safetensors
+- [x] Implement CLIP tokenizer
+- [x] Implement CLIP text encoder
+- [ ] Implement DDIM sampler
+- [ ] Implement VAE decoder
 
 ## Roadmap
 
 ### Phase 1: Foundation
 
-- [ ] Weight loading infrastructure (safetensors → Burn tensors)
+- [x] Weight loading infrastructure (safetensors → Burn tensors)
 - [ ] Model serialization (save/load converted weights)
-- [ ] Basic tensor ops and attention mechanisms
+- [x] Basic tensor ops (silu, groupnorm, layernorm)
+- [x] Attention mechanism (qkv_attention, causal_mask)
 
 ### Phase 2: SD 1.x Components
 
-- [ ] CLIP text encoder
+- [x] CLIP text encoder
 - [ ] VAE decoder (latent → image)
 - [ ] UNet (diffusion backbone)
 - [ ] DDIM sampler

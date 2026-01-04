@@ -21,4 +21,9 @@ burn-image-convert = { path = "crates/burn-image-convert" }
 
 # External dependencies
 burn = "0.16"
+bytemuck = "1.21"
+half = "2.4"
+memmap2 = "0.9"
+regex = "1.11"
 safetensors = "0.5"
+thiserror = "2.0"

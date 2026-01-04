@@ -5,4 +5,8 @@ edition = "2021"
 
 [dependencies]
 burn.workspace = true
+bytemuck.workspace = true
+half.workspace = true
+memmap2.workspace = true
 safetensors.workspace = true
+thiserror.workspace = true
