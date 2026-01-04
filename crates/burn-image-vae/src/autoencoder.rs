@@ -1,0 +1,1 @@
+//! Combined VAE (encoder + decoder)

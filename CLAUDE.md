@@ -2,6 +2,12 @@
 
 Behavioral rules for Claude Code working in this repository.
 
+## Project Goal
+
+Parity with stable-diffusion-burn and stable-diffusion-xl-burn, but:
+- Pure Rust (no Python for weight conversion - use safetensors crate)
+- Support both SD 1.x and SDXL
+
 ## Core Rule
 
 ALWAYS NOTE THINGS DOWN. When you discover something important, write it immediately:

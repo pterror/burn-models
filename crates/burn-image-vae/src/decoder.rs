@@ -1,0 +1,1 @@
+//! VAE decoder: latent -> image

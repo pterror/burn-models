@@ -1,6 +1,24 @@
 [workspace]
 resolver = "2"
-members = []
+members = [
+    "crates/burn-image",
+    "crates/burn-image-core",
+    "crates/burn-image-clip",
+    "crates/burn-image-vae",
+    "crates/burn-image-unet",
+    "crates/burn-image-samplers",
+    "crates/burn-image-convert",
+]
 
 [workspace.dependencies]
+# Internal crates
+burn-image-core = { path = "crates/burn-image-core" }
+burn-image-clip = { path = "crates/burn-image-clip" }
+burn-image-vae = { path = "crates/burn-image-vae" }
+burn-image-unet = { path = "crates/burn-image-unet" }
+burn-image-samplers = { path = "crates/burn-image-samplers" }
+burn-image-convert = { path = "crates/burn-image-convert" }
+
+# External dependencies
 burn = "0.16"
+safetensors = "0.5"
