@@ -52,7 +52,7 @@
 ### Phase 6: Polish
 
 - [x] Multi-backend support (CUDA, Metal, WGPU)
-- [ ] Memory optimization
+- [x] Memory optimization
 - [ ] CLI interface
 - [ ] Documentation
 

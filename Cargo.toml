@@ -8,6 +8,7 @@ members = [
     "crates/burn-image-unet",
     "crates/burn-image-samplers",
     "crates/burn-image-convert",
+    "crates/burn-image-cli",
 ]
 
 [workspace.dependencies]
