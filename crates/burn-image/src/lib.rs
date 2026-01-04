@@ -16,4 +16,5 @@ pub use pipeline::{
     StableDiffusion1x, StableDiffusion1xImg2Img, tensor_to_rgb,
     // SDXL
     SdxlConditioning, SdxlSampleConfig, StableDiffusionXL,
+    SdxlImg2ImgConfig, StableDiffusionXLImg2Img,
 };

@@ -599,6 +599,212 @@ impl<B: Backend> StableDiffusionXL<B> {
     }
 }
 
+/// SDXL img2img configuration
+#[derive(Debug, Clone)]
+pub struct SdxlImg2ImgConfig {
+    pub steps: usize,
+    pub guidance_scale: f64,
+    /// Strength of the transformation (0.0 = no change, 1.0 = full regeneration)
+    pub strength: f64,
+    pub seed: Option<u64>,
+}
+
+impl Default for SdxlImg2ImgConfig {
+    fn default() -> Self {
+        Self {
+            steps: 30,
+            guidance_scale: 7.5,
+            strength: 0.75,
+            seed: None,
+        }
+    }
+}
+
+/// Stable Diffusion XL Img2Img Pipeline
+pub struct StableDiffusionXLImg2Img<B: Backend> {
+    pub tokenizer: ClipTokenizer,
+    pub clip_encoder: ClipTextEncoder<B>,
+    pub open_clip_encoder: OpenClipTextEncoder<B>,
+    pub unet: UNetXL<B>,
+    pub vae_encoder: Encoder<B>,
+    pub vae_decoder: Decoder<B>,
+    pub scheduler: NoiseSchedule<B>,
+    device: B::Device,
+}
+
+impl<B: Backend> StableDiffusionXLImg2Img<B> {
+    /// Create a new SDXL img2img pipeline
+    pub fn new(tokenizer: ClipTokenizer, device: &B::Device) -> Self {
+        let clip_config = ClipConfig::sd1x();
+        let open_clip_config = OpenClipConfig::sdxl();
+        let unet_config = UNetXLConfig::sdxl_base();
+        let encoder_config = EncoderConfig::sd();
+        let decoder_config = DecoderConfig::sd();
+
+        Self {
+            tokenizer,
+            clip_encoder: ClipTextEncoder::new(&clip_config, device),
+            open_clip_encoder: OpenClipTextEncoder::new(&open_clip_config, device),
+            unet: UNetXL::new(&unet_config, device),
+            vae_encoder: Encoder::new(&encoder_config, device),
+            vae_decoder: Decoder::new(&decoder_config, device),
+            scheduler: NoiseSchedule::sdxl(device),
+            device: device.clone(),
+        }
+    }
+
+    /// Encode text using both encoders
+    fn encode_text(&self, text: &str) -> (Tensor<B, 3>, Tensor<B, 2>) {
+        let tokens = self.tokenizer.encode_padded(text, 77);
+        let token_tensor: Tensor<B, 1, Int> = Tensor::from_data(
+            TensorData::new(tokens.iter().map(|&t| t as i32).collect::<Vec<_>>(), [77]),
+            &self.device,
+        );
+        let token_tensor = token_tensor.unsqueeze::<2>();
+
+        let clip_hidden = self.clip_encoder.forward(token_tensor.clone());
+        let eos_pos = tokens.iter().position(|&t| t == END_OF_TEXT).unwrap_or(76);
+        let (open_clip_hidden, pooled) = self.open_clip_encoder.forward_with_pooled(
+            token_tensor,
+            &[eos_pos],
+        );
+
+        let context = Tensor::cat(vec![clip_hidden, open_clip_hidden], 2);
+        (context, pooled)
+    }
+
+    /// Create add_embed from pooled text embedding
+    fn create_add_embed(
+        &self,
+        pooled: Tensor<B, 2>,
+        original_size: (usize, usize),
+        crop_coords: (usize, usize),
+        target_size: (usize, usize),
+    ) -> Tensor<B, 2> {
+        let orig_h_emb = self.size_embedding(original_size.0);
+        let orig_w_emb = self.size_embedding(original_size.1);
+        let crop_t_emb = self.size_embedding(crop_coords.0);
+        let crop_l_emb = self.size_embedding(crop_coords.1);
+        let target_h_emb = self.size_embedding(target_size.0);
+        let target_w_emb = self.size_embedding(target_size.1);
+
+        Tensor::cat(vec![
+            pooled,
+            orig_h_emb.unsqueeze::<2>(),
+            orig_w_emb.unsqueeze::<2>(),
+            crop_t_emb.unsqueeze::<2>(),
+            crop_l_emb.unsqueeze::<2>(),
+            target_h_emb.unsqueeze::<2>(),
+            target_w_emb.unsqueeze::<2>(),
+        ], 1)
+    }
+
+    fn size_embedding(&self, value: usize) -> Tensor<B, 1> {
+        let half_dim = 128;
+        let value = value as f32;
+        let mut emb = vec![0.0f32; 256];
+        for i in 0..half_dim {
+            let freq = (-((i as f32) / half_dim as f32) * (10000.0f32).ln()).exp();
+            emb[i] = (value * freq).sin();
+            emb[i + half_dim] = (value * freq).cos();
+        }
+        Tensor::from_data(TensorData::new(emb, [256]), &self.device)
+    }
+
+    /// Generate image from input image and prompt
+    pub fn generate(
+        &self,
+        image: Tensor<B, 4>,
+        prompt: &str,
+        negative_prompt: &str,
+        config: &SdxlImg2ImgConfig,
+    ) -> Tensor<B, 4> {
+        let [_, _, height, width] = image.dims();
+
+        // Encode prompts
+        let (cond_context, cond_pooled) = self.encode_text(prompt);
+        let (uncond_context, uncond_pooled) = self.encode_text(
+            if negative_prompt.is_empty() { "" } else { negative_prompt }
+        );
+
+        // Encode image to latent (SDXL scale factor: 0.13025)
+        let init_latent = self.vae_encoder.encode_deterministic(image) * (0.13025 / 0.18215);
+
+        // Calculate start step based on strength
+        let num_inference_steps = config.steps;
+        let start_step = ((1.0 - config.strength) * num_inference_steps as f64) as usize;
+
+        // Create sampler
+        let ddim_config = DdimConfig {
+            num_inference_steps,
+            eta: 0.0,
+        };
+        let sampler = DdimSampler::new(NoiseSchedule::sdxl(&self.device), ddim_config);
+
+        // Add noise to init_latent at the start timestep
+        let start_timestep = if start_step < sampler.timesteps().len() {
+            sampler.timesteps()[start_step]
+        } else {
+            0
+        };
+
+        let noise = Tensor::random(
+            init_latent.shape(),
+            burn::tensor::Distribution::Normal(0.0, 1.0),
+            &self.device,
+        );
+
+        let alpha_t = self.scheduler.alpha_cumprod_at(start_timestep);
+        let sqrt_alpha = alpha_t.clone().sqrt();
+        let sqrt_one_minus_alpha = (alpha_t.neg() + 1.0).sqrt();
+
+        let mut latent = init_latent * sqrt_alpha.unsqueeze() + noise * sqrt_one_minus_alpha.unsqueeze();
+
+        // Create add_embed
+        let cond_add_embed = self.create_add_embed(
+            cond_pooled,
+            (height, width),
+            (0, 0),
+            (height, width),
+        );
+        let uncond_add_embed = self.create_add_embed(
+            uncond_pooled,
+            (height, width),
+            (0, 0),
+            (height, width),
+        );
+
+        // Denoising loop
+        for step_idx in start_step..sampler.num_steps() {
+            let timestep = sampler.timesteps()[step_idx];
+            let t = Tensor::<B, 1>::from_data(
+                TensorData::new(vec![timestep as f32], [1]),
+                &self.device,
+            );
+
+            let noise_uncond = self.unet.forward(
+                latent.clone(),
+                t.clone(),
+                uncond_context.clone(),
+                uncond_add_embed.clone(),
+            );
+            let noise_cond = self.unet.forward(
+                latent.clone(),
+                t,
+                cond_context.clone(),
+                cond_add_embed.clone(),
+            );
+            let noise_pred = apply_guidance(noise_uncond, noise_cond, config.guidance_scale);
+
+            latent = sampler.step(latent, noise_pred, step_idx);
+        }
+
+        // Decode (SDXL scale factor)
+        let latent = latent / 0.13025;
+        self.vae_decoder.forward(latent)
+    }
+}
+
 /// Helper to convert output tensor to image bytes (RGB, 0-255)
 pub fn tensor_to_rgb<B: Backend>(tensor: Tensor<B, 4>) -> Vec<u8> {
     let [_, _, h, w] = tensor.dims();
