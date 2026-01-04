@@ -8,8 +8,9 @@
 - [x] Implement weight loading from safetensors
 - [x] Implement CLIP tokenizer
 - [x] Implement CLIP text encoder
-- [ ] Implement DDIM sampler
-- [ ] Implement VAE decoder
+- [x] Implement DDIM sampler
+- [x] Implement VAE decoder
+- [ ] Implement UNet
 
 ## Roadmap
 
@@ -23,9 +24,9 @@
 ### Phase 2: SD 1.x Components
 
 - [x] CLIP text encoder
-- [ ] VAE decoder (latent → image)
+- [x] VAE decoder (latent → image)
 - [ ] UNet (diffusion backbone)
-- [ ] DDIM sampler
+- [x] DDIM sampler
 
 ### Phase 3: SD 1.x Pipeline
 
