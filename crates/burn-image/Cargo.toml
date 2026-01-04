@@ -2,6 +2,18 @@
 name = "burn-image"
 version = "0.1.0"
 edition = "2021"
+description = "Stable Diffusion in pure Rust using the Burn deep learning framework"
+license = "MIT OR Apache-2.0"
+keywords = ["stable-diffusion", "ai", "machine-learning", "image-generation"]
+categories = ["science", "multimedia::images"]
+
+[features]
+default = []
+# Backend features - enable at most one
+ndarray = ["burn-ndarray"]
+tch = ["burn-tch"]
+wgpu = ["burn-wgpu"]
+cuda = ["burn-cuda"]
 
 [dependencies]
 burn.workspace = true
@@ -11,3 +23,9 @@ burn-image-vae.workspace = true
 burn-image-unet.workspace = true
 burn-image-samplers.workspace = true
 burn-image-convert.workspace = true
+
+# Optional backend dependencies
+burn-ndarray = { workspace = true, optional = true }
+burn-tch = { workspace = true, optional = true }
+burn-wgpu = { workspace = true, optional = true }
+burn-cuda = { workspace = true, optional = true }

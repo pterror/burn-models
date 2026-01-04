@@ -21,6 +21,10 @@ burn-image-convert = { path = "crates/burn-image-convert" }
 
 # External dependencies
 burn = "0.16"
+burn-ndarray = "0.16"
+burn-tch = "0.16"
+burn-wgpu = "0.16"
+burn-cuda = "0.16"
 bytemuck = "1.21"
 half = "2.4"
 memmap2 = "0.9"

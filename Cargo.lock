@@ -467,12 +467,16 @@ name = "burn-image"
 version = "0.1.0"
 dependencies = [
  "burn",
+ "burn-cuda",
  "burn-image-clip",
  "burn-image-convert",
  "burn-image-core",
  "burn-image-samplers",
  "burn-image-unet",
  "burn-image-vae",
+ "burn-ndarray",
+ "burn-tch",
+ "burn-wgpu",
 ]
 
 [[package]]

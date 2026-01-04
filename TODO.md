@@ -46,7 +46,7 @@
 
 - [x] SDXL text-to-image
 - [x] SDXL img2img
-- [ ] Inpainting
+- [x] Inpainting
 - [x] Base + refiner workflow
 
 ### Phase 6: Polish
