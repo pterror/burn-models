@@ -94,7 +94,8 @@ impl<B: Backend> ResBlock<B> {
         // Add time embedding
         let time_emb = silu(time_emb);
         let time_emb = self.time_emb_proj.forward(time_emb);
-        let time_emb = time_emb.reshape([b, time_emb.dims()[1], 1, 1]);
+        let emb_dim = time_emb.dims()[1];
+        let time_emb = time_emb.reshape([b, emb_dim, 1, 1]);
         let hidden = hidden + time_emb;
 
         // Second conv block

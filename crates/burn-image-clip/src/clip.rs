@@ -2,9 +2,11 @@
 //!
 //! Implements the CLIP text encoder used in Stable Diffusion 1.x models.
 
+use burn::module::Param;
 use burn::nn::{Embedding, EmbeddingConfig, Linear, LinearConfig};
 use burn::prelude::*;
 use burn::tensor::activation::sigmoid;
+use burn::tensor::Int;
 
 use burn_image_core::layernorm::LayerNorm;
 
@@ -71,8 +73,8 @@ impl<B: Backend> ClipTextEncoder<B> {
     ///
     /// Input: token_ids [batch, seq_len]
     /// Output: hidden_states [batch, seq_len, embed_dim]
-    pub fn forward(&self, token_ids: Tensor<B, 2>) -> Tensor<B, 3> {
-        let [batch, seq_len] = token_ids.dims();
+    pub fn forward(&self, token_ids: Tensor<B, 2, Int>) -> Tensor<B, 3> {
+        let [_batch, seq_len] = token_ids.dims();
 
         // Token embeddings
         let x = self.token_embedding.forward(token_ids);
@@ -96,9 +98,9 @@ impl<B: Backend> ClipTextEncoder<B> {
     }
 
     /// Get the embedding at the end-of-text token position
-    pub fn forward_pooled(&self, token_ids: Tensor<B, 2>, eos_positions: &[usize]) -> Tensor<B, 2> {
+    pub fn forward_pooled(&self, token_ids: Tensor<B, 2, Int>, eos_positions: &[usize]) -> Tensor<B, 2> {
         let hidden = self.forward(token_ids);
-        let [batch, _seq, embed] = hidden.dims();
+        let [_batch, _seq, embed] = hidden.dims();
 
         // Extract embeddings at EOS positions
         let mut pooled = Vec::new();

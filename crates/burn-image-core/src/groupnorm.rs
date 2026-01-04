@@ -23,18 +23,21 @@ impl<B: Backend> GroupNorm<B> {
         let [batch, channels, height, width] = x.dims();
         let group_size = channels / self.num_groups;
 
-        // Reshape to [batch, num_groups, group_size, height, width]
-        let x = x.reshape([batch, self.num_groups, group_size, height, width]);
+        // Reshape to [batch, num_groups, group_size * height * width]
+        let x = x.reshape([batch, self.num_groups, group_size * height * width]);
 
-        // Compute mean and variance over group_size, height, width
-        let mean = x.clone().mean_dim(2).mean_dim(2).mean_dim(2);
-        let var = x.clone().var(2).mean_dim(2).mean_dim(2);
+        // Compute mean and variance over the last dimension
+        let mean = x.clone().mean_dim(2); // [batch, num_groups]
+        let var = x.clone().var(2);       // [batch, num_groups]
+
+        // Expand for broadcasting: [batch, num_groups, 1]
+        let mean = mean.unsqueeze::<3>(); // [batch, num_groups, 1]
+        let var = var.unsqueeze::<3>();   // [batch, num_groups, 1]
 
         // Normalize
-        let x = (x - mean.unsqueeze_dim(2).unsqueeze_dim(2).unsqueeze_dim(2))
-            / (var.unsqueeze_dim(2).unsqueeze_dim(2).unsqueeze_dim(2) + self.eps).sqrt();
+        let x = (x - mean) / (var + self.eps).sqrt();
 
-        // Reshape back
+        // Reshape back to [batch, channels, height, width]
         let x = x.reshape([batch, channels, height, width]);
 
         // Apply weight and bias

@@ -1,6 +1,7 @@
 //! Diffusion pipeline trait and implementations
 
 use burn::prelude::*;
+use burn::tensor::Int;
 
 use burn_image_clip::{ClipConfig, ClipTextEncoder, ClipTokenizer, END_OF_TEXT};
 use burn_image_samplers::{apply_guidance, DdimConfig, DdimSampler, NoiseSchedule};
@@ -106,7 +107,7 @@ impl<B: Backend> StableDiffusion1x<B> {
     /// Encode a single text prompt
     fn encode_text(&self, text: &str) -> Tensor<B, 3> {
         let tokens = self.tokenizer.encode_padded(text, 77);
-        let token_tensor = Tensor::<B, 1>::from_data(
+        let token_tensor: Tensor<B, 1, Int> = Tensor::from_data(
             TensorData::new(tokens.iter().map(|&t| t as i32).collect::<Vec<_>>(), [77]),
             &self.device,
         );
@@ -239,7 +240,7 @@ impl<B: Backend> StableDiffusion1xImg2Img<B> {
     /// Encode a single text prompt
     fn encode_text(&self, text: &str) -> Tensor<B, 3> {
         let tokens = self.tokenizer.encode_padded(text, 77);
-        let token_tensor = Tensor::<B, 1>::from_data(
+        let token_tensor: Tensor<B, 1, Int> = Tensor::from_data(
             TensorData::new(tokens.iter().map(|&t| t as i32).collect::<Vec<_>>(), [77]),
             &self.device,
         );

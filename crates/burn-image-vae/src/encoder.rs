@@ -246,14 +246,7 @@ impl<B: Backend> Downsample<B> {
     }
 
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
-        // Pad asymmetrically: (0, 1, 0, 1)
-        let [b, c, h, w] = x.dims();
-
-        // Manual padding on right and bottom
-        let padded = Tensor::zeros([b, c, h + 1, w + 1], &x.device());
-        // This is a simplification - proper implementation would use pad operation
-        // For now, use the conv with asymmetric padding config
-
+        // Use strided conv with asymmetric padding for 2x downsampling
         self.conv.forward(x)
     }
 }

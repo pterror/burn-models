@@ -95,9 +95,10 @@ impl<B: Backend> DdimSampler<B> {
 
         // For eta = 0 (deterministic DDIM), sigma = 0
         let sigma = if self.config.eta > 0.0 {
-            let variance = (1.0 - alpha_cumprod_t_prev.clone())
-                / (alpha_cumprod_t.clone().neg() + 1.0)
-                * (alpha_cumprod_t.neg() + alpha_cumprod_t_prev.clone());
+            let one_minus_alpha_prev = alpha_cumprod_t_prev.clone().neg() + 1.0;
+            let one_minus_alpha_t = alpha_cumprod_t.clone().neg() + 1.0;
+            let alpha_diff = alpha_cumprod_t.neg() + alpha_cumprod_t_prev.clone();
+            let variance = one_minus_alpha_prev / one_minus_alpha_t * alpha_diff;
             variance.sqrt() * self.config.eta
         } else {
             Tensor::zeros([1], &latent.device())
