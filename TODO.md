@@ -30,8 +30,8 @@
 
 ### Phase 3: SD 1.x Pipeline
 
-- [ ] Text-to-image generation
-- [ ] Classifier-free guidance
+- [x] Text-to-image generation
+- [x] Classifier-free guidance
 - [ ] VAE encoder (for img2img)
 - [ ] Image-to-image pipeline
 

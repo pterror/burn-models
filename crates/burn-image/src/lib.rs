@@ -10,3 +10,7 @@ pub use burn_image_samplers as samplers;
 pub use burn_image_convert as convert;
 
 pub mod pipeline;
+
+pub use pipeline::{
+    DiffusionPipeline, SampleConfig, Sd1xConditioning, StableDiffusion1x, tensor_to_rgb,
+};
