@@ -37,6 +37,7 @@ pub use burn_image_samplers as samplers;
 pub use burn_image_convert as convert;
 
 pub mod backends;
+pub mod memory;
 pub mod pipeline;
 
 pub use pipeline::{
@@ -54,3 +55,5 @@ pub use pipeline::{
     // SDXL Base + Refiner Workflow
     BaseRefinerConfig, StableDiffusionXLWithRefiner,
 };
+
+pub use memory::{MemoryConfig, TiledVae};
