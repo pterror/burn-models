@@ -17,7 +17,7 @@
 ### Phase 1: Foundation
 
 - [x] Weight loading infrastructure (safetensors → Burn tensors)
-- [ ] Model serialization (save/load converted weights)
+- [x] Model serialization (save/load converted weights)
 - [x] Basic tensor ops (silu, groupnorm, layernorm)
 - [x] Attention mechanism (qkv_attention, causal_mask)
 
