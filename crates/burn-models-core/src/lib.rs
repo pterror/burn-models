@@ -16,5 +16,6 @@ pub mod rmsnorm;
 pub mod rope;
 pub mod silu;
 pub mod textual_inversion;
+pub mod temporal_attention;
 pub mod transformer;
 pub mod vae3d;
