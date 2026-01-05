@@ -539,7 +539,7 @@ pub struct Rwkv<B: Backend> {
 /// Runtime configuration for RWKV (not part of Module)
 pub struct RwkvRuntime<B: Backend> {
     pub config: RwkvConfig,
-    _marker: std::marker::PhantomData<B>,
+    pub _marker: std::marker::PhantomData<B>,
 }
 
 /// Output from the RWKV model

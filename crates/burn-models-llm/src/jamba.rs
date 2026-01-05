@@ -157,7 +157,7 @@ impl JambaConfig {
 /// Runtime configuration (non-Module data)
 pub struct JambaRuntime<B: Backend> {
     pub config: JambaConfig,
-    _marker: std::marker::PhantomData<B>,
+    pub _marker: std::marker::PhantomData<B>,
 }
 
 /// State for one Jamba layer during inference
@@ -216,13 +216,13 @@ pub struct JambaOutput<B: Backend> {
 #[derive(Module, Debug)]
 pub struct Jamba<B: Backend> {
     /// Token embeddings
-    embed_tokens: Embedding<B>,
+    pub embed_tokens: Embedding<B>,
     /// Jamba layers (mix of Mamba, attention, and MoE)
-    layers: Vec<JambaBlock<B>>,
+    pub layers: Vec<JambaBlock<B>>,
     /// Final layer norm
-    ln_f: LayerNorm<B>,
+    pub ln_f: LayerNorm<B>,
     /// Language model head
-    lm_head: Linear<B>,
+    pub lm_head: Linear<B>,
 }
 
 impl<B: Backend> Jamba<B> {
@@ -308,11 +308,11 @@ impl<B: Backend> Jamba<B> {
 #[derive(Module, Debug)]
 pub struct JambaBlock<B: Backend> {
     /// Pre-norm
-    ln: LayerNorm<B>,
+    pub ln: LayerNorm<B>,
     /// Core layer (Mamba mixer or Attention)
-    core: JambaCore<B>,
+    pub core: JambaCore<B>,
     /// FFN (dense or MoE)
-    ffn: JambaFFN<B>,
+    pub ffn: JambaFFN<B>,
 }
 
 /// Core layer type
@@ -396,21 +396,21 @@ impl<B: Backend> JambaBlock<B> {
 /// Mamba mixer for Jamba (similar to standalone Mamba)
 #[derive(Module, Debug)]
 pub struct JambaMambaMixer<B: Backend> {
-    in_proj: Linear<B>,
-    conv1d: Conv1d<B>,
-    x_proj: Linear<B>,
-    dt_proj: Linear<B>,
-    a_log: Param<Tensor<B, 2>>,
-    d: Param<Tensor<B, 1>>,
-    out_proj: Linear<B>,
+    pub in_proj: Linear<B>,
+    pub conv1d: Conv1d<B>,
+    pub x_proj: Linear<B>,
+    pub dt_proj: Linear<B>,
+    pub a_log: Param<Tensor<B, 2>>,
+    pub d: Param<Tensor<B, 1>>,
+    pub out_proj: Linear<B>,
     #[module(skip)]
-    d_inner: usize,
+    pub d_inner: usize,
     #[module(skip)]
-    d_state: usize,
+    pub d_state: usize,
     #[module(skip)]
-    d_conv: usize,
+    pub d_conv: usize,
     #[module(skip)]
-    dt_rank: usize,
+    pub dt_rank: usize,
 }
 
 impl<B: Backend> JambaMambaMixer<B> {
@@ -560,16 +560,16 @@ impl<B: Backend> JambaMambaMixer<B> {
 /// Attention layer for Jamba (with GQA)
 #[derive(Module, Debug)]
 pub struct JambaAttention<B: Backend> {
-    q_proj: Linear<B>,
-    k_proj: Linear<B>,
-    v_proj: Linear<B>,
-    o_proj: Linear<B>,
+    pub q_proj: Linear<B>,
+    pub k_proj: Linear<B>,
+    pub v_proj: Linear<B>,
+    pub o_proj: Linear<B>,
     #[module(skip)]
-    n_heads: usize,
+    pub n_heads: usize,
     #[module(skip)]
-    n_kv_heads: usize,
+    pub n_kv_heads: usize,
     #[module(skip)]
-    head_dim: usize,
+    pub head_dim: usize,
 }
 
 impl<B: Backend> JambaAttention<B> {
@@ -652,10 +652,10 @@ impl<B: Backend> JambaAttention<B> {
 /// Dense FFN
 #[derive(Module, Debug)]
 pub struct JambaDenseFFN<B: Backend> {
-    ln: LayerNorm<B>,
-    gate_proj: Linear<B>,
-    up_proj: Linear<B>,
-    down_proj: Linear<B>,
+    pub ln: LayerNorm<B>,
+    pub gate_proj: Linear<B>,
+    pub up_proj: Linear<B>,
+    pub down_proj: Linear<B>,
 }
 
 impl<B: Backend> JambaDenseFFN<B> {
@@ -687,11 +687,11 @@ impl<B: Backend> JambaDenseFFN<B> {
 /// MoE FFN with top-k routing
 #[derive(Module, Debug)]
 pub struct JambaMoEFFN<B: Backend> {
-    ln: LayerNorm<B>,
-    router: Linear<B>,
-    experts: Vec<JambaExpert<B>>,
+    pub ln: LayerNorm<B>,
+    pub router: Linear<B>,
+    pub experts: Vec<JambaExpert<B>>,
     #[module(skip)]
-    n_experts_per_tok: usize,
+    pub n_experts_per_tok: usize,
 }
 
 impl<B: Backend> JambaMoEFFN<B> {
@@ -740,9 +740,9 @@ impl<B: Backend> JambaMoEFFN<B> {
 /// Single expert FFN
 #[derive(Module, Debug)]
 pub struct JambaExpert<B: Backend> {
-    gate_proj: Linear<B>,
-    up_proj: Linear<B>,
-    down_proj: Linear<B>,
+    pub gate_proj: Linear<B>,
+    pub up_proj: Linear<B>,
+    pub down_proj: Linear<B>,
 }
 
 impl<B: Backend> JambaExpert<B> {

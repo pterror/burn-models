@@ -159,7 +159,7 @@ impl MambaConfig {
 /// Runtime configuration (non-Module data)
 pub struct MambaRuntime<B: Backend> {
     pub config: MambaConfig,
-    _marker: std::marker::PhantomData<B>,
+    pub _marker: std::marker::PhantomData<B>,
 }
 
 /// State for one Mamba layer during inference
@@ -194,13 +194,13 @@ pub struct MambaOutput<B: Backend> {
 #[derive(Module, Debug)]
 pub struct Mamba<B: Backend> {
     /// Token embeddings
-    embed_tokens: Embedding<B>,
+    pub embed_tokens: Embedding<B>,
     /// Mamba layers
-    layers: Vec<MambaBlock<B>>,
+    pub layers: Vec<MambaBlock<B>>,
     /// Final layer norm
-    ln_f: LayerNorm<B>,
+    pub ln_f: LayerNorm<B>,
     /// Language model head
-    lm_head: Linear<B>,
+    pub lm_head: Linear<B>,
 }
 
 impl<B: Backend> Mamba<B> {
@@ -286,9 +286,9 @@ impl<B: Backend> Mamba<B> {
 #[derive(Module, Debug)]
 pub struct MambaBlock<B: Backend> {
     /// Pre-norm
-    ln: LayerNorm<B>,
+    pub ln: LayerNorm<B>,
     /// Mamba mixer
-    mixer: MambaMixer<B>,
+    pub mixer: MambaMixer<B>,
 }
 
 impl<B: Backend> MambaBlock<B> {
@@ -317,28 +317,28 @@ impl<B: Backend> MambaBlock<B> {
 #[derive(Module, Debug)]
 pub struct MambaMixer<B: Backend> {
     /// Input projection: d_model -> d_inner * 2 (for x and z branches)
-    in_proj: Linear<B>,
+    pub in_proj: Linear<B>,
     /// Depthwise convolution
-    conv1d: Conv1d<B>,
+    pub conv1d: Conv1d<B>,
     /// SSM parameter projections: d_inner -> dt_rank + 2*d_state
-    x_proj: Linear<B>,
+    pub x_proj: Linear<B>,
     /// Time step projection: dt_rank -> d_inner
-    dt_proj: Linear<B>,
+    pub dt_proj: Linear<B>,
     /// SSM A parameter (log form) [d_inner, d_state]
-    a_log: Param<Tensor<B, 2>>,
+    pub a_log: Param<Tensor<B, 2>>,
     /// SSM D parameter [d_inner]
-    d: Param<Tensor<B, 1>>,
+    pub d: Param<Tensor<B, 1>>,
     /// Output projection
-    out_proj: Linear<B>,
+    pub out_proj: Linear<B>,
     /// Config values
     #[module(skip)]
-    d_inner: usize,
+    pub d_inner: usize,
     #[module(skip)]
-    d_state: usize,
+    pub d_state: usize,
     #[module(skip)]
-    d_conv: usize,
+    pub d_conv: usize,
     #[module(skip)]
-    dt_rank: usize,
+    pub dt_rank: usize,
 }
 
 impl<B: Backend> MambaMixer<B> {

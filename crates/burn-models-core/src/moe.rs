@@ -16,9 +16,9 @@ use crate::glu::{SwiGluFfn, SwiGluFfnConfig};
 /// routing weights, then selects top-k experts per token.
 #[derive(Module, Debug)]
 pub struct MoeRouter<B: Backend> {
-    gate: Linear<B>,
-    num_experts: usize,
-    top_k: usize,
+    pub gate: Linear<B>,
+    pub num_experts: usize,
+    pub top_k: usize,
 }
 
 /// Configuration for MoeRouter
@@ -119,10 +119,10 @@ impl<B: Backend> MoeRouter<B> {
 /// - [Switch Transformers](https://arxiv.org/abs/2101.03961)
 #[derive(Module, Debug)]
 pub struct SparseMoeFfn<B: Backend> {
-    router: MoeRouter<B>,
-    experts: Vec<SwiGluFfn<B>>,
-    num_experts: usize,
-    top_k: usize,
+    pub router: MoeRouter<B>,
+    pub experts: Vec<SwiGluFfn<B>>,
+    pub num_experts: usize,
+    pub top_k: usize,
 }
 
 /// Configuration for SparseMoeFfn
