@@ -160,7 +160,7 @@
 #### Quantization
 - [x] INT8 dynamic quantization (symmetric/asymmetric)
 - [x] INT4 quantization (group-wise, GPTQ style)
-- [ ] FP8 support
+- [x] FP8 support
 
 #### Video-specific
 - [x] 3D VAE (temporal compression)
