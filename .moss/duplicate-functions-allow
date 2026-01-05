@@ -1,71 +1,84 @@
 # Duplicate function groups that are intentionally allowed
+# Format: file:line = "reason"
 
-# Symmetric encoder/decoder pattern - mirror implementations intentional
-crates/burn-image-vae/src/decoder.rs:197 = "Symmetric encoder/decoder pattern - constructors mirror each other by design"
-crates/burn-image-vae/src/encoder.rs:227 = "Symmetric encoder/decoder pattern - constructors mirror each other by design"
+# =============================================================================
+# Symmetric Patterns (encoder/decoder, CLIP/OpenCLIP variants)
+# =============================================================================
 
-# CLIP/OpenCLIP forward methods share structure but use different activations
-crates/burn-image-clip/src/clip.rs:73 = "CLIP/OpenCLIP share forward structure but use different activations (QuickGELU vs GELU)"
-crates/burn-image-clip/src/open_clip.rs:87 = "CLIP/OpenCLIP share forward structure but use different activations (QuickGELU vs GELU)"
+# VAE encoder/decoder - symmetric implementations by design
+crates/burn-image-vae/src/decoder.rs:197 = "Symmetric encoder/decoder - constructors mirror each other"
+crates/burn-image-vae/src/encoder.rs:227 = "Symmetric encoder/decoder - constructors mirror each other"
+crates/burn-image-vae/src/decoder.rs:226 = "Symmetric encoder/decoder - forward methods mirror each other"
+crates/burn-image-vae/src/encoder.rs:256 = "Symmetric encoder/decoder - forward methods mirror each other"
 
-# CLIP/OpenCLIP attention forward methods have same structure with different model dimensions
+# CLIP/OpenCLIP text encoders - same architecture, different sizes/activations
+crates/burn-image-clip/src/clip.rs:73 = "CLIP/OpenCLIP share forward structure (QuickGELU vs GELU activation)"
+crates/burn-image-clip/src/open_clip.rs:87 = "CLIP/OpenCLIP share forward structure (QuickGELU vs GELU activation)"
 crates/burn-image-clip/src/clip.rs:210 = "CLIP/OpenCLIP attention forward - same pattern, different dimensions"
 crates/burn-image-clip/src/open_clip.rs:232 = "CLIP/OpenCLIP attention forward - same pattern, different dimensions"
+crates/burn-image-clip/src/clip.rs:195 = "CLIP/OpenCLIP attention constructor - similar pattern"
+crates/burn-image-clip/src/open_clip.rs:217 = "CLIP/OpenCLIP attention constructor - similar pattern"
+crates/burn-image-clip/src/clip.rs:170 = "CLIP/OpenCLIP forward_penultimate - similar pattern"
+crates/burn-image-clip/src/open_clip.rs:192 = "CLIP/OpenCLIP forward_penultimate - similar pattern"
 
-# API wrapper methods delegate to shared functions - intentional API design
-crates/burn-image-samplers/src/euler_cfg.rs:62 = "API wrapper delegating to shared apply_cfg_plus_plus function"
-crates/burn-image-samplers/src/euler_cfg.rs:133 = "API wrapper delegating to shared apply_cfg_plus_plus function"
-crates/burn-image-samplers/src/dpm_2m_variants.rs:68 = "API wrapper delegating to shared apply_cfg_plus_plus function"
+# =============================================================================
+# Pipeline Constructors (similar initialization with different configs)
+# =============================================================================
 
-# Test functions with similar coefficient verification logic
-crates/burn-image-samplers/src/sa_solver.rs:265 = "Test function with similar coefficient verification pattern"
-crates/burn-image-samplers/src/ipndm.rs:238 = "Test function with similar coefficient verification pattern"
+crates/burn-image/src/pipeline.rs:89 = "SD1.x pipeline constructor"
+crates/burn-image/src/pipeline.rs:238 = "SD1.x img2img pipeline constructor"
+crates/burn-image/src/pipeline.rs:376 = "SD1.x inpaint pipeline constructor"
+crates/burn-image/src/pipeline.rs:813 = "SDXL img2img pipeline constructor"
+crates/burn-image/src/pipeline.rs:1015 = "SDXL inpaint pipeline constructor"
+crates/burn-image/src/pipeline.rs:1265 = "SDXL refiner pipeline constructor"
 
-# Pipeline constructors - similar initialization for different pipeline types
-crates/burn-image/src/pipeline.rs:73 = "Pipeline constructors share similar initialization patterns by design"
-crates/burn-image/src/pipeline.rs:222 = "Pipeline constructors share similar initialization patterns by design"
-crates/burn-image/src/pipeline.rs:360 = "Pipeline constructors share similar initialization patterns by design"
-crates/burn-image/src/pipeline.rs:813 = "Pipeline constructors share similar initialization patterns by design"
-crates/burn-image/src/pipeline.rs:1023 = "Pipeline constructors share similar initialization patterns by design"
-crates/burn-image/src/pipeline.rs:1281 = "Pipeline constructors share similar initialization patterns by design"
+# =============================================================================
+# API Wrapper Methods (delegate to shared functions)
+# =============================================================================
 
-# Size embedding functions share common pattern across pipeline implementations
-crates/burn-image/src/pipeline.rs:879 = "Size embedding helper - common pattern across pipelines"
-crates/burn-image/src/pipeline.rs:1065 = "Size embedding helper - common pattern across pipelines"
-crates/burn-image/src/pipeline.rs:1340 = "Size embedding helper - common pattern across pipelines"
+# CFG++ guidance wrappers - delegate to shared apply_cfg_plus_plus function
+crates/burn-image-samplers/src/euler_cfg.rs:62 = "API wrapper for apply_cfg_plus_plus"
+crates/burn-image-samplers/src/euler_cfg.rs:133 = "API wrapper for apply_cfg_plus_plus"
+crates/burn-image-samplers/src/dpm_2m_variants.rs:68 = "API wrapper for apply_cfg_plus_plus"
 
-# Sampler constructors - simple initialization patterns that are similar
-crates/burn-image-samplers/src/euler.rs:37 = "Sampler constructor - simple initialization pattern"
-crates/burn-image-samplers/src/euler.rs:119 = "Sampler constructor - simple initialization pattern"
-crates/burn-image-samplers/src/euler_cfg.rs:43 = "Sampler constructor - simple initialization pattern"
-crates/burn-image-samplers/src/euler_cfg.rs:114 = "Sampler constructor - simple initialization pattern"
-crates/burn-image-samplers/src/heun.rs:37 = "Sampler constructor - simple initialization pattern"
-crates/burn-image-samplers/src/heun.rs:124 = "Sampler constructor - simple initialization pattern"
-crates/burn-image-samplers/src/dpm2.rs:39 = "Sampler constructor - simple initialization pattern"
-crates/burn-image-samplers/src/dpm2.rs:100 = "Sampler constructor - simple initialization pattern"
-crates/burn-image-samplers/src/dpm_2s.rs:44 = "Sampler constructor - simple initialization pattern"
-crates/burn-image-samplers/src/dpm3m.rs:48 = "Sampler constructor - simple initialization pattern"
-crates/burn-image-samplers/src/dpm_2m_variants.rs:167 = "Sampler constructor - simple initialization pattern"
-crates/burn-image-samplers/src/ipndm.rs:54 = "Sampler constructor - simple initialization pattern"
-crates/burn-image-samplers/src/ipndm.rs:148 = "Sampler constructor - simple initialization pattern"
+# init_latent wrappers - delegate to shared init_noise_latent function
+crates/burn-image-samplers/src/euler.rs:178 = "init_latent wrapper for init_noise_latent"
+crates/burn-image-samplers/src/dpm.rs:138 = "init_latent wrapper for init_noise_latent"
+crates/burn-image-samplers/src/dpm.rs:223 = "init_latent wrapper for init_noise_latent"
 
-# init_latent wrapper methods - delegate to shared init_noise_latent
-crates/burn-image-samplers/src/euler.rs:178 = "init_latent wrapper delegating to shared function"
-crates/burn-image-samplers/src/dpm.rs:138 = "init_latent wrapper delegating to shared function"
-crates/burn-image-samplers/src/dpm.rs:223 = "init_latent wrapper delegating to shared function"
+# =============================================================================
+# Sampler Constructors (simple initialization patterns)
+# =============================================================================
 
-# CLIP constructor patterns
-crates/burn-image-clip/src/clip.rs:195 = "CLIP attention constructor - similar pattern between CLIP variants"
-crates/burn-image-clip/src/open_clip.rs:217 = "OpenCLIP attention constructor - similar pattern between CLIP variants"
+crates/burn-image-samplers/src/euler.rs:37 = "EulerSampler constructor - simple init pattern"
+crates/burn-image-samplers/src/euler.rs:119 = "EulerAncestralSampler constructor - simple init pattern"
+crates/burn-image-samplers/src/euler_cfg.rs:43 = "EulerCfgPlusPlusSampler constructor"
+crates/burn-image-samplers/src/euler_cfg.rs:114 = "EulerAncestralCfgPlusPlusSampler constructor"
+crates/burn-image-samplers/src/heun.rs:37 = "HeunSampler constructor"
+crates/burn-image-samplers/src/heun.rs:124 = "HeunPP2Sampler constructor"
+crates/burn-image-samplers/src/dpm2.rs:39 = "Dpm2Sampler constructor"
+crates/burn-image-samplers/src/dpm2.rs:100 = "Dpm2AncestralSampler constructor"
+crates/burn-image-samplers/src/dpm_2s.rs:44 = "Dpm2sAncestralSampler constructor"
+crates/burn-image-samplers/src/dpm3m.rs:48 = "Dpm3mSdeSampler constructor"
+crates/burn-image-samplers/src/dpm_2m_variants.rs:167 = "Dpm2mSdeHeunSampler constructor"
+crates/burn-image-samplers/src/ipndm.rs:54 = "IpndmSampler constructor"
+crates/burn-image-samplers/src/ipndm.rs:148 = "IpndmVSampler constructor"
 
-# CLIP forward_penultimate patterns
-crates/burn-image-clip/src/clip.rs:170 = "CLIP forward_penultimate - similar pattern between CLIP variants"
-crates/burn-image-clip/src/open_clip.rs:192 = "OpenCLIP forward_penultimate - similar pattern between CLIP variants"
+# =============================================================================
+# Test Functions (similar verification patterns)
+# =============================================================================
 
-# VAE forward methods
-crates/burn-image-vae/src/decoder.rs:226 = "VAE decoder forward - symmetric with encoder by design"
-crates/burn-image-vae/src/encoder.rs:256 = "VAE encoder forward - symmetric with decoder by design"
+crates/burn-image-samplers/src/sa_solver.rs:265 = "Test function for AB coefficients"
+crates/burn-image-samplers/src/ipndm.rs:238 = "Test function for linear multistep coefficients"
 
-# Precision conversion functions
-crates/burn-image-core/src/precision.rs:61 = "Precision conversion helper - fp16/bf16 share similar pattern"
-crates/burn-image-core/src/precision.rs:71 = "Precision conversion helper - fp16/bf16 share similar pattern"
+# =============================================================================
+# Similar Utility Functions
+# =============================================================================
+
+# Coefficient calculation functions - similar mathematical patterns
+crates/burn-image-samplers/src/sa_solver.rs:267 = "get_ab_coefficients - mathematical utility"
+crates/burn-image-samplers/src/ipndm.rs:240 = "get_linear_multistep_coeff - mathematical utility"
+
+# Precision conversion functions - fp16/bf16 share similar pattern
+crates/burn-image-core/src/precision.rs:61 = "fp16 precision conversion"
+crates/burn-image-core/src/precision.rs:71 = "bf16 precision conversion"
