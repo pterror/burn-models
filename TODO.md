@@ -117,7 +117,7 @@
 - [x] Stable Diffusion 3 / 3.5 - MMDiT (Multimodal Diffusion Transformer), rectified flow
 - [ ] Z-Image (Alibaba) - Single-stream DiT (S3-DiT), 6B params, very fast
 - [ ] Qwen-Image (Alibaba) - 20B MMDiT, Qwen2.5-VL text encoder, Apache 2.0
-- [ ] PixArt-α/Σ - Efficient DiT, T5 text encoder
+- [x] PixArt-α/Σ - Efficient DiT, T5 text encoder, cross-attention to text
 - [ ] AuraFlow - Open source flow-based
 - [ ] Hunyuan-DiT - Bilingual DiT model
 
