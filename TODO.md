@@ -119,7 +119,7 @@
 - [ ] Qwen-Image (Alibaba) - 20B MMDiT, Qwen2.5-VL text encoder, Apache 2.0
 - [x] PixArt-α/Σ - Efficient DiT, T5 text encoder, cross-attention to text
 - [x] AuraFlow - Open source flow-based, MMDiT joint attention
-- [ ] Hunyuan-DiT - Bilingual DiT model
+- [x] Hunyuan-DiT - Bilingual DiT model, dual text encoder (CLIP + MT5), skip connections
 
 ### Video Generation
 
