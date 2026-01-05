@@ -1,3 +1,45 @@
+//! Weight Loading and Serialization
+//!
+//! This crate handles loading model weights from safetensors format
+//! and provides serialization utilities for Burn models.
+//!
+//! # Weight Loading
+//!
+//! Load weights from safetensors files:
+//!
+//! ```ignore
+//! use burn_models_convert::{SafeTensorFile, LoadError};
+//!
+//! let file = SafeTensorFile::open("model.safetensors")?;
+//! let tensor = file.load_tensor::<f32>("model.encoder.weight")?;
+//! ```
+//!
+//! # Specialized Loaders
+//!
+//! - [`load_lora`] - Load LoRA weights (Kohya, Diffusers formats)
+//! - [`load_controlnet_info`] - Detect ControlNet type and config
+//! - [`load_embedding`] - Load textual inversion embeddings
+//!
+//! # Serialization
+//!
+//! Save and load Burn models with configurable precision:
+//!
+//! ```ignore
+//! use burn_models_convert::{BinFileRecorder, FullPrecisionSettings};
+//!
+//! // Save model
+//! let recorder = BinFileRecorder::<FullPrecisionSettings>::new();
+//! recorder.record(model, "model.bin")?;
+//!
+//! // Load model
+//! let model = recorder.load("model.bin", &device)?;
+//! ```
+//!
+//! # Precision Options
+//!
+//! - [`FullPrecisionSettings`] - f32 weights
+//! - [`HalfPrecisionSettings`] - f16/bf16 weights
+
 pub mod controlnet_loader;
 pub mod embedding_loader;
 pub mod loader;

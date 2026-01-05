@@ -1,3 +1,36 @@
+//! CLIP and OpenCLIP Text Encoders
+//!
+//! This crate provides text encoder implementations for conditioning
+//! diffusion models on text prompts.
+//!
+//! # Encoders
+//!
+//! - [`ClipTextEncoder`] - OpenAI CLIP ViT-L/14 (SD 1.x, SD 2.x)
+//! - [`OpenClipTextEncoder`] - OpenCLIP ViT-bigG (SDXL second encoder)
+//!
+//! # Tokenizer
+//!
+//! The [`ClipTokenizer`] handles BPE tokenization of text prompts:
+//!
+//! ```ignore
+//! use burn_models_clip::ClipTokenizer;
+//!
+//! let tokenizer = ClipTokenizer::from_file("vocab.txt")?;
+//! let tokens = tokenizer.encode("a photo of a cat")?;
+//! ```
+//!
+//! # Example
+//!
+//! ```ignore
+//! use burn_models_clip::{ClipConfig, ClipTextEncoder};
+//!
+//! // SD 1.x CLIP encoder
+//! let config = ClipConfig::sd1x();
+//! let encoder = config.init::<Backend>(&device);
+//!
+//! let embeddings = encoder.forward(token_ids);
+//! ```
+
 pub mod tokenizer;
 pub mod attention;
 pub mod clip;

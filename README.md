@@ -1,14 +1,15 @@
-# burn-image
+# burn-models
 
-Stable Diffusion image generation in pure Rust using the [Burn](https://burn.dev) deep learning framework.
+Deep learning model inference in pure Rust using the [Burn](https://burn.dev) framework.
 
 ## Features
 
 - **Pure Rust** - No Python dependencies, no ONNX runtime
-- **Multiple Models** - Support for SD 1.x, SDXL, and SDXL + Refiner
 - **Multiple Backends** - CPU (ndarray), CUDA, WebGPU, and PyTorch via libtorch
-- **Multiple Pipelines** - Text-to-image, img2img, and inpainting
-- **Memory Efficient** - VAE tiling for large images
+- **Image Generation** - Stable Diffusion 1.x/2.x, SDXL, Flux, SD3, PixArt, SANA, and more
+- **Video Generation** - CogVideoX, Mochi, LTX-Video, Wan
+- **Language Models** - LLaMA, Mistral, Qwen, Gemma, Phi, DeepSeek, RWKV, Mamba, Jamba
+- **Memory Efficient** - VAE tiling, model offloading, quantization support
 
 ## Installation
 
@@ -16,7 +17,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-burn-image = { version = "0.1", features = ["wgpu"] }
+burn-models = { version = "0.1", features = ["wgpu"] }
 ```
 
 Available backend features:
@@ -27,158 +28,131 @@ Available backend features:
 
 ## Quick Start
 
-```rust
-use burn_image::{
-    backends::{Wgpu, WgpuDevice},
-    clip::ClipTokenizer,
-    StableDiffusionXL, SdxlSampleConfig,
-};
-
-fn main() -> anyhow::Result<()> {
-    // Initialize backend
-    let device = WgpuDevice::default();
-
-    // Load tokenizer
-    let tokenizer = ClipTokenizer::from_file("vocab.txt")?;
-
-    // Create pipeline
-    let pipeline = StableDiffusionXL::<Wgpu>::new(tokenizer, &device);
-
-    // Configure generation
-    let config = SdxlSampleConfig {
-        width: 1024,
-        height: 1024,
-        steps: 30,
-        guidance_scale: 7.5,
-        seed: None,
-    };
-
-    // Generate image
-    let image = pipeline.generate(
-        "a sunset over mountains, dramatic lighting",
-        "",  // negative prompt
-        &config,
-    );
-
-    Ok(())
-}
-```
-
-## CLI Usage
-
-Install the CLI:
-
-```bash
-cargo install burn-image-cli
-```
-
-Generate an image:
-
-```bash
-burn-image generate \
-    --prompt "a cat sitting on a windowsill" \
-    --output cat.png \
-    --model sdxl \
-    --vocab vocab.txt \
-    --weights ./models/sdxl
-```
-
-Show available backends:
-
-```bash
-burn-image info
-```
-
-## Pipelines
-
-### Text-to-Image
-
-Generate images from text prompts:
+### Image Generation (Stable Diffusion)
 
 ```rust
-use burn_image::{StableDiffusion1x, SampleConfig};
+use burn_models::prelude::*;
 
-let config = SampleConfig::default();
-let image = pipeline.generate("a beautiful landscape", "", &config);
+// Load model and generate
+let pipeline = StableDiffusion1x::load("model.safetensors", &device)?;
+let image = pipeline.generate("a sunset over mountains", "", &SampleConfig::default());
 ```
 
-### Image-to-Image
-
-Transform existing images based on prompts:
+### DiT Models (Flux, SD3)
 
 ```rust
-use burn_image::{StableDiffusion1xImg2Img, Img2ImgConfig};
+use burn_models_dit::{Flux, FluxConfig};
 
-let config = Img2ImgConfig {
-    strength: 0.75,
-    steps: 30,
-    guidance_scale: 7.5,
-    seed: None,
-};
-let transformed = pipeline.generate(input_image, "oil painting style", "", &config);
+let config = FluxConfig::schnell();
+let (model, runtime) = config.init::<Backend>(&device);
+
+let output = model.forward(latents, timestep, txt_embeds, img_ids, txt_ids, &runtime);
 ```
 
-### Inpainting
-
-Regenerate masked regions of an image:
+### Language Models
 
 ```rust
-use burn_image::{StableDiffusion1xInpaint, InpaintConfig};
+use burn_models_llm::{Llama, LlamaConfig};
 
-let config = InpaintConfig::default();
-// mask: 1 = regenerate, 0 = preserve
-let inpainted = pipeline.inpaint(image, mask, "a red rose", "", &config);
+let config = LlamaConfig::llama3_8b();
+let (model, runtime) = config.init::<Backend>(&device);
+
+let output = model.forward(input_ids, None, &runtime);
+let generated = model.generate(prompt_ids, &runtime, 100, 0.8);
 ```
 
-### SDXL with Refiner
+## Supported Models
 
-Highest quality generation using base + refiner workflow:
+### Image Generation (UNet-based)
+- Stable Diffusion 1.x, 2.x
+- Stable Diffusion XL (base + refiner)
+- Stable Cascade
 
-```rust
-use burn_image::{StableDiffusionXLWithRefiner, BaseRefinerConfig};
+### Image Generation (DiT-based)
+- **Flux** - Black Forest Labs (schnell, dev)
+- **Stable Diffusion 3/3.5** - MMDiT architecture
+- **PixArt-α/Σ** - Efficient DiT with T5 encoder
+- **AuraFlow** - Open source flow-based
+- **Hunyuan-DiT** - Bilingual (Chinese/English)
+- **SANA** - NVIDIA's linear DiT for fast 4K generation
+- **Z-Image** - Alibaba's single-stream DiT
+- **Qwen-Image** - 20B MMDiT
 
-let config = BaseRefinerConfig {
-    width: 1024,
-    height: 1024,
-    steps: 40,
-    refiner_start: 0.8,  // Refiner takes over at 80%
-    ..Default::default()
-};
+### Video Generation
+- **CogVideoX** - 2B/5B open source video DiT
+- **Mochi** - Genmo's asymmetric DiT
+- **LTX-Video** - Lightricks video model
+- **Wan 2.x** - Alibaba DiT + MoE
 
-let image = pipeline.generate("detailed portrait", "", &config);
-```
-
-## Memory Optimization
-
-For systems with limited VRAM, enable VAE tiling:
-
-```rust
-use burn_image::{MemoryConfig, TiledVae};
-
-let config = MemoryConfig::low_vram();
-let tiler = TiledVae::new(config.vae_tile_size, config.vae_tile_overlap);
-```
+### Language Models
+- **LLaMA 2/3** - Meta's models (7B to 70B)
+- **Mistral/Mixtral** - Sliding window attention, MoE
+- **Qwen 2.5** - Multilingual (0.5B to 72B)
+- **Gemma 2** - Google's models
+- **Phi-3/3.5** - Microsoft's efficient models
+- **DeepSeek** - Multi-head Latent Attention
+- **RWKV-7** - RNN with transformer performance
+- **Mamba/Mamba-2** - Selective state space models
+- **Jamba** - Transformer-Mamba-MoE hybrid
 
 ## Architecture
 
-The library is organized into several crates:
+```
+burn-models/
+├── burn-models          # Main crate with pipelines
+├── burn-models-core     # Shared building blocks
+│   ├── attention        # Multi-head, flash, paged attention
+│   ├── rope             # Rotary position embeddings
+│   ├── quantization     # INT4/INT8/FP8 quantization
+│   └── ...
+├── burn-models-clip     # CLIP/OpenCLIP text encoders
+├── burn-models-vae      # VAE encoder/decoder (2D, 3D)
+├── burn-models-unet     # UNet for SD 1.x/2.x/XL
+├── burn-models-dit      # DiT models (Flux, SD3, video)
+├── burn-models-llm      # Language models
+├── burn-models-samplers # Diffusion samplers
+└── burn-models-convert  # Safetensors weight loading
+```
 
-- `burn-image` - Main crate with pipelines and re-exports
-- `burn-image-core` - Core tensor operations (attention, normalization)
-- `burn-image-clip` - CLIP/OpenCLIP text encoders
-- `burn-image-vae` - VAE encoder/decoder
-- `burn-image-unet` - UNet diffusion backbone
-- `burn-image-samplers` - DDIM and other samplers
-- `burn-image-convert` - Safetensors weight loading
-- `burn-image-cli` - Command-line interface
+## Samplers
+
+Extensive sampler support for diffusion models:
+
+- DDIM, DDPM, Euler, Euler Ancestral
+- DPM++ 2M, DPM++ SDE, DPM++ 2S Ancestral
+- Heun, LMS, UniPC, DEIS
+- LCM (Latent Consistency)
+- And many more...
+
+## Model Extensions
+
+- **LoRA** - Kohya and Diffusers formats
+- **ControlNet** - SD 1.x and SDXL
+- **IP-Adapter** - Image prompt conditioning
+- **T2I-Adapter** - Lightweight conditioning
+- **Textual Inversion** - Custom embeddings
+
+## Memory Optimization
+
+```rust
+// VAE tiling for large images
+let config = MemoryConfig::low_vram();
+let tiler = TiledVae::new(config.vae_tile_size, config.vae_tile_overlap);
+
+// Model offloading
+let config = OffloadConfig::sequential_cpu_gpu();
+```
 
 ## Model Weights
 
-This library loads weights from safetensors format. You'll need to obtain weights
-from sources like:
+Load weights from safetensors format. Obtain weights from:
 
-- [Hugging Face Hub](https://huggingface.co/models?library=diffusers)
+- [Hugging Face Hub](https://huggingface.co/models)
 - [Civitai](https://civitai.com/)
+
+## Documentation
+
+See the [documentation site](https://docs.burn-models.dev) for detailed guides.
 
 ## License
 

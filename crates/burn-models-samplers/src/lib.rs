@@ -1,3 +1,66 @@
+//! Diffusion Samplers for Image Generation
+//!
+//! This crate provides a comprehensive collection of diffusion samplers
+//! for denoising latents in Stable Diffusion and related models.
+//!
+//! # Sampler Categories
+//!
+//! ## Basic Samplers
+//! - [`DdimSampler`] - Deterministic, fast (10-50 steps)
+//! - [`DdpmSampler`] - Original DDPM, stochastic
+//! - [`EulerSampler`] - Euler method, balanced speed/quality
+//! - [`EulerAncestralSampler`] - Euler with ancestral sampling
+//!
+//! ## DPM++ Family (Recommended)
+//! - [`DpmPlusPlusSampler`] - DPM++ 2M, excellent quality
+//! - [`DpmPlusPlusSdeSampler`] - DPM++ 2M SDE, more detail
+//! - [`Dpm2sAncestralSampler`] - DPM++ 2S ancestral
+//! - [`Dpm3mSdeSampler`] - DPM++ 3M SDE, highest quality
+//!
+//! ## Advanced Samplers
+//! - [`HeunSampler`] - Heun's method, high quality
+//! - [`LmsSampler`] - Linear multistep
+//! - [`UniPcSampler`] - UniPC predictor-corrector
+//! - [`DeisSampler`] - DEIS exponential integrator
+//! - [`SaSolver`] - SA-Solver with stochastic churn
+//!
+//! ## Fast Samplers
+//! - [`LcmSampler`] - Latent Consistency Model (4-8 steps)
+//! - [`DpmFastSampler`] - Fast DPM sampling
+//! - [`DpmAdaptiveSampler`] - Adaptive step sizing
+//!
+//! ## CFG++ Variants
+//! - [`EulerCfgPlusPlusSampler`] - Improved guidance
+//! - [`EulerAncestralCfgPlusPlusSampler`]
+//! - [`Dpm2mCfgPlusPlusSampler`]
+//!
+//! # Noise Schedules
+//!
+//! Use [`ScheduleConfig`] to configure noise schedules:
+//! - Linear (SD 1.x default)
+//! - Scaled linear (SDXL)
+//! - Cosine
+//! - Karras sigmas
+//!
+//! # Example
+//!
+//! ```ignore
+//! use burn_models_samplers::{DpmPlusPlusSampler, DpmConfig, ScheduleConfig};
+//!
+//! let schedule = ScheduleConfig::scaled_linear(1000);
+//! let sampler = DpmPlusPlusSampler::new(DpmConfig {
+//!     schedule,
+//!     steps: 30,
+//!     ..Default::default()
+//! });
+//!
+//! // Sampling loop
+//! for t in sampler.timesteps() {
+//!     let noise_pred = unet.forward(latents, t, cond);
+//!     latents = sampler.step(latents, noise_pred, t);
+//! }
+//! ```
+
 pub mod scheduler;
 pub mod guidance;
 pub mod ddim;
