@@ -135,14 +135,8 @@ impl<B: Backend> Dpm3mSdeSampler<B> {
             } else {
                 h
             };
-            let h_2 = if timestep_idx > 1 {
-                -self.sigmas[timestep_idx - 1].ln() + self.sigmas[timestep_idx - 2].ln()
-            } else {
-                h_1
-            };
 
             let r0 = h / h_1;
-            let _r1 = h_1 / h_2;
 
             let d0 = denoised.clone();
             let d1 = denoised_1.clone();

@@ -343,21 +343,13 @@ fn bilinear_sample<B: Backend>(
     let x1 = x0.clone() + 1.0;
     let y1 = y0.clone() + 1.0;
 
-    // Clamp to valid range
-    let x0 = x0.clamp(0.0, (width - 1) as f32);
-    let y0 = y0.clamp(0.0, (height - 1) as f32);
-    let x1 = x1.clamp(0.0, (width - 1) as f32);
-    let y1 = y1.clamp(0.0, (height - 1) as f32);
+    // Clamp to valid range (needed when implementing full bilinear interpolation)
+    let _ = (x0.clamp(0.0, (width - 1) as f32), y0.clamp(0.0, (height - 1) as f32),
+             x1.clamp(0.0, (width - 1) as f32), y1.clamp(0.0, (height - 1) as f32),
+             x_pixel, y_pixel);
 
-    // Calculate interpolation weights
-    let _wa = (x1.clone() - x_pixel.clone()) * (y1.clone() - y_pixel.clone());
-    let _wb = (x_pixel.clone() - x0.clone()) * (y1.clone() - y_pixel.clone());
-    let _wc = (x1.clone() - x_pixel.clone()) * (y_pixel.clone() - y0.clone());
-    let _wd = (x_pixel - x0.clone()) * (y_pixel - y0.clone());
-
-    // Note: Full implementation would gather from img at (x0,y0), (x1,y0), (x0,y1), (x1,y1)
-    // and combine with weights. This is a simplified placeholder that returns the input.
-    // Real implementation requires index_select or gather operations.
+    // TODO: Full bilinear interpolation requires gather operations to sample from
+    // (x0,y0), (x1,y0), (x0,y1), (x1,y1) and blend with weights. For now, return input.
     img
 }
 

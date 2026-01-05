@@ -1509,7 +1509,6 @@ impl<B: Backend> StableDiffusionXLWithRefiner<B> {
     ) -> Tensor<B, 4> {
         // Calculate step splits
         let base_steps = ((config.refiner_start) * config.steps as f64) as usize;
-        let _refiner_steps = config.steps - base_steps;
 
         // Run base model for initial denoising
         let base_config = SdxlSampleConfig {

@@ -34,8 +34,6 @@ pub struct DpmFastSampler<B: Backend> {
     timesteps: Vec<usize>,
     /// Sigma values at each timestep
     sigmas: Vec<f32>,
-    /// Log sigma values for numerical stability
-    log_sigmas: Vec<f32>,
     /// Phantom data for backend type
     _marker: std::marker::PhantomData<B>,
 }
@@ -47,12 +45,10 @@ impl<B: Backend> DpmFastSampler<B> {
         let timesteps = Self::compute_fast_timesteps(config.num_inference_steps, schedule.num_train_steps);
         let mut sigmas = sigmas_from_timesteps(schedule, &timesteps);
         sigmas.push(0.0);
-        let log_sigmas: Vec<f32> = sigmas.iter().map(|s| (s + 1e-10).ln()).collect();
 
         Self {
             timesteps,
             sigmas,
-            log_sigmas,
             _marker: std::marker::PhantomData,
         }
     }
@@ -86,10 +82,6 @@ impl<B: Backend> DpmFastSampler<B> {
         if sigma_next == 0.0 {
             return sample.clone() - model_output * sigma;
         }
-
-        let log_sigma = self.log_sigmas[timestep_idx];
-        let log_sigma_next = self.log_sigmas[timestep_idx + 1];
-        let _h = log_sigma_next - log_sigma;
 
         // Denoised prediction
         let denoised = sample.clone() - model_output.clone() * sigma;

@@ -88,9 +88,6 @@ impl<B: Backend> EulerCfgPlusPlusSampler<B> {
         let sigma = self.sigmas[timestep_idx];
         let sigma_next = self.sigmas[timestep_idx + 1];
 
-        // Convert x0 back to noise prediction
-        let _noise_pred = (sample.clone() - x0_guided.clone()) / sigma;
-
         // Euler step
         let dt = sigma_next - sigma;
         let denoised = x0_guided;

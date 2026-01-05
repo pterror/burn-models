@@ -337,7 +337,6 @@ pub struct ZImageFinalLayer<B: Backend> {
 impl<B: Backend> ZImageFinalLayer<B> {
     pub fn forward(&self, x: Tensor<B, 3>, cond: Tensor<B, 2>, text_len: usize) -> Tensor<B, 3> {
         let [batch, seq_len, hidden] = x.dims();
-        let _img_len = seq_len - text_len;
 
         // Only process image tokens
         let x_img = x.slice([0..batch, text_len..seq_len, 0..hidden]);

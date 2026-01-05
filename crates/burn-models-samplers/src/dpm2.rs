@@ -67,19 +67,13 @@ impl<B: Backend> Dpm2Sampler<B> {
             return sample.clone() - model_output * sigma;
         }
 
-        // DPM2 uses midpoint method
-        let sigma_mid = (sigma * sigma_next).sqrt();
-
-        // First half step (to midpoint)
+        // First half step
         let denoised = sample.clone() - model_output.clone() * sigma;
         let d = (sample.clone() - denoised.clone()) / sigma;
 
-        // Estimate at midpoint
-        let _sample_mid = sample.clone() + d.clone() * (sigma_mid - sigma);
-
-        // This would need another model call in practice
-        // For now, extrapolate
-        let d_mid = d.clone(); // Simplified
+        // TODO: True DPM2 would evaluate model at sigma_mid, requiring a second model call.
+        // For now, reuse the derivative (equivalent to first-order).
+        let d_mid = d.clone();
 
         // Full step using midpoint derivative
         sample + d_mid * (sigma_next - sigma)

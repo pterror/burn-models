@@ -192,3 +192,35 @@
 - [ ] TTT (Test-Time Training) - Hidden state updated via gradient descent during inference
 - [ ] LLaDA - Large Language Diffusion with Masking, bidirectional diffusion LM
 - [ ] TESS-2 - Simplex diffusion LM, reward guidance for alignment
+
+## Postmortems
+
+### Dead Code Patterns (2026-01-06)
+
+Cleaned up `let _var = ...` patterns where values were computed but never used.
+Root causes:
+
+1. **Incomplete implementations shipped as "good enough"**: Several samplers (DPM2, DEIS,
+   DPM3M, DPM Fast) computed intermediate values needed for higher-order methods but then
+   fell back to simpler approximations. The computation was left in place, presumably to
+   be completed later. Example: `dpm2.rs` computed `sample_mid` for midpoint method but
+   comments note "This would need another model call in practice" - then uses simplified
+   extrapolation instead.
+
+2. **Placeholder implementations**: `frame_interpolation.rs` computed all four bilinear
+   interpolation weights but returns input unchanged with a comment explaining that full
+   implementation "requires index_select or gather operations."
+
+3. **Refactoring leftovers**: Variables like `_refiner_steps` in pipeline.rs and
+   `_noise_pred` in euler_cfg.rs were computed for logic that was later simplified or
+   removed, but the computation wasn't cleaned up.
+
+4. **Speculative code for future features**: `rwkv_loader.rs` computed `lora_dim` for
+   LoRA support that was never implemented.
+
+**Lesson**: When deferring implementation, prefer one of:
+- Don't write the computation at all - add a TODO comment instead
+- Write the full implementation
+- If partial implementation is necessary, add `// TODO: ` explaining what's missing
+
+Suppressing warnings with `_` prefix hides technical debt. The warning exists to help.

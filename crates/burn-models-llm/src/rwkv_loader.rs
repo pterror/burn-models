@@ -198,7 +198,6 @@ fn load_time_mix<B: Backend>(
     let num_heads = config.num_heads;
     let head_dim = config.head_dim;
     let inner_dim = num_heads * head_dim;
-    let _lora_dim = 32.min(hidden / 4);
 
     let ln = load_layer_norm(file, &format!("{}.ln1", prefix), hidden, config.layer_norm_eps, device)?;
 

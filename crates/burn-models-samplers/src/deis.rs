@@ -167,8 +167,6 @@ impl<B: Backend> DeisSampler<B> {
         let coeffs = self.get_deis_coefficients(order, timestep_idx);
 
         // Compute weighted combination of derivatives
-        let _h = (sigma_next / sigma).ln();
-
         let mut derivative = Tensor::zeros(sample.dims(), &sample.device());
         for (i, coeff) in coeffs.iter().enumerate().take(order) {
             if let Some(output) = self.model_outputs.get(i) {
