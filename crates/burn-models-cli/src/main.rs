@@ -1,6 +1,10 @@
 //! burn-models CLI
 //!
-//! Command-line interface for Stable Diffusion image generation.
+//! Command-line interface for model inference in pure Rust.
+//!
+//! Supports:
+//! - Stable Diffusion image generation
+//! - LLM text generation
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -8,9 +12,11 @@ use image::{ImageBuffer, Rgb};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 
+mod llm;
+
 #[derive(Parser)]
 #[command(name = "burn-models")]
-#[command(about = "Stable Diffusion image generation in pure Rust")]
+#[command(about = "Model inference in pure Rust (Stable Diffusion, LLMs)")]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
@@ -19,7 +25,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Generate an image from a text prompt
+    /// LLM text generation commands
+    Llm {
+        #[command(subcommand)]
+        command: llm::LlmCommands,
+    },
+
+    /// Generate an image from a text prompt (Stable Diffusion)
     Generate {
         /// Text prompt describing the desired image
         #[arg(short, long)]
@@ -174,11 +186,75 @@ enum ModelType {
     SdxlRefiner,
 }
 
+/// Run LLM commands using the default backend
+fn run_llm_command(command: llm::LlmCommands) -> Result<()> {
+    // Use wgpu backend by default, fall back to ndarray
+    #[cfg(feature = "wgpu")]
+    {
+        use burn_wgpu::{Wgpu, WgpuDevice};
+        type Backend = Wgpu<f32>;
+        let device = WgpuDevice::default();
+        run_llm_command_with_backend::<Backend>(command, &device)
+    }
+
+    #[cfg(all(feature = "ndarray", not(feature = "wgpu")))]
+    {
+        use burn_ndarray::NdArray;
+        type Backend = NdArray<f32>;
+        let device = Default::default();
+        run_llm_command_with_backend::<Backend>(command, &device)
+    }
+
+    #[cfg(not(any(feature = "wgpu", feature = "ndarray")))]
+    {
+        anyhow::bail!("No backend enabled. Enable 'wgpu' or 'ndarray' feature.")
+    }
+}
+
+/// Run LLM commands with a specific backend
+#[allow(unused_variables)]
+fn run_llm_command_with_backend<B: burn::prelude::Backend>(
+    command: llm::LlmCommands,
+    device: &B::Device,
+) -> Result<()> {
+    match command {
+        llm::LlmCommands::Generate {
+            model,
+            weights,
+            prompt,
+            max_tokens,
+            temperature,
+            top_p,
+        } => llm::run_generate::<B>(model, weights, prompt, max_tokens, temperature, top_p, device),
+
+        llm::LlmCommands::Chat {
+            model,
+            weights,
+            system,
+            max_tokens,
+            temperature,
+        } => llm::run_chat::<B>(model, weights, system, max_tokens, temperature, device),
+
+        #[cfg(feature = "llm-serve")]
+        llm::LlmCommands::Serve {
+            model,
+            weights,
+            host,
+            port,
+        } => {
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(llm::run_serve::<B>(model, weights, host, port, device))
+        }
+    }
+}
+
 /// Application entry point
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Llm { command } => run_llm_command(command),
+
         Commands::Generate {
             prompt,
             negative,
@@ -322,7 +398,7 @@ fn main() -> Result<()> {
         }
 
         Commands::Info => {
-            println!("burn-models: Stable Diffusion in pure Rust\n");
+            println!("burn-models: Model inference in pure Rust\n");
             println!("Available backends:");
 
             #[cfg(feature = "ndarray")]
@@ -345,15 +421,33 @@ fn main() -> Result<()> {
             #[cfg(not(feature = "cuda"))]
             println!("  - cuda (NVIDIA CUDA, not enabled)");
 
-            println!("\nSupported models:");
+            println!("\nStable Diffusion models:");
             println!("  - Stable Diffusion 1.x (sd1x)");
             println!("  - Stable Diffusion XL (sdxl)");
             println!("  - SDXL + Refiner (sdxl-refiner)");
 
-            println!("\nSupported pipelines:");
+            println!("\nStable Diffusion pipelines:");
             println!("  - Text-to-image (generate)");
             println!("  - Image-to-image (img2img)");
             println!("  - Inpainting (inpaint)");
+
+            println!("\nLLM models:");
+            println!("  - LLaMA 2/3 (llama)");
+            println!("  - Mistral 7B (mistral)");
+            println!("  - Mixtral MoE (mixtral)");
+            println!("  - Gemma 2 (gemma)");
+            println!("  - Phi-2/3 (phi)");
+            println!("  - Qwen 1.5/2 (qwen)");
+            println!("  - DeepSeek (deepseek)");
+            println!("  - RWKV-7 (rwkv)");
+            println!("  - Mamba SSM (mamba)");
+            println!("  - Jamba hybrid (jamba)");
+
+            println!("\nLLM commands:");
+            println!("  - burn-models llm generate - Text completion");
+            println!("  - burn-models llm chat - Interactive chat");
+            #[cfg(feature = "llm-serve")]
+            println!("  - burn-models llm serve - OpenAI-compatible server");
 
             println!("\nSupported extensions:");
             println!("  - LoRA (Kohya and Diffusers formats)");

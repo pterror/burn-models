@@ -6,29 +6,66 @@
 //! # Supported Models
 //!
 //! - **LLaMA**: LLaMA 2 (7B, 13B, 70B) and LLaMA 3 (8B, 70B)
+//! - **Mistral**: Mistral 7B
+//! - **Mixtral**: Mixtral MoE
+//! - **Gemma**: Gemma 2
+//! - **Phi**: Phi-2/3
+//! - **Qwen**: Qwen 1.5/2
+//! - **DeepSeek**: DeepSeek
+//! - **RWKV**: RWKV-7
+//! - **Mamba**: Mamba SSM
+//! - **Jamba**: Jamba hybrid
 //!
-//! # Example
+//! # High-Level API
+//!
+//! For most use cases, use the unified [`LlmInstance`] API:
 //!
 //! ```ignore
-//! use burn_models_llm::llama::{Llama, LlamaConfig};
+//! use burn_models_llm::{LlmInstance, ModelType, GenerationConfig};
 //!
-//! // Create a tiny model for testing
-//! let config = LlamaConfig::tiny();
-//! let model = config.init::<MyBackend>(&device);
-//!
-//! // Forward pass
-//! let output = model.forward(input_ids, None);
+//! // Load any model
+//! let llm = LlmInstance::load(ModelType::Llama, "./Meta-Llama-3-8B/", &device)?;
 //!
 //! // Generate text
-//! let generated = model.generate(prompt, 100, 0.8);
+//! let config = GenerationConfig::default();
+//! let output = llm.generate("Once upon a time", &config)?;
+//! ```
+//!
+//! # Chat API
+//!
+//! For interactive chat sessions:
+//!
+//! ```ignore
+//! use burn_models_llm::{LlmInstance, ChatSession, GenerationConfig};
+//!
+//! let llm = LlmInstance::load(ModelType::Mistral, "./model/", &device)?;
+//! let mut session = ChatSession::new(llm, Some("You are helpful."));
+//!
+//! let response = session.send("Hello!", &GenerationConfig::default())?;
+//! ```
+//!
+//! # HTTP Server
+//!
+//! With the `serve` feature, run an OpenAI-compatible server:
+//!
+//! ```ignore
+//! use burn_models_llm::{LlmInstance, serve::run_server};
+//!
+//! let llm = LlmInstance::load(ModelType::Llama, "./model/", &device)?;
+//! run_server(llm, "127.0.0.1", 8080).await?;
 //! ```
 
+// Model implementations
 pub mod deepseek;
 pub mod deepseek_loader;
 pub mod gemma;
 pub mod gemma_loader;
+pub mod jamba;
+pub mod jamba_loader;
 pub mod llama;
 pub mod llama_loader;
+pub mod mamba;
+pub mod mamba_loader;
 pub mod mistral;
 pub mod mistral_loader;
 pub mod mixtral;
@@ -39,28 +76,36 @@ pub mod qwen;
 pub mod qwen_loader;
 pub mod rwkv;
 pub mod rwkv_loader;
-pub mod mamba;
-pub mod mamba_loader;
-pub mod jamba;
-pub mod jamba_loader;
 
+// High-level APIs
+pub mod chat;
+pub mod inference;
+
+#[cfg(feature = "serve")]
+pub mod serve;
+
+// Re-export model types
 pub use deepseek::{DeepSeek, DeepSeekConfig, DeepSeekOutput, DeepSeekRuntime};
 pub use deepseek_loader::{load_deepseek, DeepSeekLoadError};
 pub use gemma::{Gemma, GemmaConfig, GemmaOutput, GemmaRuntime};
 pub use gemma_loader::{load_gemma, GemmaLoadError};
-pub use phi::{Phi, PhiConfig, PhiOutput, PhiRuntime};
-pub use phi_loader::{load_phi, PhiLoadError};
+pub use jamba::{Jamba, JambaConfig, JambaOutput, JambaRuntime, JambaState};
+pub use jamba_loader::{load_jamba, JambaLoadError};
 pub use llama::{Llama, LlamaConfig, LlamaOutput, LlamaRuntime};
 pub use llama_loader::{load_llama, LlamaLoadError};
+pub use mamba::{Mamba, MambaConfig, MambaOutput, MambaRuntime, MambaState};
+pub use mamba_loader::{load_mamba, MambaLoadError};
 pub use mistral::{Mistral, MistralConfig, MistralOutput, MistralRuntime};
 pub use mistral_loader::{load_mistral, MistralLoadError};
 pub use mixtral::{Mixtral, MixtralConfig, MixtralOutput, MixtralRuntime};
 pub use mixtral_loader::{load_mixtral, MixtralLoadError};
+pub use phi::{Phi, PhiConfig, PhiOutput, PhiRuntime};
+pub use phi_loader::{load_phi, PhiLoadError};
 pub use qwen::{Qwen, QwenConfig, QwenOutput, QwenRuntime};
 pub use qwen_loader::{load_qwen, QwenLoadError};
 pub use rwkv::{Rwkv, RwkvConfig, RwkvOutput, RwkvRuntime, RwkvState};
 pub use rwkv_loader::{load_rwkv, RwkvLoadError};
-pub use mamba::{Mamba, MambaConfig, MambaOutput, MambaRuntime, MambaState};
-pub use mamba_loader::{load_mamba, MambaLoadError};
-pub use jamba::{Jamba, JambaConfig, JambaOutput, JambaRuntime, JambaState};
-pub use jamba_loader::{load_jamba, JambaLoadError};
+
+// Re-export high-level APIs
+pub use chat::{ChatMessage, ChatSession, ChatTemplate, Role};
+pub use inference::{GenerationConfig, LlmError, LlmInstance, ModelType};
