@@ -5,7 +5,8 @@
 
 use burn::prelude::*;
 
-use crate::scheduler::NoiseSchedule;
+use crate::scheduler::{NoiseSchedule, compute_sigmas, get_ancestral_step, sampler_timesteps};
+use crate::guidance::apply_cfg_plus_plus;
 
 /// Configuration for DPM++ 2S Ancestral sampler
 #[derive(Debug, Clone)]
@@ -42,15 +43,8 @@ pub struct Dpm2sAncestralSampler<B: Backend> {
 impl<B: Backend> Dpm2sAncestralSampler<B> {
     /// Create a new DPM++ 2S Ancestral sampler
     pub fn new(config: Dpm2sAncestralConfig, schedule: &NoiseSchedule<B>) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
 
         Self {
             config,
@@ -60,52 +54,9 @@ impl<B: Backend> Dpm2sAncestralSampler<B> {
         }
     }
 
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize], use_karras: bool) -> Vec<f32> {
-        let mut sigmas: Vec<f32> = timesteps
-            .iter()
-            .map(|&t| {
-                let alpha_cumprod = schedule.alpha_cumprod_at(t);
-                let alpha_data = alpha_cumprod.into_data();
-                let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-                ((1.0 - alpha) / alpha).sqrt()
-            })
-            .collect();
-
-        if use_karras {
-            let sigma_min = *sigmas.last().unwrap_or(&0.0);
-            let sigma_max = *sigmas.first().unwrap_or(&1.0);
-            let n = sigmas.len();
-            let rho = 7.0;
-
-            sigmas = (0..n)
-                .map(|i| {
-                    let t = i as f32 / (n - 1).max(1) as f32;
-                    (sigma_max.powf(1.0 / rho) + t * (sigma_min.powf(1.0 / rho) - sigma_max.powf(1.0 / rho))).powf(rho)
-                })
-                .collect();
-        }
-
-        sigmas.push(0.0);
-        sigmas
-    }
-
     /// Get the timesteps
     pub fn timesteps(&self) -> &[usize] {
         &self.timesteps
-    }
-
-    /// Compute ancestral step parameters
-    fn get_ancestral_step(&self, sigma: f32, sigma_next: f32) -> (f32, f32) {
-        if sigma_next == 0.0 {
-            return (0.0, 0.0);
-        }
-
-        let sigma_up = (sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2)) / sigma.powi(2))
-            .sqrt()
-            .min(sigma_next);
-        let sigma_down = (sigma_next.powi(2) - sigma_up.powi(2)).sqrt();
-
-        (sigma_down, sigma_up)
     }
 
     /// Perform one DPM++ 2S Ancestral step
@@ -126,7 +77,7 @@ impl<B: Backend> Dpm2sAncestralSampler<B> {
             return sample.clone() - model_output * sigma;
         }
 
-        let (sigma_down, sigma_up) = self.get_ancestral_step(sigma, sigma_next);
+        let (sigma_down, sigma_up) = get_ancestral_step(sigma, sigma_next, 1.0);
 
         // Denoised prediction (x0)
         let denoised = sample.clone() - model_output.clone() * sigma;
@@ -176,7 +127,7 @@ impl<B: Backend> Dpm2sAncestralSampler<B> {
     pub fn get_midpoint_sigma(&self, timestep_idx: usize) -> f32 {
         let sigma = self.sigmas[timestep_idx];
         let sigma_next = self.sigmas[timestep_idx + 1];
-        let (sigma_down, _) = self.get_ancestral_step(sigma, sigma_next);
+        let (sigma_down, _) = get_ancestral_step(sigma, sigma_next, 1.0);
         (sigma * sigma_down).sqrt()
     }
 }
@@ -196,15 +147,8 @@ pub struct Dpm2sAncestralCfgPlusPlusSampler<B: Backend> {
 impl<B: Backend> Dpm2sAncestralCfgPlusPlusSampler<B> {
     /// Create a new DPM++ 2S Ancestral CFG++ sampler
     pub fn new(config: Dpm2sAncestralConfig, schedule: &NoiseSchedule<B>, guidance_rescale: f32) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
 
         Self {
             config,
@@ -215,42 +159,13 @@ impl<B: Backend> Dpm2sAncestralCfgPlusPlusSampler<B> {
         }
     }
 
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize], use_karras: bool) -> Vec<f32> {
-        let mut sigmas: Vec<f32> = timesteps
-            .iter()
-            .map(|&t| {
-                let alpha_cumprod = schedule.alpha_cumprod_at(t);
-                let alpha_data = alpha_cumprod.into_data();
-                let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-                ((1.0 - alpha) / alpha).sqrt()
-            })
-            .collect();
-
-        if use_karras {
-            let sigma_min = *sigmas.last().unwrap_or(&0.0);
-            let sigma_max = *sigmas.first().unwrap_or(&1.0);
-            let n = sigmas.len();
-            let rho = 7.0;
-
-            sigmas = (0..n)
-                .map(|i| {
-                    let t = i as f32 / (n - 1).max(1) as f32;
-                    (sigma_max.powf(1.0 / rho) + t * (sigma_min.powf(1.0 / rho) - sigma_max.powf(1.0 / rho))).powf(rho)
-                })
-                .collect();
-        }
-
-        sigmas.push(0.0);
-        sigmas
-    }
-
     /// Get the timesteps
     pub fn timesteps(&self) -> &[usize] {
         &self.timesteps
     }
 
     /// Apply CFG++ guidance in denoised space
-    pub fn apply_cfg_plus_plus(
+    pub fn apply_cfg_plus_plus_guidance(
         &self,
         noise_pred_uncond: Tensor<B, 4>,
         noise_pred_cond: Tensor<B, 4>,
@@ -258,33 +173,14 @@ impl<B: Backend> Dpm2sAncestralCfgPlusPlusSampler<B> {
         sigma: f32,
         guidance_scale: f32,
     ) -> Tensor<B, 4> {
-        let x0_uncond = sample.clone() - noise_pred_uncond.clone() * sigma;
-        let x0_cond = sample.clone() - noise_pred_cond.clone() * sigma;
-
-        let x0_guided = x0_uncond.clone() + (x0_cond.clone() - x0_uncond.clone()) * guidance_scale;
-
-        if self.guidance_rescale > 0.0 {
-            let std_cond = Self::compute_std(&x0_cond);
-            let std_guided = Self::compute_std(&x0_guided);
-
-            if std_guided > 1e-6 {
-                let rescale_factor =
-                    std_cond / std_guided * self.guidance_rescale + (1.0 - self.guidance_rescale);
-                x0_guided * rescale_factor
-            } else {
-                x0_guided
-            }
-        } else {
-            x0_guided
-        }
-    }
-
-    fn compute_std(tensor: &Tensor<B, 4>) -> f32 {
-        let flattened = tensor.clone().flatten::<1>(0, 3);
-        let var = flattened.clone().var(0);
-        let std_tensor = var.sqrt();
-        let std_data = std_tensor.into_data();
-        std_data.to_vec::<f32>().unwrap()[0]
+        apply_cfg_plus_plus(
+            noise_pred_uncond,
+            noise_pred_cond,
+            sample,
+            sigma,
+            guidance_scale,
+            self.guidance_rescale,
+        )
     }
 
     /// Perform one step with pre-computed guided x0
@@ -302,10 +198,7 @@ impl<B: Backend> Dpm2sAncestralCfgPlusPlusSampler<B> {
         }
 
         // Ancestral step
-        let sigma_up = (sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2)) / sigma.powi(2))
-            .sqrt()
-            .min(sigma_next);
-        let sigma_down = (sigma_next.powi(2) - sigma_up.powi(2)).sqrt();
+        let (sigma_down, sigma_up) = get_ancestral_step(sigma, sigma_next, 1.0);
 
         // Euler step
         let derivative = (sample.clone() - x0_guided.clone()) / sigma;

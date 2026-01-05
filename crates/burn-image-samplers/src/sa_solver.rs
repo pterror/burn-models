@@ -6,7 +6,7 @@
 use burn::prelude::*;
 use std::collections::VecDeque;
 
-use crate::scheduler::NoiseSchedule;
+use crate::scheduler::{NoiseSchedule, compute_sigmas, sampler_timesteps};
 
 /// Configuration for SA-Solver
 #[derive(Debug, Clone)]
@@ -64,15 +64,8 @@ pub struct SaSolver<B: Backend> {
 impl<B: Backend> SaSolver<B> {
     /// Create a new SA-Solver
     pub fn new(config: SaSolverConfig, schedule: &NoiseSchedule<B>) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
 
         Self {
             config,
@@ -81,35 +74,6 @@ impl<B: Backend> SaSolver<B> {
             model_outputs: VecDeque::new(),
             timestep_history: VecDeque::new(),
         }
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize], use_karras: bool) -> Vec<f32> {
-        let mut sigmas: Vec<f32> = timesteps
-            .iter()
-            .map(|&t| {
-                let alpha_cumprod = schedule.alpha_cumprod_at(t);
-                let alpha_data = alpha_cumprod.into_data();
-                let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-                ((1.0 - alpha) / alpha).sqrt()
-            })
-            .collect();
-
-        if use_karras {
-            let sigma_min = *sigmas.last().unwrap_or(&0.0);
-            let sigma_max = *sigmas.first().unwrap_or(&1.0);
-            let n = sigmas.len();
-            let rho = 7.0;
-
-            sigmas = (0..n)
-                .map(|i| {
-                    let t = i as f32 / (n - 1).max(1) as f32;
-                    (sigma_max.powf(1.0 / rho) + t * (sigma_min.powf(1.0 / rho) - sigma_max.powf(1.0 / rho))).powf(rho)
-                })
-                .collect();
-        }
-
-        sigmas.push(0.0);
-        sigmas
     }
 
     /// Get the timesteps

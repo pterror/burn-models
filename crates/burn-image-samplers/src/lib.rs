@@ -1,4 +1,5 @@
 pub mod scheduler;
+pub mod guidance;
 pub mod ddim;
 pub mod ddpm;
 pub mod euler;
@@ -18,7 +19,12 @@ pub mod ipndm;
 pub mod sa_solver;
 pub mod res_multistep;
 
-pub use scheduler::{NoiseSchedule, ScheduleConfig};
+pub use scheduler::{
+    NoiseSchedule, ScheduleConfig,
+    compute_sigmas, sigmas_from_timesteps, apply_karras_schedule,
+    get_ancestral_step, sampler_timesteps,
+};
+pub use guidance::{apply_cfg_plus_plus, compute_tensor_std, CfgPlusPlusConfig};
 pub use ddim::{DdimSampler, DdimConfig, apply_guidance};
 pub use ddpm::{DdpmSampler, DdpmConfig, VarianceType};
 pub use euler::{EulerSampler, EulerAncestralSampler, EulerConfig};

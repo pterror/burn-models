@@ -6,7 +6,7 @@
 use burn::prelude::*;
 use std::collections::VecDeque;
 
-use crate::scheduler::NoiseSchedule;
+use crate::scheduler::{NoiseSchedule, compute_sigmas, get_ancestral_step, sampler_timesteps};
 
 /// Configuration for DPM++ 3M SDE sampler
 #[derive(Debug, Clone)]
@@ -47,15 +47,8 @@ pub struct Dpm3mSdeSampler<B: Backend> {
 impl<B: Backend> Dpm3mSdeSampler<B> {
     /// Create a new DPM++ 3M SDE sampler
     pub fn new(config: Dpm3mSdeConfig, schedule: &NoiseSchedule<B>) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
 
         Self {
             config,
@@ -63,35 +56,6 @@ impl<B: Backend> Dpm3mSdeSampler<B> {
             sigmas,
             model_outputs: VecDeque::new(),
         }
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize], use_karras: bool) -> Vec<f32> {
-        let mut sigmas: Vec<f32> = timesteps
-            .iter()
-            .map(|&t| {
-                let alpha_cumprod = schedule.alpha_cumprod_at(t);
-                let alpha_data = alpha_cumprod.into_data();
-                let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-                ((1.0 - alpha) / alpha).sqrt()
-            })
-            .collect();
-
-        if use_karras {
-            let sigma_min = *sigmas.last().unwrap_or(&0.0);
-            let sigma_max = *sigmas.first().unwrap_or(&1.0);
-            let n = sigmas.len();
-            let rho = 7.0;
-
-            sigmas = (0..n)
-                .map(|i| {
-                    let t = i as f32 / (n - 1).max(1) as f32;
-                    (sigma_max.powf(1.0 / rho) + t * (sigma_min.powf(1.0 / rho) - sigma_max.powf(1.0 / rho))).powf(rho)
-                })
-                .collect();
-        }
-
-        sigmas.push(0.0);
-        sigmas
     }
 
     /// Get the timesteps
@@ -104,20 +68,6 @@ impl<B: Backend> Dpm3mSdeSampler<B> {
         self.model_outputs.clear();
     }
 
-    /// Compute sigma_down and sigma_up for SDE
-    fn get_ancestral_step(&self, sigma: f32, sigma_next: f32) -> (f32, f32) {
-        if sigma_next == 0.0 {
-            return (0.0, 0.0);
-        }
-
-        let sigma_up = (sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2)) / sigma.powi(2))
-            .sqrt()
-            .min(sigma_next)
-            * self.config.eta;
-        let sigma_down = (sigma_next.powi(2) - sigma_up.powi(2)).sqrt();
-
-        (sigma_down, sigma_up)
-    }
 
     /// Perform one DPM++ 3M SDE step
     pub fn step(
@@ -142,7 +92,7 @@ impl<B: Backend> Dpm3mSdeSampler<B> {
             return denoised;
         }
 
-        let (sigma_down, sigma_up) = self.get_ancestral_step(sigma, sigma_next);
+        let (sigma_down, sigma_up) = get_ancestral_step(sigma, sigma_next, self.config.eta);
 
         // Compute step based on available history
         let t = -sigma.ln();

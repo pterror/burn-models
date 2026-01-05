@@ -1,6 +1,12 @@
 //! Noise schedules for diffusion models
+//!
+//! This module provides noise schedule utilities shared across all samplers.
 
 use burn::prelude::*;
+
+// ============================================================================
+// Schedule Configuration
+// ============================================================================
 
 /// Noise schedule configuration
 #[derive(Debug, Clone)]
@@ -112,6 +118,99 @@ pub fn inference_timesteps(num_inference_steps: usize, num_train_steps: usize) -
     (0..num_inference_steps)
         .rev()
         .map(|i| i * step_ratio)
+        .collect()
+}
+
+// ============================================================================
+// Sigma Utilities (shared across samplers)
+// ============================================================================
+
+/// Compute sigmas from timesteps using the noise schedule
+///
+/// Converts alpha_cumprod values to sigma = sqrt((1 - alpha) / alpha)
+pub fn sigmas_from_timesteps<B: Backend>(schedule: &NoiseSchedule<B>, timesteps: &[usize]) -> Vec<f32> {
+    timesteps
+        .iter()
+        .map(|&t| {
+            let alpha_cumprod = schedule.alpha_cumprod_at(t);
+            let alpha_data = alpha_cumprod.into_data();
+            let alpha: f32 = alpha_data.to_vec().unwrap()[0];
+            ((1.0 - alpha) / alpha).sqrt()
+        })
+        .collect()
+}
+
+/// Apply Karras noise schedule transformation
+///
+/// Transforms sigmas using the Karras et al. schedule for improved sampling.
+/// Uses rho=7.0 as recommended in the paper.
+pub fn apply_karras_schedule(sigmas: &[f32], rho: f32) -> Vec<f32> {
+    if sigmas.is_empty() {
+        return Vec::new();
+    }
+
+    let sigma_min = *sigmas.last().unwrap_or(&0.0);
+    let sigma_max = *sigmas.first().unwrap_or(&1.0);
+    let n = sigmas.len();
+
+    (0..n)
+        .map(|i| {
+            let t = i as f32 / (n - 1).max(1) as f32;
+            let sigma_min_inv_rho = sigma_min.powf(1.0 / rho);
+            let sigma_max_inv_rho = sigma_max.powf(1.0 / rho);
+            (sigma_max_inv_rho + t * (sigma_min_inv_rho - sigma_max_inv_rho)).powf(rho)
+        })
+        .collect()
+}
+
+/// Compute sigmas with optional Karras schedule
+///
+/// This is the main entry point for computing sigmas in samplers.
+/// Appends sigma=0.0 at the end for the final denoising step.
+pub fn compute_sigmas<B: Backend>(
+    schedule: &NoiseSchedule<B>,
+    timesteps: &[usize],
+    use_karras: bool,
+) -> Vec<f32> {
+    let mut sigmas = sigmas_from_timesteps(schedule, timesteps);
+
+    if use_karras {
+        sigmas = apply_karras_schedule(&sigmas, 7.0);
+    }
+
+    sigmas.push(0.0);
+    sigmas
+}
+
+/// Compute ancestral sampling step parameters
+///
+/// For stochastic samplers (ancestral, SDE), computes:
+/// - sigma_down: the deterministic step target
+/// - sigma_up: the noise injection level
+///
+/// The eta parameter controls stochasticity (0 = ODE, 1 = full SDE)
+pub fn get_ancestral_step(sigma: f32, sigma_next: f32, eta: f32) -> (f32, f32) {
+    if sigma_next == 0.0 {
+        return (0.0, 0.0);
+    }
+
+    let sigma_up = (sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2)) / sigma.powi(2))
+        .sqrt()
+        .min(sigma_next)
+        * eta;
+    let sigma_down = (sigma_next.powi(2) - sigma_up.powi(2)).sqrt();
+
+    (sigma_down, sigma_up)
+}
+
+/// Generate timesteps for a sampler
+///
+/// Creates evenly spaced timesteps from high noise to low noise.
+pub fn sampler_timesteps(num_inference_steps: usize, num_train_steps: usize) -> Vec<usize> {
+    let step_ratio = num_train_steps / num_inference_steps;
+    (0..num_inference_steps)
+        .rev()
+        .map(|i| (i * step_ratio).min(num_train_steps - 1))
         .collect()
 }
 

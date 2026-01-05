@@ -13,6 +13,7 @@ use burn::tensor::activation::gelu;
 use burn::tensor::Int;
 
 use burn_image_core::layernorm::LayerNorm;
+use crate::attention::{create_causal_mask, scaled_dot_product_attention};
 
 /// OpenCLIP model configuration
 #[derive(Debug, Clone)]
@@ -100,7 +101,7 @@ impl<B: Backend> OpenClipTextEncoder<B> {
         let mut x = x + pos_emb;
 
         // Create causal mask
-        let mask = Self::create_causal_mask(seq_len, &x.device());
+        let mask = create_causal_mask(seq_len, &x.device());
 
         // Pass through transformer layers
         for layer in &self.layers {
@@ -153,7 +154,7 @@ impl<B: Backend> OpenClipTextEncoder<B> {
             .unsqueeze::<3>();
         let mut x = x + pos_emb;
 
-        let mask = Self::create_causal_mask(seq_len, &x.device());
+        let mask = create_causal_mask(seq_len, &x.device());
 
         // Pass through all but last layer
         let num_layers = self.layers.len();
@@ -166,17 +167,6 @@ impl<B: Backend> OpenClipTextEncoder<B> {
         }
 
         self.final_layer_norm.forward(x)
-    }
-
-    fn create_causal_mask(seq_len: usize, device: &B::Device) -> Tensor<B, 2> {
-        let mut mask_data = vec![0.0f32; seq_len * seq_len];
-        for i in 0..seq_len {
-            for j in (i + 1)..seq_len {
-                mask_data[i * seq_len + j] = f32::NEG_INFINITY;
-            }
-        }
-        let data = TensorData::new(mask_data, [seq_len, seq_len]);
-        Tensor::from_data(data, device)
     }
 }
 
@@ -256,17 +246,7 @@ impl<B: Backend> OpenClipMultiHeadSelfAttention<B> {
             .swap_dims(1, 2);
 
         // Scaled dot-product attention
-        let scale = (self.head_dim as f64).powf(-0.5);
-        let attn = q.matmul(k.transpose()) * scale;
-
-        // Apply causal mask
-        let attn = match mask {
-            Some(m) => attn + m.unsqueeze::<4>(),
-            None => attn,
-        };
-
-        let attn = burn::tensor::activation::softmax(attn, 3);
-        let out = attn.matmul(v);
+        let out = scaled_dot_product_attention(q, k, v, mask, self.head_dim);
 
         // Reshape back
         let out = out.swap_dims(1, 2)

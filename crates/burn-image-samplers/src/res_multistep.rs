@@ -6,7 +6,7 @@
 use burn::prelude::*;
 use std::collections::VecDeque;
 
-use crate::scheduler::NoiseSchedule;
+use crate::scheduler::{NoiseSchedule, compute_sigmas, get_ancestral_step, sampler_timesteps};
 
 /// Configuration for Res Multistep sampler
 #[derive(Debug, Clone)]
@@ -52,15 +52,8 @@ pub struct ResMultistepSampler<B: Backend> {
 impl<B: Backend> ResMultistepSampler<B> {
     /// Create a new Res Multistep sampler
     pub fn new(config: ResMultistepConfig, schedule: &NoiseSchedule<B>) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
 
         Self {
             config,
@@ -69,35 +62,6 @@ impl<B: Backend> ResMultistepSampler<B> {
             model_outputs: VecDeque::new(),
             current_restart: 0,
         }
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize], use_karras: bool) -> Vec<f32> {
-        let mut sigmas: Vec<f32> = timesteps
-            .iter()
-            .map(|&t| {
-                let alpha_cumprod = schedule.alpha_cumprod_at(t);
-                let alpha_data = alpha_cumprod.into_data();
-                let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-                ((1.0 - alpha) / alpha).sqrt()
-            })
-            .collect();
-
-        if use_karras {
-            let sigma_min = *sigmas.last().unwrap_or(&0.0);
-            let sigma_max = *sigmas.first().unwrap_or(&1.0);
-            let n = sigmas.len();
-            let rho = 7.0;
-
-            sigmas = (0..n)
-                .map(|i| {
-                    let t = i as f32 / (n - 1).max(1) as f32;
-                    (sigma_max.powf(1.0 / rho) + t * (sigma_min.powf(1.0 / rho) - sigma_max.powf(1.0 / rho))).powf(rho)
-                })
-                .collect();
-        }
-
-        sigmas.push(0.0);
-        sigmas
     }
 
     /// Get the timesteps
@@ -236,15 +200,8 @@ pub struct ResMultistepSdeSampler<B: Backend> {
 impl<B: Backend> ResMultistepSdeSampler<B> {
     /// Create a new Res Multistep SDE sampler
     pub fn new(config: ResMultistepConfig, schedule: &NoiseSchedule<B>, eta: f32) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
 
         Self {
             config,
@@ -254,35 +211,6 @@ impl<B: Backend> ResMultistepSdeSampler<B> {
             current_restart: 0,
             eta,
         }
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize], use_karras: bool) -> Vec<f32> {
-        let mut sigmas: Vec<f32> = timesteps
-            .iter()
-            .map(|&t| {
-                let alpha_cumprod = schedule.alpha_cumprod_at(t);
-                let alpha_data = alpha_cumprod.into_data();
-                let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-                ((1.0 - alpha) / alpha).sqrt()
-            })
-            .collect();
-
-        if use_karras {
-            let sigma_min = *sigmas.last().unwrap_or(&0.0);
-            let sigma_max = *sigmas.first().unwrap_or(&1.0);
-            let n = sigmas.len();
-            let rho = 7.0;
-
-            sigmas = (0..n)
-                .map(|i| {
-                    let t = i as f32 / (n - 1).max(1) as f32;
-                    (sigma_max.powf(1.0 / rho) + t * (sigma_min.powf(1.0 / rho) - sigma_max.powf(1.0 / rho))).powf(rho)
-                })
-                .collect();
-        }
-
-        sigmas.push(0.0);
-        sigmas
     }
 
     /// Get the timesteps
@@ -318,11 +246,7 @@ impl<B: Backend> ResMultistepSdeSampler<B> {
         }
 
         // Compute sigma_down and sigma_up for SDE
-        let sigma_up = (sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2)) / sigma.powi(2))
-            .sqrt()
-            .min(sigma_next)
-            * self.eta;
-        let sigma_down = (sigma_next.powi(2) - sigma_up.powi(2)).sqrt();
+        let (sigma_down, sigma_up) = get_ancestral_step(sigma, sigma_next, self.eta);
 
         // Deterministic step
         let sigma_ratio = sigma_down / sigma;
