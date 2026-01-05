@@ -8,6 +8,22 @@ use burn_image_samplers::{apply_guidance, DdimConfig, DdimSampler, NoiseSchedule
 use burn_image_unet::{UNet, UNetConfig};
 use burn_image_vae::{Decoder, DecoderConfig, Encoder, EncoderConfig};
 
+/// Compute sinusoidal size embedding for SDXL
+///
+/// Used for encoding image dimensions (width, height, crop coordinates)
+/// into the model's conditioning. Returns a 256-dim embedding.
+fn compute_size_embedding<B: Backend>(value: usize, device: &B::Device) -> Tensor<B, 1> {
+    let half_dim = 128;
+    let value = value as f32;
+    let mut emb = vec![0.0f32; 256];
+    for i in 0..half_dim {
+        let freq = (-((i as f32) / half_dim as f32) * (10000.0f32).ln()).exp();
+        emb[i] = (value * freq).sin();
+        emb[i + half_dim] = (value * freq).cos();
+    }
+    Tensor::from_data(TensorData::new(emb, [256]), device)
+}
+
 /// Configuration for sampling
 #[derive(Debug, Clone)]
 pub struct SampleConfig {
@@ -651,24 +667,8 @@ impl<B: Backend> StableDiffusionXL<B> {
         ], 1)
     }
 
-    /// Create sinusoidal embedding for size/coord values
     fn size_embedding(&self, value: usize) -> Tensor<B, 1> {
-        // Use timestep-style embedding for size values
-        // 256 dimensions for each value
-        let half_dim = 128;
-        let value = value as f32;
-
-        let mut emb = vec![0.0f32; 256];
-        for i in 0..half_dim {
-            let freq = (-((i as f32) / half_dim as f32) * (10000.0f32).ln()).exp();
-            emb[i] = (value * freq).sin();
-            emb[i + half_dim] = (value * freq).cos();
-        }
-
-        Tensor::from_data(
-            TensorData::new(emb, [256]),
-            &self.device,
-        )
+        compute_size_embedding(value, &self.device)
     }
 
     /// Encode prompt for SDXL
@@ -877,15 +877,7 @@ impl<B: Backend> StableDiffusionXLImg2Img<B> {
     }
 
     fn size_embedding(&self, value: usize) -> Tensor<B, 1> {
-        let half_dim = 128;
-        let value = value as f32;
-        let mut emb = vec![0.0f32; 256];
-        for i in 0..half_dim {
-            let freq = (-((i as f32) / half_dim as f32) * (10000.0f32).ln()).exp();
-            emb[i] = (value * freq).sin();
-            emb[i + half_dim] = (value * freq).cos();
-        }
-        Tensor::from_data(TensorData::new(emb, [256]), &self.device)
+        compute_size_embedding(value, &self.device)
     }
 
     /// Generate image from input image and prompt
@@ -1063,15 +1055,7 @@ impl<B: Backend> StableDiffusionXLInpaint<B> {
     }
 
     fn size_embedding(&self, value: usize) -> Tensor<B, 1> {
-        let half_dim = 128;
-        let value = value as f32;
-        let mut emb = vec![0.0f32; 256];
-        for i in 0..half_dim {
-            let freq = (-((i as f32) / half_dim as f32) * (10000.0f32).ln()).exp();
-            emb[i] = (value * freq).sin();
-            emb[i + half_dim] = (value * freq).cos();
-        }
-        Tensor::from_data(TensorData::new(emb, [256]), &self.device)
+        compute_size_embedding(value, &self.device)
     }
 
     fn create_add_embed(
@@ -1338,15 +1322,7 @@ impl<B: Backend> StableDiffusionXLRefiner<B> {
     }
 
     fn size_embedding(&self, value: usize) -> Tensor<B, 1> {
-        let half_dim = 128;
-        let value = value as f32;
-        let mut emb = vec![0.0f32; 256];
-        for i in 0..half_dim {
-            let freq = (-((i as f32) / half_dim as f32) * (10000.0f32).ln()).exp();
-            emb[i] = (value * freq).sin();
-            emb[i + half_dim] = (value * freq).cos();
-        }
-        Tensor::from_data(TensorData::new(emb, [256]), &self.device)
+        compute_size_embedding(value, &self.device)
     }
 
     fn aesthetic_embedding(&self, score: f64) -> Tensor<B, 1> {
