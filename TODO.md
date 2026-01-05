@@ -58,8 +58,44 @@
 
 ## Backlog
 
-- Alternative samplers (DPM++, Euler, etc.)
-- LoRA support
-- ControlNet integration
-- Textual inversion / embeddings
-- fp16/bf16 inference
+### Samplers
+- [x] DDIM
+- [x] Euler
+- [x] Euler Ancestral
+- [x] DPM++ 2M
+- [x] DPM++ SDE
+- [ ] Euler CFG++
+- [ ] Euler Ancestral CFG++
+- [ ] Heun
+- [ ] HeunPP2
+- [ ] DPM 2
+- [ ] DPM 2 Ancestral
+- [ ] LMS
+- [ ] DPM Fast
+- [ ] DPM Adaptive
+- [ ] DPM++ 2S Ancestral
+- [ ] DPM++ 2S Ancestral CFG++
+- [ ] DPM++ 2M CFG++
+- [ ] DPM++ 2M SDE Heun
+- [ ] DPM++ 3M SDE
+- [ ] DDPM
+- [ ] LCM (Latent Consistency Model)
+- [ ] iPNDM
+- [ ] iPNDM-v
+- [ ] DEIS
+- [ ] Res Multistep
+- [ ] SA-Solver
+
+### Model Extensions
+- [ ] LoRA support
+- [ ] ControlNet integration
+- [ ] Textual inversion / embeddings
+- [ ] IP-Adapter
+- [ ] T2I-Adapter
+
+### Performance
+- [ ] fp16/bf16 inference
+- [ ] Flash Attention
+- [ ] xFormers-style memory efficient attention
+- [ ] Model offloading (sequential CPU/GPU)
+- [ ] Batch processing
