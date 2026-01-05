@@ -110,7 +110,7 @@
 
 #### UNet-based (similar to current)
 - [x] Stable Diffusion 2.x - OpenCLIP ViT-H/14 text encoder, v-prediction support in samplers
-- [ ] Stable Cascade - Würstchen architecture, latent cascade
+- [x] Stable Cascade - Würstchen architecture, latent cascade
 
 #### DiT-based (new architecture needed)
 - [x] Flux (Black Forest Labs) - Flow matching, DiT architecture, weight loading
