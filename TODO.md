@@ -124,7 +124,7 @@
 ### Video Generation
 
 - [ ] Wan 2.x (Alibaba) - DiT + MoE, 3D VAE, 14B active params
-- [ ] CogVideoX - Open source video DiT
+- [x] CogVideoX - Open source video DiT, factorized spatial-temporal attention
 - [ ] Mochi - Genmo's open source video model
 - [ ] LTX-Video - Lightricks video model
 
