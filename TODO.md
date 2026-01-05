@@ -158,8 +158,8 @@
 - [x] Speculative decoding (draft/target verification, acceptance sampling)
 
 #### Quantization
-- [ ] INT8 dynamic quantization
-- [ ] INT4 quantization (GPTQ, AWQ)
+- [x] INT8 dynamic quantization (symmetric/asymmetric)
+- [x] INT4 quantization (group-wise, GPTQ style)
 - [ ] FP8 support
 
 #### Video-specific
