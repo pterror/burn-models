@@ -6,7 +6,7 @@
 use burn::prelude::*;
 use std::collections::VecDeque;
 
-use crate::scheduler::NoiseSchedule;
+use crate::scheduler::{NoiseSchedule, sampler_timesteps};
 
 /// Configuration for iPNDM sampler
 #[derive(Debug, Clone)]
@@ -38,25 +38,23 @@ pub struct IpndmSampler<B: Backend> {
     ets: VecDeque<Tensor<B, 4>>,
 }
 
+/// Extract all alpha_cumprod values from a schedule
+fn extract_alphas_cumprod<B: Backend>(schedule: &NoiseSchedule<B>) -> Vec<f32> {
+    let mut alphas_cumprod = Vec::with_capacity(schedule.num_train_steps);
+    for t in 0..schedule.num_train_steps {
+        let alpha_cumprod = schedule.alpha_cumprod_at(t);
+        let alpha_data = alpha_cumprod.into_data();
+        let alpha: f32 = alpha_data.to_vec().unwrap()[0];
+        alphas_cumprod.push(alpha);
+    }
+    alphas_cumprod
+}
+
 impl<B: Backend> IpndmSampler<B> {
     /// Create a new iPNDM sampler
     pub fn new(config: IpndmConfig, schedule: &NoiseSchedule<B>) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        // Compute alphas_cumprod from schedule
-        let mut alphas_cumprod = Vec::with_capacity(num_train_steps);
-        for t in 0..num_train_steps {
-            let alpha_cumprod = schedule.alpha_cumprod_at(t);
-            let alpha_data = alpha_cumprod.into_data();
-            let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-            alphas_cumprod.push(alpha);
-        }
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let alphas_cumprod = extract_alphas_cumprod(schedule);
 
         Self {
             config,
@@ -149,22 +147,8 @@ pub struct IpndmVSampler<B: Backend> {
 impl<B: Backend> IpndmVSampler<B> {
     /// Create a new iPNDM-v sampler
     pub fn new(config: IpndmConfig, schedule: &NoiseSchedule<B>) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        // Compute alphas_cumprod from schedule
-        let mut alphas_cumprod = Vec::with_capacity(num_train_steps);
-        for t in 0..num_train_steps {
-            let alpha_cumprod = schedule.alpha_cumprod_at(t);
-            let alpha_data = alpha_cumprod.into_data();
-            let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-            alphas_cumprod.push(alpha);
-        }
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let alphas_cumprod = extract_alphas_cumprod(schedule);
 
         Self {
             config,

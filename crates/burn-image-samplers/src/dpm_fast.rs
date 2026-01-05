@@ -5,7 +5,7 @@
 
 use burn::prelude::*;
 
-use crate::scheduler::NoiseSchedule;
+use crate::scheduler::{NoiseSchedule, sigmas_from_timesteps};
 
 /// Configuration for DPM Fast sampler
 #[derive(Debug, Clone)]
@@ -40,11 +40,10 @@ pub struct DpmFastSampler<B: Backend> {
 impl<B: Backend> DpmFastSampler<B> {
     /// Create a new DPM Fast sampler
     pub fn new(config: DpmFastConfig, schedule: &NoiseSchedule<B>) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-
         // DPM Fast uses a specific timestep schedule optimized for speed
-        let timesteps = Self::compute_fast_timesteps(config.num_inference_steps, num_train_steps);
-        let sigmas = Self::compute_sigmas(schedule, &timesteps);
+        let timesteps = Self::compute_fast_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let mut sigmas = sigmas_from_timesteps(schedule, &timesteps);
+        sigmas.push(0.0);
         let log_sigmas: Vec<f32> = sigmas.iter().map(|s| (s + 1e-10).ln()).collect();
 
         Self {
@@ -64,20 +63,6 @@ impl<B: Backend> DpmFastSampler<B> {
                 ((t * num_train_steps as f64) as usize).min(num_train_steps - 1)
             })
             .collect()
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize]) -> Vec<f32> {
-        let mut sigmas: Vec<f32> = timesteps
-            .iter()
-            .map(|&t| {
-                let alpha_cumprod = schedule.alpha_cumprod_at(t);
-                let alpha_data = alpha_cumprod.into_data();
-                let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-                ((1.0 - alpha) / alpha).sqrt()
-            })
-            .collect();
-        sigmas.push(0.0);
-        sigmas
     }
 
     /// Get the timesteps

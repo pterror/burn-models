@@ -6,7 +6,7 @@
 use burn::prelude::*;
 use std::collections::VecDeque;
 
-use crate::scheduler::NoiseSchedule;
+use crate::scheduler::{NoiseSchedule, sampler_timesteps, sigmas_from_timesteps};
 
 /// Configuration for LMS sampler
 #[derive(Debug, Clone)]
@@ -41,15 +41,9 @@ pub struct LmsSampler<B: Backend> {
 impl<B: Backend> LmsSampler<B> {
     /// Create a new LMS sampler
     pub fn new(config: LmsConfig, schedule: &NoiseSchedule<B>) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(schedule, &timesteps);
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let mut sigmas = sigmas_from_timesteps(schedule, &timesteps);
+        sigmas.push(0.0);
 
         Self {
             config,
@@ -57,20 +51,6 @@ impl<B: Backend> LmsSampler<B> {
             sigmas,
             derivatives: VecDeque::new(),
         }
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize]) -> Vec<f32> {
-        let mut sigmas: Vec<f32> = timesteps
-            .iter()
-            .map(|&t| {
-                let alpha_cumprod = schedule.alpha_cumprod_at(t);
-                let alpha_data = alpha_cumprod.into_data();
-                let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-                ((1.0 - alpha) / alpha).sqrt()
-            })
-            .collect();
-        sigmas.push(0.0); // Add final sigma
-        sigmas
     }
 
     /// Get the timesteps

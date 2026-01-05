@@ -4,7 +4,7 @@
 
 use burn::prelude::*;
 
-use crate::scheduler::NoiseSchedule;
+use crate::scheduler::{NoiseSchedule, sampler_timesteps, sigmas_from_timesteps, compute_sigmas};
 
 /// Configuration for DPM2 sampler
 #[derive(Debug, Clone)]
@@ -38,15 +38,8 @@ pub struct Dpm2Sampler<B: Backend> {
 impl<B: Backend> Dpm2Sampler<B> {
     /// Create a new DPM2 sampler
     pub fn new(config: Dpm2Config, schedule: &NoiseSchedule<B>) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
 
         Self {
             config,
@@ -54,37 +47,6 @@ impl<B: Backend> Dpm2Sampler<B> {
             sigmas,
             _marker: std::marker::PhantomData,
         }
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize], use_karras: bool) -> Vec<f32> {
-        let mut sigmas: Vec<f32> = timesteps
-            .iter()
-            .map(|&t| {
-                let alpha_cumprod = schedule.alpha_cumprod_at(t);
-                let alpha_data = alpha_cumprod.into_data();
-                let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-                ((1.0 - alpha) / alpha).sqrt()
-            })
-            .collect();
-
-        if use_karras {
-            // Apply Karras schedule transformation
-            let sigma_min = *sigmas.last().unwrap_or(&0.0);
-            let sigma_max = *sigmas.first().unwrap_or(&1.0);
-            let n = sigmas.len();
-            let rho = 7.0; // Karras rho
-
-            sigmas = (0..n)
-                .map(|i| {
-                    let t = i as f32 / (n - 1).max(1) as f32;
-                    let sigma = (sigma_max.powf(1.0 / rho) + t * (sigma_min.powf(1.0 / rho) - sigma_max.powf(1.0 / rho))).powf(rho);
-                    sigma
-                })
-                .collect();
-        }
-
-        sigmas.push(0.0);
-        sigmas
     }
 
     /// Get timesteps
@@ -137,15 +99,9 @@ pub struct Dpm2AncestralSampler<B: Backend> {
 impl<B: Backend> Dpm2AncestralSampler<B> {
     /// Create a new DPM2 Ancestral sampler
     pub fn new(config: Dpm2Config, schedule: &NoiseSchedule<B>) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(schedule, &timesteps);
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let mut sigmas = sigmas_from_timesteps(schedule, &timesteps);
+        sigmas.push(0.0);
 
         Self {
             config,
@@ -153,20 +109,6 @@ impl<B: Backend> Dpm2AncestralSampler<B> {
             sigmas,
             _marker: std::marker::PhantomData,
         }
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize]) -> Vec<f32> {
-        let mut sigmas: Vec<f32> = timesteps
-            .iter()
-            .map(|&t| {
-                let alpha_cumprod = schedule.alpha_cumprod_at(t);
-                let alpha_data = alpha_cumprod.into_data();
-                let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-                ((1.0 - alpha) / alpha).sqrt()
-            })
-            .collect();
-        sigmas.push(0.0);
-        sigmas
     }
 
     /// Get timesteps

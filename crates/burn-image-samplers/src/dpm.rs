@@ -5,7 +5,7 @@
 
 use burn::prelude::*;
 
-use crate::scheduler::NoiseSchedule;
+use crate::scheduler::{NoiseSchedule, sampler_timesteps, sigmas_from_timesteps, init_noise_latent};
 
 /// DPM++ configuration
 #[derive(Debug, Clone)]
@@ -42,16 +42,10 @@ pub struct DpmPlusPlusSampler<B: Backend> {
 
 impl<B: Backend> DpmPlusPlusSampler<B> {
     /// Create a new DPM++ 2M sampler
-    pub fn new(schedule: NoiseSchedule<B>, config: DpmConfig, device: &B::Device) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(&schedule, &timesteps, device);
+    pub fn new(schedule: NoiseSchedule<B>, config: DpmConfig, _device: &B::Device) -> Self {
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let mut sigmas = sigmas_from_timesteps(&schedule, &timesteps);
+        sigmas.push(0.0);
 
         Self {
             schedule,
@@ -61,21 +55,6 @@ impl<B: Backend> DpmPlusPlusSampler<B> {
             prev_sample: None,
             prev_sigma: None,
         }
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize], _device: &B::Device) -> Vec<f32> {
-        let mut sigmas = Vec::with_capacity(timesteps.len() + 1);
-
-        for &t in timesteps {
-            let alpha_cumprod = schedule.alpha_cumprod_at(t);
-            let alpha_data = alpha_cumprod.into_data();
-            let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-            let sigma = ((1.0 - alpha) / alpha).sqrt();
-            sigmas.push(sigma);
-        }
-
-        sigmas.push(0.0);
-        sigmas
     }
 
     pub fn timesteps(&self) -> &[usize] {
@@ -164,13 +143,7 @@ impl<B: Backend> DpmPlusPlusSampler<B> {
         width: usize,
         device: &B::Device,
     ) -> Tensor<B, 4> {
-        let sigma_max = self.sigmas[0];
-        let noise: Tensor<B, 4> = Tensor::random(
-            [batch_size, channels, height, width],
-            burn::tensor::Distribution::Normal(0.0, 1.0),
-            device,
-        );
-        noise * sigma_max
+        init_noise_latent(batch_size, channels, height, width, self.sigmas[0], device)
     }
 }
 
@@ -189,16 +162,10 @@ pub struct DpmPlusPlusSdeSampler<B: Backend> {
 
 impl<B: Backend> DpmPlusPlusSdeSampler<B> {
     /// Create a new DPM++ SDE sampler
-    pub fn new(schedule: NoiseSchedule<B>, config: DpmConfig, eta: f32, device: &B::Device) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(&schedule, &timesteps, device);
+    pub fn new(schedule: NoiseSchedule<B>, config: DpmConfig, eta: f32, _device: &B::Device) -> Self {
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let mut sigmas = sigmas_from_timesteps(&schedule, &timesteps);
+        sigmas.push(0.0);
 
         Self {
             schedule,
@@ -207,21 +174,6 @@ impl<B: Backend> DpmPlusPlusSdeSampler<B> {
             sigmas,
             eta,
         }
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize], _device: &B::Device) -> Vec<f32> {
-        let mut sigmas = Vec::with_capacity(timesteps.len() + 1);
-
-        for &t in timesteps {
-            let alpha_cumprod = schedule.alpha_cumprod_at(t);
-            let alpha_data = alpha_cumprod.into_data();
-            let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-            let sigma = ((1.0 - alpha) / alpha).sqrt();
-            sigmas.push(sigma);
-        }
-
-        sigmas.push(0.0);
-        sigmas
     }
 
     pub fn timesteps(&self) -> &[usize] {
@@ -276,13 +228,7 @@ impl<B: Backend> DpmPlusPlusSdeSampler<B> {
         width: usize,
         device: &B::Device,
     ) -> Tensor<B, 4> {
-        let sigma_max = self.sigmas[0];
-        let noise: Tensor<B, 4> = Tensor::random(
-            [batch_size, channels, height, width],
-            burn::tensor::Distribution::Normal(0.0, 1.0),
-            device,
-        );
-        noise * sigma_max
+        init_noise_latent(batch_size, channels, height, width, self.sigmas[0], device)
     }
 }
 

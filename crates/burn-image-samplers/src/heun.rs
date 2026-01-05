@@ -5,7 +5,7 @@
 
 use burn::prelude::*;
 
-use crate::scheduler::NoiseSchedule;
+use crate::scheduler::{NoiseSchedule, sampler_timesteps, sigmas_from_timesteps};
 
 /// Configuration for Heun sampler
 #[derive(Debug, Clone)]
@@ -36,15 +36,8 @@ pub struct HeunSampler<B: Backend> {
 impl<B: Backend> HeunSampler<B> {
     /// Create a new Heun sampler
     pub fn new(config: HeunConfig, schedule: &NoiseSchedule<B>) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(schedule, &timesteps);
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let sigmas = sigmas_from_timesteps(schedule, &timesteps);
 
         Self {
             config,
@@ -52,18 +45,6 @@ impl<B: Backend> HeunSampler<B> {
             sigmas,
             _marker: std::marker::PhantomData,
         }
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize]) -> Vec<f32> {
-        timesteps
-            .iter()
-            .map(|&t| {
-                let alpha_cumprod = schedule.alpha_cumprod_at(t);
-                let alpha_data = alpha_cumprod.into_data();
-                let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-                ((1.0 - alpha) / alpha).sqrt()
-            })
-            .collect()
     }
 
     /// Get the timesteps for this sampler
@@ -142,15 +123,8 @@ pub struct HeunPP2Sampler<B: Backend> {
 impl<B: Backend> HeunPP2Sampler<B> {
     /// Create a new HeunPP2 sampler
     pub fn new(config: HeunConfig, schedule: &NoiseSchedule<B>) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(schedule, &timesteps);
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let sigmas = sigmas_from_timesteps(schedule, &timesteps);
 
         Self {
             config,
@@ -158,18 +132,6 @@ impl<B: Backend> HeunPP2Sampler<B> {
             sigmas,
             _marker: std::marker::PhantomData,
         }
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize]) -> Vec<f32> {
-        timesteps
-            .iter()
-            .map(|&t| {
-                let alpha_cumprod = schedule.alpha_cumprod_at(t);
-                let alpha_data = alpha_cumprod.into_data();
-                let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-                ((1.0 - alpha) / alpha).sqrt()
-            })
-            .collect()
     }
 
     /// Get the timesteps

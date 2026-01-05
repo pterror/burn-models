@@ -5,7 +5,7 @@
 
 use burn::prelude::*;
 
-use crate::scheduler::NoiseSchedule;
+use crate::scheduler::{NoiseSchedule, sampler_timesteps, sigmas_from_timesteps, init_noise_latent};
 
 /// Euler sampler configuration
 #[derive(Debug, Clone)]
@@ -35,18 +35,10 @@ pub struct EulerSampler<B: Backend> {
 
 impl<B: Backend> EulerSampler<B> {
     /// Create a new Euler sampler
-    pub fn new(schedule: NoiseSchedule<B>, config: EulerConfig, device: &B::Device) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        // Generate timesteps (decreasing)
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        // Compute sigmas from alphas
-        let sigmas = Self::compute_sigmas(&schedule, &timesteps, device);
+    pub fn new(schedule: NoiseSchedule<B>, config: EulerConfig, _device: &B::Device) -> Self {
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let mut sigmas = sigmas_from_timesteps(&schedule, &timesteps);
+        sigmas.push(0.0);
 
         Self {
             schedule,
@@ -54,25 +46,6 @@ impl<B: Backend> EulerSampler<B> {
             timesteps,
             sigmas,
         }
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize], device: &B::Device) -> Vec<f32> {
-        let mut sigmas = Vec::with_capacity(timesteps.len() + 1);
-
-        for &t in timesteps {
-            let alpha_cumprod = schedule.alpha_cumprod_at(t);
-            let alpha_data = alpha_cumprod.into_data();
-            let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-
-            // sigma = sqrt((1 - alpha) / alpha)
-            let sigma = ((1.0 - alpha) / alpha).sqrt();
-            sigmas.push(sigma);
-        }
-
-        // Add final sigma = 0
-        sigmas.push(0.0);
-
-        sigmas
     }
 
     /// Get the timesteps for inference
@@ -144,16 +117,10 @@ pub struct EulerAncestralSampler<B: Backend> {
 
 impl<B: Backend> EulerAncestralSampler<B> {
     /// Create a new Euler Ancestral sampler
-    pub fn new(schedule: NoiseSchedule<B>, config: EulerConfig, device: &B::Device) -> Self {
-        let num_train_steps = schedule.num_train_steps;
-        let step_ratio = num_train_steps / config.num_inference_steps;
-
-        let timesteps: Vec<usize> = (0..config.num_inference_steps)
-            .rev()
-            .map(|i| (i * step_ratio).min(num_train_steps - 1))
-            .collect();
-
-        let sigmas = Self::compute_sigmas(&schedule, &timesteps, device);
+    pub fn new(schedule: NoiseSchedule<B>, config: EulerConfig, _device: &B::Device) -> Self {
+        let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let mut sigmas = sigmas_from_timesteps(&schedule, &timesteps);
+        sigmas.push(0.0);
 
         Self {
             schedule,
@@ -161,21 +128,6 @@ impl<B: Backend> EulerAncestralSampler<B> {
             timesteps,
             sigmas,
         }
-    }
-
-    fn compute_sigmas(schedule: &NoiseSchedule<B>, timesteps: &[usize], _device: &B::Device) -> Vec<f32> {
-        let mut sigmas = Vec::with_capacity(timesteps.len() + 1);
-
-        for &t in timesteps {
-            let alpha_cumprod = schedule.alpha_cumprod_at(t);
-            let alpha_data = alpha_cumprod.into_data();
-            let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-            let sigma = ((1.0 - alpha) / alpha).sqrt();
-            sigmas.push(sigma);
-        }
-
-        sigmas.push(0.0);
-        sigmas
     }
 
     pub fn timesteps(&self) -> &[usize] {
@@ -231,13 +183,7 @@ impl<B: Backend> EulerAncestralSampler<B> {
         width: usize,
         device: &B::Device,
     ) -> Tensor<B, 4> {
-        let sigma_max = self.sigmas[0];
-        let noise: Tensor<B, 4> = Tensor::random(
-            [batch_size, channels, height, width],
-            burn::tensor::Distribution::Normal(0.0, 1.0),
-            device,
-        );
-        noise * sigma_max
+        init_noise_latent(batch_size, channels, height, width, self.sigmas[0], device)
     }
 }
 

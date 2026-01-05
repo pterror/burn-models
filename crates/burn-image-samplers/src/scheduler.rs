@@ -214,6 +214,27 @@ pub fn sampler_timesteps(num_inference_steps: usize, num_train_steps: usize) -> 
         .collect()
 }
 
+/// Initialize a random latent tensor scaled by sigma
+///
+/// Creates a random normal tensor and scales it by the given sigma value.
+/// This is typically used to initialize the latent at the start of sampling,
+/// where sigma_max is the initial noise level.
+pub fn init_noise_latent<B: Backend>(
+    batch_size: usize,
+    channels: usize,
+    height: usize,
+    width: usize,
+    sigma: f32,
+    device: &B::Device,
+) -> Tensor<B, 4> {
+    let noise: Tensor<B, 4> = Tensor::random(
+        [batch_size, channels, height, width],
+        burn::tensor::Distribution::Normal(0.0, 1.0),
+        device,
+    );
+    noise * sigma
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
