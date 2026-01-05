@@ -126,7 +126,7 @@
 - [ ] Wan 2.x (Alibaba) - DiT + MoE, 3D VAE, 14B active params
 - [x] CogVideoX - Open source video DiT, factorized spatial-temporal attention
 - [x] Mochi - Genmo's open source video model, asymmetric DiT, factorized attention
-- [ ] LTX-Video - Lightricks video model
+- [x] LTX-Video - Lightricks video model, causal temporal attention
 
 ### Large Language Models
 

@@ -35,6 +35,7 @@ pub mod cogvideox;
 pub mod flux;
 pub mod flux_loader;
 pub mod hunyuan;
+pub mod ltx;
 pub mod mochi;
 pub mod pixart;
 pub mod sd3;
@@ -44,6 +45,7 @@ pub use cogvideox::{CogVideoX, CogVideoXConfig, CogVideoXOutput, CogVideoXRuntim
 pub use flux::{Flux, FluxConfig, FluxOutput, FluxRuntime};
 pub use flux_loader::{load_flux, FluxLoadError};
 pub use hunyuan::{HunyuanDiT, HunyuanDiTConfig, HunyuanDiTOutput, HunyuanDiTRuntime};
+pub use ltx::{LtxVideo, LtxVideoConfig, LtxVideoOutput, LtxVideoRuntime};
 pub use mochi::{Mochi, MochiConfig, MochiOutput, MochiRuntime};
 pub use pixart::{PixArt, PixArtConfig, PixArtOutput};
 pub use sd3::{Sd3, Sd3Config, Sd3Output, Sd3Runtime};
