@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 burn.workspace = true
 burn-models-core.workspace = true
+
+[dev-dependencies]
+burn-ndarray.workspace = true
