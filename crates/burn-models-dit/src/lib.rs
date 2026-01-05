@@ -30,12 +30,14 @@
 //! - Bidirectional attention (no causal mask)
 //! - Flow matching objective (vs noise prediction)
 
+pub mod auraflow;
 pub mod cogvideox;
 pub mod flux;
 pub mod flux_loader;
 pub mod pixart;
 pub mod sd3;
 
+pub use auraflow::{AuraFlow, AuraFlowConfig, AuraFlowOutput, AuraFlowRuntime};
 pub use cogvideox::{CogVideoX, CogVideoXConfig, CogVideoXOutput, CogVideoXRuntime};
 pub use flux::{Flux, FluxConfig, FluxOutput, FluxRuntime};
 pub use flux_loader::{load_flux, FluxLoadError};

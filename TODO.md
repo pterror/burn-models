@@ -118,7 +118,7 @@
 - [ ] Z-Image (Alibaba) - Single-stream DiT (S3-DiT), 6B params, very fast
 - [ ] Qwen-Image (Alibaba) - 20B MMDiT, Qwen2.5-VL text encoder, Apache 2.0
 - [x] PixArt-α/Σ - Efficient DiT, T5 text encoder, cross-attention to text
-- [ ] AuraFlow - Open source flow-based
+- [x] AuraFlow - Open source flow-based, MMDiT joint attention
 - [ ] Hunyuan-DiT - Bilingual DiT model
 
 ### Video Generation
