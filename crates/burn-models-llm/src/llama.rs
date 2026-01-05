@@ -176,10 +176,14 @@ impl LlamaConfig {
 /// LLaMA Model
 #[derive(Module, Debug)]
 pub struct Llama<B: Backend> {
-    embed_tokens: Embedding<B>,
-    layers: Vec<TransformerBlock<B>>,
-    norm: RmsNorm<B>,
-    lm_head: burn::nn::Linear<B>,
+    /// Token embeddings
+    pub embed_tokens: Embedding<B>,
+    /// Transformer layers
+    pub layers: Vec<TransformerBlock<B>>,
+    /// Final layer norm
+    pub norm: RmsNorm<B>,
+    /// Language model head
+    pub lm_head: burn::nn::Linear<B>,
 }
 
 /// Runtime state for LLaMA (not part of the module)

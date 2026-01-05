@@ -131,7 +131,7 @@
 ### Large Language Models
 
 - [x] LLaMA 2/3 architecture (basic implementation)
-- [ ] LLaMA weight loading from safetensors
+- [x] LLaMA weight loading from safetensors
 - [ ] Qwen 2.5 - Alibaba's multilingual LLM
 - [ ] Mistral / Mixtral - Mistral AI models
 - [ ] Gemma 2 - Google's open models

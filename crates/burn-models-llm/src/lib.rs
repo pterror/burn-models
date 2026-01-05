@@ -24,5 +24,7 @@
 //! ```
 
 pub mod llama;
+pub mod llama_loader;
 
 pub use llama::{Llama, LlamaConfig, LlamaOutput, LlamaRuntime};
+pub use llama_loader::{load_llama, LlamaLoadError};

@@ -24,9 +24,12 @@ use burn::nn::{Linear, LinearConfig};
 /// - Used in LLaMA, PaLM, Qwen, Mistral
 #[derive(Module, Debug)]
 pub struct SwiGluFfn<B: Backend> {
-    gate_proj: Linear<B>,
-    up_proj: Linear<B>,
-    down_proj: Linear<B>,
+    /// Gate projection (for gating activation)
+    pub gate_proj: Linear<B>,
+    /// Up projection
+    pub up_proj: Linear<B>,
+    /// Down projection
+    pub down_proj: Linear<B>,
 }
 
 /// Configuration for SwiGluFfn

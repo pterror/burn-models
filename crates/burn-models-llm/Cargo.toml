@@ -7,7 +7,9 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 burn-models-core = { path = "../burn-models-core" }
+burn-models-convert = { path = "../burn-models-convert" }
 burn = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 burn-ndarray = { workspace = true }

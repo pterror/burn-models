@@ -24,8 +24,10 @@ use burn::prelude::*;
 /// - Used in LLaMA, Qwen, Mistral, and many modern transformers
 #[derive(Module, Debug)]
 pub struct RmsNorm<B: Backend> {
-    weight: Tensor<B, 1>,
-    eps: f64,
+    /// Learnable scale weight
+    pub weight: Tensor<B, 1>,
+    /// Epsilon for numerical stability
+    pub eps: f64,
 }
 
 impl<B: Backend> RmsNorm<B> {
@@ -54,6 +56,16 @@ impl<B: Backend> RmsNorm<B> {
             weight: Tensor::ones([size], device),
             eps,
         }
+    }
+
+    /// Creates RMSNorm from a loaded weight tensor
+    ///
+    /// # Arguments
+    ///
+    /// * `weight` - Pre-loaded weight tensor
+    /// * `eps` - Epsilon for numerical stability
+    pub fn from_weight(weight: Tensor<B, 1>, eps: f64) -> Self {
+        Self { weight, eps }
     }
 
     /// Applies RMS normalization to the input tensor

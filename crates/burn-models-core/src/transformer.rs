@@ -15,13 +15,20 @@ use crate::rope::RotaryEmbedding;
 /// Supports grouped-query attention (GQA) where KV heads can be fewer than Q heads.
 #[derive(Module, Debug)]
 pub struct MultiHeadAttention<B: Backend> {
-    q_proj: Linear<B>,
-    k_proj: Linear<B>,
-    v_proj: Linear<B>,
-    o_proj: Linear<B>,
-    num_heads: usize,
-    num_kv_heads: usize,
-    head_dim: usize,
+    /// Query projection
+    pub q_proj: Linear<B>,
+    /// Key projection
+    pub k_proj: Linear<B>,
+    /// Value projection
+    pub v_proj: Linear<B>,
+    /// Output projection
+    pub o_proj: Linear<B>,
+    /// Number of query heads
+    pub num_heads: usize,
+    /// Number of KV heads (for GQA)
+    pub num_kv_heads: usize,
+    /// Dimension per head
+    pub head_dim: usize,
 }
 
 /// Configuration for MultiHeadAttention
@@ -168,10 +175,14 @@ impl<B: Backend> MultiHeadAttention<B> {
 /// ```
 #[derive(Module, Debug)]
 pub struct TransformerBlock<B: Backend> {
-    attention: MultiHeadAttention<B>,
-    ffn: SwiGluFfn<B>,
-    input_norm: RmsNorm<B>,
-    post_attention_norm: RmsNorm<B>,
+    /// Multi-head attention
+    pub attention: MultiHeadAttention<B>,
+    /// Feed-forward network
+    pub ffn: SwiGluFfn<B>,
+    /// Input layer norm (before attention)
+    pub input_norm: RmsNorm<B>,
+    /// Post-attention layer norm (before FFN)
+    pub post_attention_norm: RmsNorm<B>,
 }
 
 /// Configuration for TransformerBlock
