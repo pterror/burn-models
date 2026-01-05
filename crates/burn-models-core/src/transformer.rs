@@ -281,6 +281,37 @@ pub fn causal_mask<B: Backend>(seq_len: usize, device: &B::Device) -> Tensor<B, 
     Tensor::<B, 1>::from_floats(mask_data.as_slice(), device).reshape([seq_len, seq_len])
 }
 
+/// Creates a sliding window causal attention mask
+///
+/// Like causal_mask, but also masks positions beyond the window size.
+/// Used by Mistral for efficient long-context attention.
+///
+/// # Arguments
+///
+/// * `seq_len` - Sequence length
+/// * `window_size` - Sliding window size (e.g., 4096 for Mistral)
+/// * `device` - Device to create tensor on
+pub fn sliding_window_mask<B: Backend>(
+    seq_len: usize,
+    window_size: usize,
+    device: &B::Device,
+) -> Tensor<B, 2> {
+    let mut mask_data = vec![0.0f32; seq_len * seq_len];
+    for i in 0..seq_len {
+        for j in 0..seq_len {
+            // Mask future positions (causal)
+            if j > i {
+                mask_data[i * seq_len + j] = f32::NEG_INFINITY;
+            }
+            // Mask positions outside sliding window
+            else if i > j + window_size {
+                mask_data[i * seq_len + j] = f32::NEG_INFINITY;
+            }
+        }
+    }
+    Tensor::<B, 1>::from_floats(mask_data.as_slice(), device).reshape([seq_len, seq_len])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,5 +395,30 @@ mod tests {
         assert_eq!(mask_data[2], f32::NEG_INFINITY); // [0,2] above diagonal
         assert_eq!(mask_data[4], 0.0);      // [1,0] below diagonal
         assert_eq!(mask_data[5], 0.0);      // [1,1] diagonal
+    }
+
+    #[test]
+    fn test_sliding_window_mask() {
+        let device = Default::default();
+        // Window size 2: position i can attend to positions [i-2, i-1, i]
+        let mask: Tensor<TestBackend, 2> = sliding_window_mask(5, 2, &device);
+        let mask_data: Vec<f32> = mask.into_data().to_vec().unwrap();
+
+        // Row 0: can attend to position 0 only
+        assert_eq!(mask_data[0], 0.0);  // [0,0]
+        assert_eq!(mask_data[1], f32::NEG_INFINITY);  // [0,1] future
+
+        // Row 3: can attend to positions 1, 2, 3 (i=3, window=2: 3-0=3>2, 3-1=2<=2)
+        assert_eq!(mask_data[15], f32::NEG_INFINITY);  // [3,0] outside window (3>0+2)
+        assert_eq!(mask_data[16], 0.0);  // [3,1] in window (3<=1+2=3)
+        assert_eq!(mask_data[17], 0.0);  // [3,2] in window
+        assert_eq!(mask_data[18], 0.0);  // [3,3] current
+
+        // Row 4: can attend to positions 2, 3, 4
+        assert_eq!(mask_data[20], f32::NEG_INFINITY);  // [4,0] outside window
+        assert_eq!(mask_data[21], f32::NEG_INFINITY);  // [4,1] outside window
+        assert_eq!(mask_data[22], 0.0);  // [4,2] in window
+        assert_eq!(mask_data[23], 0.0);  // [4,3] in window
+        assert_eq!(mask_data[24], 0.0);  // [4,4] current
     }
 }

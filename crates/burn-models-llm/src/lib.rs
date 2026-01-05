@@ -25,8 +25,10 @@
 
 pub mod llama;
 pub mod llama_loader;
+pub mod mistral;
 pub mod mixtral;
 
 pub use llama::{Llama, LlamaConfig, LlamaOutput, LlamaRuntime};
 pub use llama_loader::{load_llama, LlamaLoadError};
+pub use mistral::{Mistral, MistralConfig, MistralOutput, MistralRuntime};
 pub use mixtral::{Mixtral, MixtralConfig, MixtralOutput, MixtralRuntime};

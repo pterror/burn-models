@@ -133,8 +133,8 @@
 - [x] LLaMA 2/3 architecture (basic implementation)
 - [x] LLaMA weight loading from safetensors
 - [x] Mixtral 8x7B/8x22B (LLaMA + MoE)
+- [x] Mistral 7B/Nemo - Sliding window attention
 - [ ] Qwen 2.5 - Alibaba's multilingual LLM
-- [ ] Mistral - Mistral AI dense model
 - [ ] Gemma 2 - Google's open models
 - [ ] Phi-3/4 - Microsoft's small models
 - [ ] DeepSeek - DeepSeek's models
@@ -149,6 +149,7 @@
 - [x] Multi-head attention with GQA support
 - [x] MoE (Mixture of Experts) routing
 - [x] DiT components (AdaLayerNorm, DiTBlock, PatchEmbed)
+- [x] Sliding window attention mask
 
 #### Inference Optimization
 - [x] KV cache for autoregressive models
