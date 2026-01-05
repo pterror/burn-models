@@ -115,7 +115,7 @@
 #### DiT-based (new architecture needed)
 - [x] Flux (Black Forest Labs) - Flow matching, DiT architecture, weight loading
 - [x] Stable Diffusion 3 / 3.5 - MMDiT (Multimodal Diffusion Transformer), rectified flow
-- [ ] Z-Image (Alibaba) - Single-stream DiT (S3-DiT), 6B params, very fast
+- [x] Z-Image (Alibaba) - Single-stream DiT (S3-DiT), 6B params, text+image tokens in single stream
 - [ ] Qwen-Image (Alibaba) - 20B MMDiT, Qwen2.5-VL text encoder, Apache 2.0
 - [x] PixArt-α/Σ - Efficient DiT, T5 text encoder, cross-attention to text
 - [x] AuraFlow - Open source flow-based, MMDiT joint attention

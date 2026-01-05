@@ -39,6 +39,7 @@ pub mod ltx;
 pub mod mochi;
 pub mod pixart;
 pub mod sd3;
+pub mod zimage;
 
 pub use auraflow::{AuraFlow, AuraFlowConfig, AuraFlowOutput, AuraFlowRuntime};
 pub use cogvideox::{CogVideoX, CogVideoXConfig, CogVideoXOutput, CogVideoXRuntime};
@@ -49,3 +50,4 @@ pub use ltx::{LtxVideo, LtxVideoConfig, LtxVideoOutput, LtxVideoRuntime};
 pub use mochi::{Mochi, MochiConfig, MochiOutput, MochiRuntime};
 pub use pixart::{PixArt, PixArtConfig, PixArtOutput};
 pub use sd3::{Sd3, Sd3Config, Sd3Output, Sd3Runtime};
+pub use zimage::{ZImage, ZImageConfig, ZImageOutput, ZImageRuntime};
