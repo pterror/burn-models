@@ -36,6 +36,7 @@ pub mod phi;
 pub mod phi_loader;
 pub mod qwen;
 pub mod qwen_loader;
+pub mod rwkv;
 
 pub use deepseek::{DeepSeek, DeepSeekConfig, DeepSeekOutput, DeepSeekRuntime};
 pub use deepseek_loader::{load_deepseek, DeepSeekLoadError};
@@ -50,3 +51,4 @@ pub use mistral_loader::{load_mistral, MistralLoadError};
 pub use mixtral::{Mixtral, MixtralConfig, MixtralOutput, MixtralRuntime};
 pub use qwen::{Qwen, QwenConfig, QwenOutput, QwenRuntime};
 pub use qwen_loader::{load_qwen, QwenLoadError};
+pub use rwkv::{Rwkv, RwkvConfig, RwkvOutput, RwkvRuntime, RwkvState};
