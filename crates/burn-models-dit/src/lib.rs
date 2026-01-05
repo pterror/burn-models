@@ -9,6 +9,11 @@
 //!   - Flux.1-dev (guidance-distilled)
 //!   - Flux.1-schnell (few-step)
 //!
+//! - **Stable Diffusion 3**: Stability AI's MMDiT model
+//!   - SD3-Medium (2B params)
+//!   - SD3-Large (8B params)
+//!   - SD3.5-Large, SD3.5-Turbo
+//!
 //! # Architecture
 //!
 //! DiT models differ from UNet-based diffusion models:
@@ -19,6 +24,8 @@
 
 pub mod flux;
 pub mod flux_loader;
+pub mod sd3;
 
 pub use flux::{Flux, FluxConfig, FluxOutput, FluxRuntime};
 pub use flux_loader::{load_flux, FluxLoadError};
+pub use sd3::{Sd3, Sd3Config, Sd3Output, Sd3Runtime};
