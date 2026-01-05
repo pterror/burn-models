@@ -169,8 +169,8 @@
 
 ### Pre-Release
 
-- [ ] Architecture review - ensure consistent patterns across model implementations
-- [ ] API surface review - design public API for library consumers
+- [x] Architecture review - ensure consistent patterns across model implementations
+- [x] API surface review - design public API for library consumers
 - [ ] Documentation - usage examples, model loading, inference patterns
 
 ### Future Backlog
