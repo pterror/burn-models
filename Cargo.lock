@@ -596,6 +596,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "burn-models-dit"
+version = "0.1.0"
+dependencies = [
+ "burn",
+ "burn-models-convert",
+ "burn-models-core",
+ "burn-ndarray",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "burn-models-llm"
 version = "0.1.0"
 dependencies = [

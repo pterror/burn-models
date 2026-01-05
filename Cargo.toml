@@ -10,6 +10,7 @@ members = [
     "crates/burn-models-convert",
     "crates/burn-models-cli",
     "crates/burn-models-llm",
+    "crates/burn-models-dit",
 ]
 
 [workspace.dependencies]
@@ -21,6 +22,7 @@ burn-models-unet = { path = "crates/burn-models-unet" }
 burn-models-samplers = { path = "crates/burn-models-samplers" }
 burn-models-convert = { path = "crates/burn-models-convert" }
 burn-models-llm = { path = "crates/burn-models-llm" }
+burn-models-dit = { path = "crates/burn-models-dit" }
 
 # External dependencies
 burn = "0.16"

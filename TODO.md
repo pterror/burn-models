@@ -113,7 +113,7 @@
 - [ ] Stable Cascade - Würstchen architecture, latent cascade
 
 #### DiT-based (new architecture needed)
-- [ ] Flux (Black Forest Labs) - Flow matching, DiT architecture
+- [x] Flux (Black Forest Labs) - Flow matching, DiT architecture (model structure complete, needs weight loading)
 - [ ] Stable Diffusion 3 / 3.5 - MMDiT (Multimodal Diffusion Transformer), rectified flow
 - [ ] Z-Image (Alibaba) - Single-stream DiT (S3-DiT), 6B params, very fast
 - [ ] Qwen-Image (Alibaba) - 20B MMDiT, Qwen2.5-VL text encoder, Apache 2.0
