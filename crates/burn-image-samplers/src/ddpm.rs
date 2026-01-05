@@ -61,11 +61,17 @@ impl Default for DdpmConfig {
 ///
 /// Implements the original DDPM sampling with optional variance learning.
 pub struct DdpmSampler<B: Backend> {
+    /// Sampler configuration
     config: DdpmConfig,
+    /// Timestep indices for sampling
     timesteps: Vec<usize>,
+    /// Alpha values (1 - beta)
     alphas: Vec<f32>,
+    /// Cumulative product of alphas
     alphas_cumprod: Vec<f32>,
+    /// Beta values at each timestep
     betas: Vec<f32>,
+    /// Phantom data for backend type
     _marker: std::marker::PhantomData<B>,
 }
 

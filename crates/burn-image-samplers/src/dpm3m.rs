@@ -37,10 +37,13 @@ impl Default for Dpm3mSdeConfig {
 /// Third-order DPM-Solver++ with stochastic noise injection.
 /// Uses three past model outputs for higher accuracy.
 pub struct Dpm3mSdeSampler<B: Backend> {
+    /// Sampler configuration
     config: Dpm3mSdeConfig,
+    /// Timestep indices for sampling
     timesteps: Vec<usize>,
+    /// Sigma values at each timestep
     sigmas: Vec<f32>,
-    /// History of model outputs
+    /// History of model outputs for multi-step methods
     model_outputs: VecDeque<Tensor<B, 4>>,
 }
 

@@ -12,6 +12,7 @@ pub struct WeightMapping {
 }
 
 impl WeightMapping {
+    /// Creates a new empty weight mapping
     pub fn new() -> Self {
         Self {
             mappings: HashMap::new(),

@@ -52,8 +52,11 @@ impl Default for SaSolverConfig {
 /// Stochastic Adams solver uses Adams-Bashforth for prediction and
 /// Adams-Moulton for correction, providing high-order accuracy.
 pub struct SaSolver<B: Backend> {
+    /// Solver configuration
     config: SaSolverConfig,
+    /// Timestep indices for sampling
     timesteps: Vec<usize>,
+    /// Sigma values at each timestep
     sigmas: Vec<f32>,
     /// History of model outputs (epsilon predictions)
     model_outputs: VecDeque<Tensor<B, 4>>,

@@ -27,9 +27,13 @@ impl Default for EulerConfig {
 /// Uses the Euler method to solve the diffusion ODE.
 /// This is faster than DDIM and often produces good results.
 pub struct EulerSampler<B: Backend> {
+    /// Noise schedule
     schedule: NoiseSchedule<B>,
+    /// Sampler configuration
     config: EulerConfig,
+    /// Timestep indices for sampling
     timesteps: Vec<usize>,
+    /// Sigma values at each timestep
     sigmas: Vec<f32>,
 }
 
@@ -109,9 +113,13 @@ impl<B: Backend> EulerSampler<B> {
 /// Adds noise during sampling for more stochastic results.
 /// Often produces more creative outputs.
 pub struct EulerAncestralSampler<B: Backend> {
+    /// Noise schedule
     schedule: NoiseSchedule<B>,
+    /// Sampler configuration
     config: EulerConfig,
+    /// Timestep indices for sampling
     timesteps: Vec<usize>,
+    /// Sigma values at each timestep
     sigmas: Vec<f32>,
 }
 

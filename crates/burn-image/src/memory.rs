@@ -58,7 +58,9 @@ impl MemoryConfig {
 
 /// Tiled VAE operations for memory-efficient encoding/decoding of large images
 pub struct TiledVae {
+    /// Size of each tile in pixels
     tile_size: usize,
+    /// Overlap between adjacent tiles for smooth blending
     overlap: usize,
 }
 

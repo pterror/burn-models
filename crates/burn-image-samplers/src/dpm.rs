@@ -30,9 +30,13 @@ impl Default for DpmConfig {
 /// High-quality sampler that produces excellent results in ~20 steps.
 /// Uses a second-order multistep method for better accuracy.
 pub struct DpmPlusPlusSampler<B: Backend> {
+    /// Noise schedule
     schedule: NoiseSchedule<B>,
+    /// Sampler configuration
     config: DpmConfig,
+    /// Timestep indices for sampling
     timesteps: Vec<usize>,
+    /// Sigma values at each timestep
     sigmas: Vec<f32>,
     /// Previous model output for multistep
     prev_sample: Option<Tensor<B, 4>>,
@@ -155,9 +159,13 @@ impl<B: Backend> DpmPlusPlusSampler<B> {
 /// Adds controlled noise during sampling for more diverse results.
 /// Good for creative generation with ~25-30 steps.
 pub struct DpmPlusPlusSdeSampler<B: Backend> {
+    /// Noise schedule
     schedule: NoiseSchedule<B>,
+    /// Sampler configuration
     config: DpmConfig,
+    /// Timestep indices for sampling
     timesteps: Vec<usize>,
+    /// Sigma values at each timestep
     sigmas: Vec<f32>,
     /// Noise multiplier (0.0 = deterministic, 1.0 = full noise)
     eta: f32,
