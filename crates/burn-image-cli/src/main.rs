@@ -174,6 +174,7 @@ enum ModelType {
     SdxlRefiner,
 }
 
+/// Application entry point
 fn main() -> Result<()> {
     let cli = Cli::parse();
 

@@ -115,6 +115,7 @@ pub trait PrecisionConvert<B: Backend, const D: usize> {
 }
 
 impl<B: Backend, const D: usize> PrecisionConvert<B, D> for Tensor<B, D> {
+    /// Converts the tensor to the specified precision mode
     fn to_precision(self, mode: PrecisionMode) -> Tensor<B, D> {
         match mode {
             PrecisionMode::Fp32 => to_fp32(self),

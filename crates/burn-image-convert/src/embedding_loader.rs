@@ -151,8 +151,11 @@ fn extract_token_name(key: &str, path: &Path) -> String {
 /// Errors that can occur when loading embeddings
 #[derive(Debug)]
 pub enum EmbeddingLoadError {
+    /// Error reading the embedding file
     FileError(String),
+    /// Error parsing the embedding format
     ParseError(String),
+    /// Error loading tensor data
     TensorError(String),
 }
 

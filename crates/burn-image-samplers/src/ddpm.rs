@@ -104,6 +104,7 @@ impl<B: Backend> DdpmSampler<B> {
         }
     }
 
+    /// Computes the timestep indices from config
     fn compute_timesteps(config: &DdpmConfig) -> Vec<usize> {
         let step_ratio = config.num_train_timesteps / config.num_inference_steps;
         (0..config.num_inference_steps)
@@ -117,7 +118,7 @@ impl<B: Backend> DdpmSampler<B> {
         &self.timesteps
     }
 
-    /// Compute variance for a timestep
+    /// Computes variance for a timestep based on variance type
     fn get_variance(&self, t: usize) -> f32 {
         let alpha_prod_t = self.alphas_cumprod[t];
         let alpha_prod_t_prev = if t > 0 { self.alphas_cumprod[t - 1] } else { 1.0 };

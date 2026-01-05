@@ -130,15 +130,17 @@ impl<B: Backend> EulerAncestralSampler<B> {
         }
     }
 
+    /// Returns the timestep indices used for sampling
     pub fn timesteps(&self) -> &[usize] {
         &self.timesteps
     }
 
+    /// Returns the number of inference steps
     pub fn num_steps(&self) -> usize {
         self.config.num_inference_steps
     }
 
-    /// Perform one Euler Ancestral step (with noise injection)
+    /// Performs one Euler Ancestral step with stochastic noise injection
     pub fn step(
         &self,
         latent: Tensor<B, 4>,
@@ -175,6 +177,7 @@ impl<B: Backend> EulerAncestralSampler<B> {
         latent_down + noise * sigma_up
     }
 
+    /// Initializes a random noise latent scaled for the first sigma
     pub fn init_latent(
         &self,
         batch_size: usize,

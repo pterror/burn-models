@@ -64,6 +64,7 @@ impl<B: Backend> LcmSampler<B> {
         }
     }
 
+    /// Computes timestep indices for LCM sampling
     fn compute_timesteps(config: &LcmConfig, num_train_timesteps: usize) -> Vec<usize> {
         // LCM uses specific timestep spacing based on original inference steps
         let c = num_train_timesteps / config.original_inference_steps;
@@ -86,7 +87,7 @@ impl<B: Backend> LcmSampler<B> {
         &self.timesteps
     }
 
-    /// Get predicted original sample (x0) from model output
+    /// Gets predicted original sample (x0) from model output using epsilon prediction
     fn get_predicted_original(
         &self,
         model_output: &Tensor<B, 4>,

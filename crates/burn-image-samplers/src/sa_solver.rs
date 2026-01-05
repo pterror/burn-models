@@ -87,7 +87,7 @@ impl<B: Backend> SaSolver<B> {
         self.timestep_history.clear();
     }
 
-    /// Get tau value based on configuration
+    /// Computes tau value based on schedule type
     fn get_tau(&self, t: f32, t_end: f32) -> f32 {
         let progress = t / t_end;
         match self.config.tau_type {
@@ -97,12 +97,12 @@ impl<B: Backend> SaSolver<B> {
         }
     }
 
-    /// Adams-Bashforth coefficients
+    /// Returns Adams-Bashforth coefficients for given order
     fn get_ab_coefficients(order: usize) -> Vec<f32> {
         adams_bashforth_coefficients(order)
     }
 
-    /// Adams-Moulton coefficients
+    /// Returns Adams-Moulton coefficients for given order
     fn get_am_coefficients(order: usize) -> Vec<f32> {
         match order {
             0 => vec![],
@@ -114,7 +114,7 @@ impl<B: Backend> SaSolver<B> {
         }
     }
 
-    /// Predictor step using Adams-Bashforth
+    /// Performs predictor step using Adams-Bashforth method
     fn predict(
         &self,
         sample: &Tensor<B, 4>,
@@ -143,7 +143,7 @@ impl<B: Backend> SaSolver<B> {
         sample.clone() + derivative * h
     }
 
-    /// Corrector step using Adams-Moulton
+    /// Performs corrector step using Adams-Moulton method
     fn correct(
         &self,
         predicted: &Tensor<B, 4>,

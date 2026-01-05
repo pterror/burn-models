@@ -31,9 +31,11 @@ pub use burn::record::{
 /// Error type for serialization operations
 #[derive(Debug, thiserror::Error)]
 pub enum SerializeError {
+    /// IO error during file operations
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Error from the Burn recorder
     #[error("Record error: {0}")]
     Record(#[from] RecorderError),
 }
@@ -50,7 +52,9 @@ pub fn half_precision_recorder() -> BinFileRecorder<HalfPrecisionSettings> {
     BinFileRecorder::new()
 }
 
-/// Create a recorder for full precision binary bytes (in memory)
+/// Creates a recorder for full precision binary bytes (in memory)
+///
+/// Useful for serializing models to memory rather than disk.
 pub fn bytes_recorder() -> BinBytesRecorder<FullPrecisionSettings> {
     BinBytesRecorder::new()
 }

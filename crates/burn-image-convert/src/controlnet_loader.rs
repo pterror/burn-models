@@ -67,8 +67,11 @@ pub struct ControlNetInfo {
 /// Errors that can occur when loading ControlNet
 #[derive(Debug)]
 pub enum ControlNetLoadError {
+    /// Error reading the model file
     FileError(String),
+    /// Error parsing the model format
     ParseError(String),
+    /// Error loading tensor data
     TensorError(String),
 }
 
