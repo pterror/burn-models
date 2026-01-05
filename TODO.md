@@ -145,10 +145,10 @@
 - [x] RMSNorm
 - [x] SwiGLU / GeGLU activations
 - [x] Multi-head attention with GQA support
-- [ ] MoE (Mixture of Experts) routing
+- [x] MoE (Mixture of Experts) routing
 
 #### Inference Optimization
-- [ ] KV cache for autoregressive models
+- [x] KV cache for autoregressive models
 - [ ] Paged attention
 - [ ] Continuous batching
 - [ ] Speculative decoding
