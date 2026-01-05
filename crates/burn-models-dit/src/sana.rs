@@ -104,10 +104,11 @@ impl SanaConfig {
     }
 
     /// Initialize the model and runtime
-    pub fn init<B: Backend>(&self, device: &B::Device) -> (Sana<B>, SanaRuntime) {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> (Sana<B>, SanaRuntime<B>) {
         let model = Sana::new(self, device);
         let runtime = SanaRuntime {
             config: self.clone(),
+            _marker: std::marker::PhantomData,
         };
         (model, runtime)
     }
@@ -115,8 +116,9 @@ impl SanaConfig {
 
 /// Runtime configuration (non-Module data)
 #[derive(Clone, Debug)]
-pub struct SanaRuntime {
+pub struct SanaRuntime<B: Backend> {
     pub config: SanaConfig,
+    _marker: std::marker::PhantomData<B>,
 }
 
 /// SANA Model Output

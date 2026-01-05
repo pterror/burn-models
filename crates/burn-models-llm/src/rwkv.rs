@@ -121,7 +121,7 @@ impl RwkvConfig {
     }
 
     /// Initialize the model and runtime
-    pub fn init<B: Backend>(&self, device: &B::Device) -> (Rwkv<B>, RwkvRuntime) {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> (Rwkv<B>, RwkvRuntime<B>) {
         let layers: Vec<RwkvBlock<B>> = (0..self.num_layers)
             .map(|layer_id| RwkvBlock::new(self, layer_id, device))
             .collect();
@@ -139,6 +139,7 @@ impl RwkvConfig {
 
         let runtime = RwkvRuntime {
             config: self.clone(),
+            _marker: std::marker::PhantomData,
         };
 
         (model, runtime)
@@ -536,8 +537,9 @@ pub struct Rwkv<B: Backend> {
 }
 
 /// Runtime configuration for RWKV (not part of Module)
-pub struct RwkvRuntime {
+pub struct RwkvRuntime<B: Backend> {
     pub config: RwkvConfig,
+    _marker: std::marker::PhantomData<B>,
 }
 
 /// Output from the RWKV model
@@ -577,7 +579,7 @@ impl<B: Backend> Rwkv<B> {
     }
 
     /// Initialize fresh states for recurrent inference
-    pub fn init_states(&self, runtime: &RwkvRuntime, batch: usize, device: &B::Device) -> Vec<RwkvState<B>> {
+    pub fn init_states(&self, runtime: &RwkvRuntime<B>, batch: usize, device: &B::Device) -> Vec<RwkvState<B>> {
         (0..runtime.config.num_layers)
             .map(|_| RwkvState::new(&runtime.config, batch, device))
             .collect()
@@ -587,7 +589,7 @@ impl<B: Backend> Rwkv<B> {
     pub fn generate(
         &self,
         input_ids: Tensor<B, 2, Int>,
-        runtime: &RwkvRuntime,
+        runtime: &RwkvRuntime<B>,
         max_new_tokens: usize,
         temperature: f32,
     ) -> Tensor<B, 2, Int> {

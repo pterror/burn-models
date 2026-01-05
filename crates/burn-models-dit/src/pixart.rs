@@ -125,7 +125,7 @@ impl PixArtConfig {
     }
 
     /// Initialize the model
-    pub fn init<B: Backend>(&self, device: &B::Device) -> PixArt<B> {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> (PixArt<B>, PixArtRuntime<B>) {
         // Patch embedding
         let patch_embed = PatchEmbedConfig::new(self.patch_size, self.in_channels, self.hidden_size)
             .init(device);
@@ -170,7 +170,7 @@ impl PixArtConfig {
                 .init(device),
         };
 
-        PixArt {
+        let model = PixArt {
             patch_embed,
             time_embed,
             pos_embed: Param::from_tensor(pos_embed),
@@ -179,7 +179,13 @@ impl PixArtConfig {
             hidden_size: self.hidden_size,
             patch_size: self.patch_size,
             in_channels: self.in_channels,
-        }
+        };
+
+        let runtime = PixArtRuntime {
+            _marker: std::marker::PhantomData,
+        };
+
+        (model, runtime)
     }
 }
 
@@ -451,6 +457,11 @@ pub struct PixArt<B: Backend> {
     pub in_channels: usize,
 }
 
+/// Runtime state for PixArt
+pub struct PixArtRuntime<B: Backend> {
+    _marker: std::marker::PhantomData<B>,
+}
+
 /// Output from PixArt
 pub struct PixArtOutput<B: Backend> {
     /// Predicted noise or velocity [batch, channels, height, width]
@@ -589,7 +600,7 @@ mod tests {
     fn test_pixart_tiny_forward() {
         let device = Default::default();
         let config = PixArtConfig::tiny();
-        let model = config.init::<TestBackend>(&device);
+        let (model, _runtime) = config.init::<TestBackend>(&device);
 
         // [batch=1, channels=4, height=8, width=8]
         let latents = Tensor::zeros([1, 4, 8, 8], &device);

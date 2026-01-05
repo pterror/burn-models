@@ -129,7 +129,7 @@ impl JambaConfig {
     }
 
     /// Initialize the model and runtime
-    pub fn init<B: Backend>(&self, device: &B::Device) -> (Jamba<B>, JambaRuntime) {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> (Jamba<B>, JambaRuntime<B>) {
         let layers: Vec<JambaBlock<B>> = (0..self.n_layer)
             .map(|i| JambaBlock::new(self, i, device))
             .collect();
@@ -147,6 +147,7 @@ impl JambaConfig {
 
         let runtime = JambaRuntime {
             config: self.clone(),
+            _marker: std::marker::PhantomData,
         };
 
         (model, runtime)
@@ -154,9 +155,9 @@ impl JambaConfig {
 }
 
 /// Runtime configuration (non-Module data)
-#[derive(Clone, Debug)]
-pub struct JambaRuntime {
+pub struct JambaRuntime<B: Backend> {
     pub config: JambaConfig,
+    _marker: std::marker::PhantomData<B>,
 }
 
 /// State for one Jamba layer during inference
@@ -253,7 +254,7 @@ impl<B: Backend> Jamba<B> {
     }
 
     /// Initialize fresh states for recurrent inference
-    pub fn init_states(&self, runtime: &JambaRuntime, batch: usize, device: &B::Device) -> Vec<JambaState<B>> {
+    pub fn init_states(&self, runtime: &JambaRuntime<B>, batch: usize, device: &B::Device) -> Vec<JambaState<B>> {
         (0..runtime.config.n_layer)
             .map(|i| JambaState::for_layer(&runtime.config, i, batch, device))
             .collect()
@@ -263,7 +264,7 @@ impl<B: Backend> Jamba<B> {
     pub fn generate(
         &self,
         input_ids: Tensor<B, 2, Int>,
-        runtime: &JambaRuntime,
+        runtime: &JambaRuntime<B>,
         max_new_tokens: usize,
         temperature: f32,
     ) -> Tensor<B, 2, Int> {

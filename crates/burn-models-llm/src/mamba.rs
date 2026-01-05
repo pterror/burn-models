@@ -131,7 +131,7 @@ impl MambaConfig {
     }
 
     /// Initialize the model and runtime
-    pub fn init<B: Backend>(&self, device: &B::Device) -> (Mamba<B>, MambaRuntime) {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> (Mamba<B>, MambaRuntime<B>) {
         let layers: Vec<MambaBlock<B>> = (0..self.n_layer)
             .map(|_| MambaBlock::new(self, device))
             .collect();
@@ -149,6 +149,7 @@ impl MambaConfig {
 
         let runtime = MambaRuntime {
             config: self.clone(),
+            _marker: std::marker::PhantomData,
         };
 
         (model, runtime)
@@ -156,9 +157,9 @@ impl MambaConfig {
 }
 
 /// Runtime configuration (non-Module data)
-#[derive(Clone, Debug)]
-pub struct MambaRuntime {
+pub struct MambaRuntime<B: Backend> {
     pub config: MambaConfig,
+    _marker: std::marker::PhantomData<B>,
 }
 
 /// State for one Mamba layer during inference
@@ -231,7 +232,7 @@ impl<B: Backend> Mamba<B> {
     }
 
     /// Initialize fresh states for recurrent inference
-    pub fn init_states(&self, runtime: &MambaRuntime, batch: usize, device: &B::Device) -> Vec<MambaState<B>> {
+    pub fn init_states(&self, runtime: &MambaRuntime<B>, batch: usize, device: &B::Device) -> Vec<MambaState<B>> {
         (0..runtime.config.n_layer)
             .map(|_| MambaState::new(&runtime.config, batch, device))
             .collect()
@@ -241,7 +242,7 @@ impl<B: Backend> Mamba<B> {
     pub fn generate(
         &self,
         input_ids: Tensor<B, 2, Int>,
-        runtime: &MambaRuntime,
+        runtime: &MambaRuntime<B>,
         max_new_tokens: usize,
         temperature: f32,
     ) -> Tensor<B, 2, Int> {

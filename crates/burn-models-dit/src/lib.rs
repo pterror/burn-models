@@ -51,7 +51,7 @@ pub use flux_loader::{load_flux, FluxLoadError};
 pub use hunyuan::{HunyuanDiT, HunyuanDiTConfig, HunyuanDiTOutput, HunyuanDiTRuntime};
 pub use ltx::{LtxVideo, LtxVideoConfig, LtxVideoOutput, LtxVideoRuntime};
 pub use mochi::{Mochi, MochiConfig, MochiOutput, MochiRuntime};
-pub use pixart::{PixArt, PixArtConfig, PixArtOutput};
+pub use pixart::{PixArt, PixArtConfig, PixArtOutput, PixArtRuntime};
 pub use qwenimage::{QwenImage, QwenImageConfig, QwenImageOutput, QwenImageRuntime};
 pub use sd3::{Sd3, Sd3Config, Sd3Output, Sd3Runtime};
 pub use wan::{Wan, WanConfig, WanOutput, WanRuntime};
