@@ -555,6 +555,7 @@ name = "burn-image-convert"
 version = "0.1.0"
 dependencies = [
  "burn",
+ "burn-image-core",
  "bytemuck",
  "half",
  "memmap2",
@@ -567,6 +568,7 @@ name = "burn-image-core"
 version = "0.1.0"
 dependencies = [
  "burn",
+ "burn-ndarray",
 ]
 
 [[package]]

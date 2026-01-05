@@ -36,9 +36,44 @@ pub use burn_image_unet as unet;
 pub use burn_image_samplers as samplers;
 pub use burn_image_convert as convert;
 
+// Re-export LoRA types for convenience
+pub use burn_image_core::lora::{LoraModel, LoraWeight, LoraConvWeight, LoraWeightType};
+pub use burn_image_convert::lora_loader::{load_lora, LoraFormat, LoraLoadError};
+
+// Re-export ControlNet types
+pub use burn_image_unet::controlnet::{ControlNet, ControlNetConfig, ControlNetOutput, ControlNetPreprocessor};
+pub use burn_image_convert::controlnet_loader::{load_controlnet_info, ControlNetInfo, ControlNetLoadError, ControlNetType};
+
+// Re-export IP-Adapter types
+pub use burn_image_unet::ip_adapter::{IpAdapter, IpAdapterConfig, ImageProjection, combine_embeddings};
+
+// Re-export T2I-Adapter types
+pub use burn_image_unet::t2i_adapter::{T2IAdapter, T2IAdapterConfig, T2IAdapterOutput, T2IAdapterType};
+
+// Re-export textual inversion / embedding types
+pub use burn_image_core::textual_inversion::{
+    TextualInversionEmbedding, EmbeddingManager, EmbeddingError, find_placeholder_tokens
+};
+pub use burn_image_convert::embedding_loader::{load_embedding, EmbeddingFormat, EmbeddingLoadError};
+
+// Re-export precision types
+pub use burn_image_core::precision::{
+    PrecisionMode, PrecisionConfig, PrecisionConvert, to_fp16, to_bf16, to_fp32
+};
+
+// Re-export flash attention types
+pub use burn_image_core::flash_attention::{
+    AttentionStrategy, AttentionConfig, compute_attention
+};
+
 pub mod backends;
+pub mod batch;
 pub mod memory;
+pub mod offload;
 pub mod pipeline;
+
+pub use batch::{BatchConfig, BatchResult};
+pub use offload::{OffloadStrategy, OffloadConfig, ModelComponent, OffloadState, PipelinePhase};
 
 pub use pipeline::{
     DiffusionPipeline, Img2ImgConfig, SampleConfig, Sd1xConditioning,

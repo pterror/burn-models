@@ -64,38 +64,39 @@
 - [x] Euler Ancestral
 - [x] DPM++ 2M
 - [x] DPM++ SDE
-- [ ] Euler CFG++
-- [ ] Euler Ancestral CFG++
-- [ ] Heun
-- [ ] HeunPP2
-- [ ] DPM 2
-- [ ] DPM 2 Ancestral
-- [ ] LMS
-- [ ] DPM Fast
-- [ ] DPM Adaptive
-- [ ] DPM++ 2S Ancestral
-- [ ] DPM++ 2S Ancestral CFG++
-- [ ] DPM++ 2M CFG++
-- [ ] DPM++ 2M SDE Heun
-- [ ] DPM++ 3M SDE
-- [ ] DDPM
-- [ ] LCM (Latent Consistency Model)
-- [ ] iPNDM
-- [ ] iPNDM-v
-- [ ] DEIS
-- [ ] Res Multistep
-- [ ] SA-Solver
+- [x] Heun
+- [x] HeunPP2
+- [x] DPM 2
+- [x] DPM 2 Ancestral
+- [x] LMS
+- [x] DPM++ 3M SDE
+- [x] DDPM
+- [x] LCM (Latent Consistency Model)
+- [x] iPNDM
+- [x] iPNDM-v
+- [x] DEIS
+- [x] UniPC
+- [x] SA-Solver
+- [x] Euler CFG++
+- [x] Euler Ancestral CFG++
+- [x] DPM Fast
+- [x] DPM Adaptive
+- [x] DPM++ 2S Ancestral
+- [x] DPM++ 2S Ancestral CFG++
+- [x] DPM++ 2M CFG++
+- [x] DPM++ 2M SDE Heun
+- [x] Res Multistep
 
 ### Model Extensions
-- [ ] LoRA support
-- [ ] ControlNet integration
-- [ ] Textual inversion / embeddings
-- [ ] IP-Adapter
-- [ ] T2I-Adapter
+- [x] LoRA support (Kohya, Diffusers formats)
+- [x] ControlNet integration (SD 1.x, SDXL)
+- [x] Textual inversion / embeddings
+- [x] IP-Adapter
+- [x] T2I-Adapter
 
 ### Performance
-- [ ] fp16/bf16 inference
-- [ ] Flash Attention
-- [ ] xFormers-style memory efficient attention
-- [ ] Model offloading (sequential CPU/GPU)
-- [ ] Batch processing
+- [x] fp16/bf16 inference (precision config)
+- [x] Flash Attention (tiled, memory-efficient, sliced)
+- [x] xFormers-style memory efficient attention
+- [x] Model offloading (sequential CPU/GPU)
+- [x] Batch processing

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 burn.workspace = true
+burn-image-core.workspace = true
 bytemuck.workspace = true
 half.workspace = true
 memmap2.workspace = true

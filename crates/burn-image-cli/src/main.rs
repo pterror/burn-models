@@ -64,6 +64,14 @@ enum Commands {
         /// Path to model weights directory
         #[arg(long)]
         weights: PathBuf,
+
+        /// LoRA model paths (can be specified multiple times)
+        #[arg(long = "lora", value_name = "FILE")]
+        loras: Vec<PathBuf>,
+
+        /// LoRA scales (same order as --lora, default 1.0)
+        #[arg(long = "lora-scale", value_name = "SCALE")]
+        lora_scales: Vec<f64>,
     },
 
     /// Transform an existing image based on a prompt
@@ -182,6 +190,8 @@ fn main() -> Result<()> {
             seed: _seed,
             vocab,
             weights,
+            loras,
+            lora_scales,
         } => {
             println!("burn-image: Stable Diffusion in pure Rust\n");
             println!("Configuration:");
@@ -191,6 +201,13 @@ fn main() -> Result<()> {
             println!("  Guidance: {}", guidance);
             println!("  Vocab:    {}", vocab.display());
             println!("  Weights:  {}", weights.display());
+            if !loras.is_empty() {
+                println!("  LoRAs:");
+                for (i, lora_path) in loras.iter().enumerate() {
+                    let scale = lora_scales.get(i).copied().unwrap_or(1.0);
+                    println!("    - {} (scale: {})", lora_path.display(), scale);
+                }
+            }
             println!();
 
             let pb = ProgressBar::new(100);
@@ -227,6 +244,16 @@ fn main() -> Result<()> {
                 ModelType::SdxlRefiner => {
                     println!("  let pipeline = StableDiffusionXLWithRefiner::new(tokenizer, tokenizer2, &device);");
                     println!("  let config = BaseRefinerConfig {{ width: {}, height: {}, steps: {}, .. }};", width, height, steps);
+                }
+            }
+
+            // Show LoRA loading example
+            if !loras.is_empty() {
+                println!("\n  // Load LoRAs:");
+                for (i, lora_path) in loras.iter().enumerate() {
+                    let scale = lora_scales.get(i).copied().unwrap_or(1.0);
+                    println!("  let lora{} = burn_image::load_lora::<Backend>(\"{}\", {}, LoraFormat::Auto, &device)?;",
+                             i, lora_path.display(), scale);
                 }
             }
 
@@ -326,6 +353,9 @@ fn main() -> Result<()> {
             println!("  - Text-to-image (generate)");
             println!("  - Image-to-image (img2img)");
             println!("  - Inpainting (inpaint)");
+
+            println!("\nSupported extensions:");
+            println!("  - LoRA (Kohya and Diffusers formats)");
 
             Ok(())
         }
