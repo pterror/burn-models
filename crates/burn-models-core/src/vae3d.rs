@@ -22,7 +22,7 @@
 //! - Total: 256x compression
 
 use burn::prelude::*;
-use burn::nn::{Linear, LinearConfig};
+use burn::module::Param;
 
 /// Configuration for 3D VAE
 #[derive(Debug, Clone)]
@@ -118,60 +118,202 @@ impl Conv3dParams {
     }
 }
 
-/// 3D Convolution layer (simulated with Linear for now)
-/// Note: Full 3D conv requires backend support; this is a placeholder
+/// 3D Convolution layer
+///
+/// Implements 3D convolution using the im2col (image to column) approach:
+/// 1. Extract all overlapping 3D patches from input
+/// 2. Reshape patches into columns
+/// 3. Matrix multiply with weight matrix
+/// 4. Reshape result to output volume
 #[derive(Module, Debug)]
 pub struct Conv3d<B: Backend> {
-    /// Weight projection (flattened conv kernel)
-    pub weight: Linear<B>,
-    /// Kernel size
+    /// Convolution weights [out_channels, in_channels * kernel_t * kernel_h * kernel_w]
+    pub weight: Param<Tensor<B, 2>>,
+    /// Bias [out_channels]
+    pub bias: Option<Param<Tensor<B, 1>>>,
+    /// Input channels
     #[module(skip)]
-    pub kernel_size: [usize; 3],
-    /// Stride
-    #[module(skip)]
-    pub stride: [usize; 3],
-    /// Padding
-    #[module(skip)]
-    pub padding: [usize; 3],
+    pub in_channels: usize,
     /// Output channels
     #[module(skip)]
     pub out_channels: usize,
+    /// Kernel size [T, H, W]
+    #[module(skip)]
+    pub kernel_size: [usize; 3],
+    /// Stride [T, H, W]
+    #[module(skip)]
+    pub stride: [usize; 3],
+    /// Padding [T, H, W]
+    #[module(skip)]
+    pub padding: [usize; 3],
 }
 
 impl<B: Backend> Conv3d<B> {
     pub fn new(params: &Conv3dParams, device: &B::Device) -> Self {
-        let kernel_elements = params.kernel_size[0] * params.kernel_size[1] * params.kernel_size[2];
-        let in_features = params.in_channels * kernel_elements;
-        let out_features = params.out_channels;
+        let [k_t, k_h, k_w] = params.kernel_size;
+        let kernel_elements = k_t * k_h * k_w;
+        let fan_in = params.in_channels * kernel_elements;
+
+        // Kaiming/He initialization
+        let bound = (1.0 / fan_in as f64).sqrt() as f32;
+        let weight = Tensor::random(
+            [params.out_channels, fan_in],
+            burn::tensor::Distribution::Uniform((-bound).into(), bound.into()),
+            device,
+        );
+        let bias = Tensor::zeros([params.out_channels], device);
 
         Self {
-            weight: LinearConfig::new(in_features, out_features)
-                .with_bias(true)
-                .init(device),
+            weight: Param::from_tensor(weight),
+            bias: Some(Param::from_tensor(bias)),
+            in_channels: params.in_channels,
+            out_channels: params.out_channels,
             kernel_size: params.kernel_size,
             stride: params.stride,
             padding: params.padding,
-            out_channels: params.out_channels,
         }
     }
 
-    /// Forward pass - simplified implementation
-    /// Real implementation would use proper 3D convolution
+    /// Forward pass using im2col approach
     pub fn forward(&self, x: Tensor<B, 5>) -> Tensor<B, 5> {
-        let [batch, _in_ch, time, height, width] = x.dims();
+        let [batch, _in_ch, _time, _height, _width] = x.dims();
+        let [k_t, k_h, k_w] = self.kernel_size;
+        let [s_t, s_h, s_w] = self.stride;
+        let [p_t, p_h, p_w] = self.padding;
+
+        // Pad input if needed
+        let x_padded = if p_t > 0 || p_h > 0 || p_w > 0 {
+            pad_5d(x, self.padding)
+        } else {
+            x
+        };
+        let [_, _, pad_t, pad_h, pad_w] = x_padded.dims();
 
         // Calculate output dimensions
-        let out_t = (time + 2 * self.padding[0] - self.kernel_size[0]) / self.stride[0] + 1;
-        let out_h = (height + 2 * self.padding[1] - self.kernel_size[1]) / self.stride[1] + 1;
-        let out_w = (width + 2 * self.padding[2] - self.kernel_size[2]) / self.stride[2] + 1;
+        let out_t = (pad_t - k_t) / s_t + 1;
+        let out_h = (pad_h - k_h) / s_h + 1;
+        let out_w = (pad_w - k_w) / s_w + 1;
 
-        // Simplified: use average pooling + linear projection
-        // Real implementation would do proper convolution
-        let device = x.device();
+        // im2col: extract patches and reshape to columns
+        // Output shape: [batch, in_ch * k_t * k_h * k_w, out_t * out_h * out_w]
+        let cols = im2col_3d(
+            x_padded,
+            self.kernel_size,
+            self.stride,
+            [out_t, out_h, out_w],
+        );
 
-        // For now, return properly shaped output
-        // This is a placeholder - real conv3d needs backend support
-        Tensor::zeros([batch, self.out_channels, out_t, out_h, out_w], &device)
+        // Matrix multiply: [out_ch, in_ch*k] @ [batch, in_ch*k, out_positions]
+        let weight = self.weight.val();
+        let [out_ch, in_k] = weight.dims();
+
+        // cols is [batch, in_ch*k, out_positions]
+        // weight is [out_ch, in_ch*k]
+        // We want [batch, out_ch, out_positions]
+
+        // Expand weight to [batch, out_ch, in_ch*k] for batched matmul
+        let weight_expanded = weight
+            .unsqueeze_dim::<3>(0)
+            .expand([batch, out_ch, in_k]);
+
+        // Batched matmul: [batch, out_ch, in_ch*k] @ [batch, in_ch*k, out_positions] = [batch, out_ch, out_positions]
+        let out = weight_expanded.matmul(cols);
+
+        // Add bias if present
+        let out = if let Some(ref bias) = self.bias {
+            let bias_expanded = bias.val().reshape([1, out_ch, 1]);
+            out + bias_expanded
+        } else {
+            out
+        };
+
+        // Reshape to [batch, out_ch, out_t, out_h, out_w]
+        out.reshape([batch, out_ch, out_t, out_h, out_w])
+    }
+}
+
+/// Pad a 5D tensor [B, C, T, H, W] with zeros
+fn pad_5d<B: Backend>(x: Tensor<B, 5>, padding: [usize; 3]) -> Tensor<B, 5> {
+    let [batch, channels, time, height, width] = x.dims();
+    let [p_t, p_h, p_w] = padding;
+    let device = x.device();
+
+    let new_t = time + 2 * p_t;
+    let new_h = height + 2 * p_h;
+    let new_w = width + 2 * p_w;
+
+    // Create padded tensor
+    let mut padded = Tensor::zeros([batch, channels, new_t, new_h, new_w], &device);
+
+    // Copy original data to center using slice_assign
+    padded = padded.slice_assign(
+        [
+            0..batch,
+            0..channels,
+            p_t..p_t + time,
+            p_h..p_h + height,
+            p_w..p_w + width,
+        ],
+        x,
+    );
+
+    padded
+}
+
+/// Extract 3D patches from input (im2col for 3D convolution)
+///
+/// Input: [batch, in_channels, T, H, W]
+/// Output: [batch, in_channels * k_t * k_h * k_w, out_t * out_h * out_w]
+fn im2col_3d<B: Backend>(
+    x: Tensor<B, 5>,
+    kernel_size: [usize; 3],
+    stride: [usize; 3],
+    out_size: [usize; 3],
+) -> Tensor<B, 3> {
+    let [batch, in_ch, _, _, _] = x.dims();
+    let [k_t, k_h, k_w] = kernel_size;
+    let [s_t, s_h, s_w] = stride;
+    let [out_t, out_h, out_w] = out_size;
+
+    let kernel_elements = k_t * k_h * k_w;
+    let out_positions = out_t * out_h * out_w;
+    let col_size = in_ch * kernel_elements;
+
+    let device = x.device();
+
+    // Collect all patches
+    let mut patches = Vec::with_capacity(out_positions);
+
+    for ot in 0..out_t {
+        for oh in 0..out_h {
+            for ow in 0..out_w {
+                let t_start = ot * s_t;
+                let h_start = oh * s_h;
+                let w_start = ow * s_w;
+
+                // Extract patch [batch, in_ch, k_t, k_h, k_w]
+                let patch = x.clone().slice([
+                    0..batch,
+                    0..in_ch,
+                    t_start..t_start + k_t,
+                    h_start..h_start + k_h,
+                    w_start..w_start + k_w,
+                ]);
+
+                // Flatten to [batch, in_ch * k_t * k_h * k_w]
+                let patch_flat = patch.reshape([batch, col_size]);
+                // Add position dimension [batch, col_size, 1]
+                let patch_col = patch_flat.unsqueeze_dim::<3>(2);
+                patches.push(patch_col);
+            }
+        }
+    }
+
+    if patches.is_empty() {
+        Tensor::zeros([batch, col_size, 0], &device)
+    } else {
+        // Concatenate along position dimension: [batch, col_size, out_positions]
+        Tensor::cat(patches, 2)
     }
 }
 
@@ -451,6 +593,62 @@ mod tests {
         assert_eq!(params.in_channels, 3);
         assert_eq!(params.out_channels, 64);
         assert_eq!(params.stride, [1, 2, 2]);
+    }
+
+    #[test]
+    fn test_conv3d_forward_shape() {
+        let device = Default::default();
+
+        // 3x3x3 conv with stride 1, padding 1 (same padding)
+        let params = Conv3dParams::new(3, 16)
+            .with_kernel([3, 3, 3])
+            .with_stride([1, 1, 1])
+            .with_padding([1, 1, 1]);
+        let conv = Conv3d::<TestBackend>::new(&params, &device);
+
+        let x = Tensor::<TestBackend, 5>::zeros([2, 3, 8, 16, 16], &device);
+        let y = conv.forward(x);
+
+        // Same padding: output shape should match input spatial dims
+        assert_eq!(y.dims(), [2, 16, 8, 16, 16]);
+    }
+
+    #[test]
+    fn test_conv3d_forward_stride() {
+        let device = Default::default();
+
+        // 3x3x3 conv with stride 2 in spatial dims
+        let params = Conv3dParams::new(4, 8)
+            .with_kernel([3, 3, 3])
+            .with_stride([1, 2, 2])
+            .with_padding([1, 1, 1]);
+        let conv = Conv3d::<TestBackend>::new(&params, &device);
+
+        let x = Tensor::<TestBackend, 5>::zeros([1, 4, 4, 16, 16], &device);
+        let y = conv.forward(x);
+
+        // Stride 2 in H,W halves spatial dimensions
+        assert_eq!(y.dims(), [1, 8, 4, 8, 8]);
+    }
+
+    #[test]
+    fn test_conv3d_computes_values() {
+        let device = Default::default();
+
+        let params = Conv3dParams::new(1, 1)
+            .with_kernel([1, 1, 1])
+            .with_stride([1, 1, 1])
+            .with_padding([0, 0, 0]);
+        let conv = Conv3d::<TestBackend>::new(&params, &device);
+
+        // Input with known values
+        let x = Tensor::<TestBackend, 5>::ones([1, 1, 2, 2, 2], &device);
+        let y = conv.forward(x);
+
+        // Output should not be all zeros (has bias and computed values)
+        let y_data: Vec<f32> = y.into_data().to_vec().unwrap();
+        let sum: f32 = y_data.iter().map(|v| v.abs()).sum();
+        assert!(sum > 0.0, "Conv3d output should not be all zeros");
     }
 
     #[test]

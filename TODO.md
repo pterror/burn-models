@@ -240,11 +240,11 @@ Found during dead code audit. These are stubs or broken implementations that nee
 - [x] `dpm_fast.rs:200` `DpmAdaptiveSampler::step` - "accept all steps" comment.
   Adaptive step control is unimplemented, it's just fixed-step pretending to be adaptive.
 
-#### Unfixable (need backend support)
+#### Fixed
 
-- [ ] `vae3d.rs:174` `Conv3d::forward` - Returns `Tensor::zeros(...)`.
-  Burn doesn't have native 3D convolution.
-  **Future**: Write custom CubeCL kernel for Conv3d.
+- [x] `vae3d.rs:174` `Conv3d::forward` - Now implements proper 3D convolution using im2col.
+  Extracts 3D patches, reshapes to columns, matrix multiply with weights.
+  **Future optimization**: CubeCL kernel for better GPU performance.
 
 #### Fixed (were marked unfixable but actually solvable)
 
