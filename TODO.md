@@ -243,16 +243,16 @@ Found during dead code audit. These are stubs or broken implementations that nee
 #### Unfixable (need backend support)
 
 - [ ] `vae3d.rs:174` `Conv3d::forward` - Returns `Tensor::zeros(...)`.
-  Burn doesn't have native 3D convolution. Would need to simulate with 2D conv loops.
-  **Workaround**: Document as unsupported, or implement via 2D conv over time slices.
+  Burn doesn't have native 3D convolution.
+  **Future**: Write custom CubeCL kernel for Conv3d.
 
-- [ ] `paged_attention.rs:284` `store_single_kv` - Discards all inputs (`let _ = ...`).
-  Needs efficient scatter/index_select operations that Burn doesn't expose.
-  **Workaround**: Use slice-based rebuild (slow but functional).
+#### Fixed (were marked unfixable but actually solvable)
 
-- [ ] `precision.rs:94-104` `to_fp16`/`to_bf16` - Returns input unchanged.
-  Precision is handled at backend level in Burn. These functions can't actually convert.
-  **Resolution**: Remove these functions, document that precision is compile-time via backend.
+- [x] `paged_attention.rs:284` `store_single_kv` - Now uses `slice_assign()`.
+  Burn has had this since 0.16 - the "needs custom kernels" comment was stale.
+
+- [x] `precision.rs:94-104` `to_fp16`/`to_bf16` - Removed.
+  These were no-op functions. Added docs explaining precision is compile-time via backend.
 
 #### Intentional Simplifications (not bugs)
 

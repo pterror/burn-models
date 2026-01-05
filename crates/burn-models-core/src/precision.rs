@@ -4,8 +4,18 @@
 //! - fp32: Full precision (default)
 //! - fp16: Half precision (faster, less memory)
 //! - bf16: Brain floating point (good balance)
-
-use burn::prelude::*;
+//!
+//! # Note on Burn's precision model
+//!
+//! In Burn, tensor precision is determined at **compile time** by the backend type,
+//! not at runtime. For example:
+//! - `NdArray<f32>` uses fp32
+//! - `NdArray<half::f16>` uses fp16
+//! - `Wgpu<f16, i32>` uses fp16 on GPU
+//!
+//! The types in this module are for **configuration** purposes - to specify what
+//! precision you want when loading models or selecting backends. They do NOT
+//! perform runtime precision conversion (which would require backend support).
 
 /// Precision mode for inference
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -90,40 +100,6 @@ impl PrecisionConfig {
     }
 }
 
-/// Convert a tensor to half precision (fp16)
-pub fn to_fp16<B: Backend, const D: usize>(tensor: Tensor<B, D>) -> Tensor<B, D> {
-    // Note: In Burn, the actual conversion depends on backend support
-    // This is a placeholder that works with backends that support fp16
-    tensor
-}
-
-/// Convert a tensor to brain float16 (bf16)
-pub fn to_bf16<B: Backend, const D: usize>(tensor: Tensor<B, D>) -> Tensor<B, D> {
-    // Note: Similar to fp16, backend-dependent
-    tensor
-}
-
-/// Convert a tensor to full precision (fp32)
-pub fn to_fp32<B: Backend, const D: usize>(tensor: Tensor<B, D>) -> Tensor<B, D> {
-    tensor
-}
-
-/// Helper trait for precision conversion
-pub trait PrecisionConvert<B: Backend, const D: usize> {
-    /// Convert to the specified precision
-    fn to_precision(self, mode: PrecisionMode) -> Tensor<B, D>;
-}
-
-impl<B: Backend, const D: usize> PrecisionConvert<B, D> for Tensor<B, D> {
-    /// Converts the tensor to the specified precision mode
-    fn to_precision(self, mode: PrecisionMode) -> Tensor<B, D> {
-        match mode {
-            PrecisionMode::Fp32 => to_fp32(self),
-            PrecisionMode::Fp16 => to_fp16(self),
-            PrecisionMode::Bf16 => to_bf16(self),
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

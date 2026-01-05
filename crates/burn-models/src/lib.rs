@@ -80,10 +80,8 @@ pub use burn_models_core::textual_inversion::{
 };
 pub use burn_models_convert::embedding_loader::{load_embedding, EmbeddingFormat, EmbeddingLoadError};
 
-// Re-export precision types
-pub use burn_models_core::precision::{
-    PrecisionMode, PrecisionConfig, PrecisionConvert, to_fp16, to_bf16, to_fp32
-};
+// Re-export precision types (configuration only - see precision module docs)
+pub use burn_models_core::precision::{PrecisionMode, PrecisionConfig};
 
 // Re-export flash attention types
 pub use burn_models_core::flash_attention::{

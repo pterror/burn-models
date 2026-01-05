@@ -262,26 +262,41 @@ impl<B: Backend> PagedKvCache<B> {
         k: Tensor<B, 2>, // [num_kv_heads, head_dim]
         v: Tensor<B, 2>,
     ) {
-        // This is a simplified version - in production you'd use more efficient indexing
-        // For Burn, we might need custom kernels for optimal performance
-        let device = self.k_cache.device();
+        // Cache shape: [num_blocks, num_layers, num_kv_heads, block_size, head_dim]
+        // Target slice: [block_idx, layer_idx, :, slot, :]
+        // Values shape: [num_kv_heads, head_dim] -> reshape to [1, 1, num_kv_heads, 1, head_dim]
+        let k_expanded = k
+            .unsqueeze_dim::<3>(0)  // [1, num_kv_heads, head_dim]
+            .unsqueeze_dim::<4>(0)  // [1, 1, num_kv_heads, head_dim]
+            .unsqueeze_dim::<5>(3); // [1, 1, num_kv_heads, 1, head_dim]
 
-        // Create index tensors for scatter operation
-        // For now, using a workaround with slice operations
-        let k_expanded = k.unsqueeze_dim::<3>(1); // [num_kv_heads, 1, head_dim]
-        let v_expanded = v.unsqueeze_dim::<3>(1);
+        let v_expanded = v
+            .unsqueeze_dim::<3>(0)
+            .unsqueeze_dim::<4>(0)
+            .unsqueeze_dim::<5>(3);
 
-        // Store at the specific location using masking approach
-        // This is not optimal but demonstrates the concept
+        // Use slice_assign to write at the specific location
+        self.k_cache = self.k_cache.clone().slice_assign(
+            [
+                block_idx..block_idx + 1,
+                layer_idx..layer_idx + 1,
+                0..self.config.num_kv_heads,
+                slot..slot + 1,
+                0..self.config.head_dim,
+            ],
+            k_expanded,
+        );
 
-        // In a real implementation, you'd want custom CUDA/Metal kernels
-        // For now, we'll use a placeholder that at least compiles
-        // The actual scatter operation would be:
-        // k_cache[block_idx, layer_idx, :, slot, :] = k
-        // v_cache[block_idx, layer_idx, :, slot, :] = v
-
-        // Placeholder: the architecture is correct, actual efficient impl needs backend support
-        let _ = (k_expanded, v_expanded, block_idx, layer_idx, slot, device);
+        self.v_cache = self.v_cache.clone().slice_assign(
+            [
+                block_idx..block_idx + 1,
+                layer_idx..layer_idx + 1,
+                0..self.config.num_kv_heads,
+                slot..slot + 1,
+                0..self.config.head_dim,
+            ],
+            v_expanded,
+        );
     }
 
     /// Gather KV values for attention computation
