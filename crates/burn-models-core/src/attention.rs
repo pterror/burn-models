@@ -27,8 +27,16 @@ pub fn qkv_attention<B: Backend>(
 }
 
 /// Causal attention mask for autoregressive decoding
+///
+/// Creates an upper triangular matrix with -inf values, which when added to
+/// attention scores prevents attending to future positions.
 pub fn causal_mask<B: Backend>(seq_len: usize, device: &B::Device) -> Tensor<B, 2> {
-    let mask = Tensor::<B, 2>::zeros([seq_len, seq_len], device);
-    // TODO: implement lower triangular mask with -inf for future positions
-    mask
+    // Create upper triangular matrix with -inf
+    let mut mask_data = vec![0.0f32; seq_len * seq_len];
+    for i in 0..seq_len {
+        for j in (i + 1)..seq_len {
+            mask_data[i * seq_len + j] = f32::NEG_INFINITY;
+        }
+    }
+    Tensor::<B, 1>::from_floats(mask_data.as_slice(), device).reshape([seq_len, seq_len])
 }

@@ -224,3 +224,40 @@ Root causes:
 - If partial implementation is necessary, add `// TODO: ` explaining what's missing
 
 Suppressing warnings with `_` prefix hides technical debt. The warning exists to help.
+
+### Incomplete Implementations (2026-01-06)
+
+Found during dead code audit. These are stubs or broken implementations that need attention:
+
+#### Fixable (no backend changes needed)
+
+- [x] `attention.rs:30-34` `causal_mask` - Returns zeros instead of proper -inf upper triangular mask.
+  Would allow model to attend to future tokens. Note: `transformer.rs` has a working version.
+
+- [x] `speculative.rs:268-271` `sample_token` - Non-greedy mode just uses argmax.
+  Temperature sampling is fake (comment says "Simplified sampling").
+
+- [x] `dpm_fast.rs:200` `DpmAdaptiveSampler::step` - "accept all steps" comment.
+  Adaptive step control is unimplemented, it's just fixed-step pretending to be adaptive.
+
+#### Unfixable (need backend support)
+
+- [ ] `vae3d.rs:174` `Conv3d::forward` - Returns `Tensor::zeros(...)`.
+  Burn doesn't have native 3D convolution. Would need to simulate with 2D conv loops.
+  **Workaround**: Document as unsupported, or implement via 2D conv over time slices.
+
+- [ ] `paged_attention.rs:284` `store_single_kv` - Discards all inputs (`let _ = ...`).
+  Needs efficient scatter/index_select operations that Burn doesn't expose.
+  **Workaround**: Use slice-based rebuild (slow but functional).
+
+- [ ] `precision.rs:94-104` `to_fp16`/`to_bf16` - Returns input unchanged.
+  Precision is handled at backend level in Burn. These functions can't actually convert.
+  **Resolution**: Remove these functions, document that precision is compile-time via backend.
+
+#### Intentional Simplifications (not bugs)
+
+- [ ] `main.rs:343` CLI generate - Outputs gradient placeholder image.
+  Pipeline isn't wired up yet, this is just demo output. Fix when pipeline is complete.
+
+- [ ] `rwkv.rs:277-290` RWKV-7 dynamic mixing - Uses static ratios instead of dynamic low-rank projection.
+  Full RWKV-7 requires `x_maa @ time_maa_w1` projection. Current impl is RWKV-6 style.

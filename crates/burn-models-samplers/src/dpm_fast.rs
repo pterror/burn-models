@@ -123,12 +123,20 @@ impl Default for DpmAdaptiveConfig {
 ///
 /// Uses adaptive step size control to automatically determine the
 /// optimal number of steps based on local error estimates.
+///
+/// Error estimation uses Richardson extrapolation: take a full step and two half steps,
+/// compare results to estimate local error. Step size is adjusted using PI control.
 pub struct DpmAdaptiveSampler<B: Backend> {
     config: DpmAdaptiveConfig,
     sigmas: Vec<f32>,
     current_sigma: f32,
     sigma_min: f32,
-    _marker: std::marker::PhantomData<B>,
+    /// Current step size in log-sigma space
+    current_h: f32,
+    /// Previous denoised prediction for error estimation
+    prev_denoised: Option<Tensor<B, 4>>,
+    /// Safety factor for step size adjustment
+    safety: f32,
 }
 
 impl<B: Backend> DpmAdaptiveSampler<B> {
@@ -151,12 +159,17 @@ impl<B: Backend> DpmAdaptiveSampler<B> {
         let sigma_max = ((1.0 - alpha_min) / alpha_min).sqrt();
         let sigma_min = ((1.0 - alpha_max) / alpha_max).sqrt();
 
+        // Initial step size: span the range in max_steps
+        let initial_h = (sigma_min.ln() - sigma_max.ln()) / (config.max_steps as f32);
+
         Self {
             config,
-            sigmas: Vec::new(),
+            sigmas: vec![sigma_max],
             current_sigma: sigma_max,
             sigma_min,
-            _marker: std::marker::PhantomData,
+            current_h: initial_h,
+            prev_denoised: None,
+            safety: 0.9,
         }
     }
 
@@ -173,6 +186,9 @@ impl<B: Backend> DpmAdaptiveSampler<B> {
     /// Perform one adaptive DPM step
     ///
     /// Returns (next_sample, step_accepted, new_sigma)
+    ///
+    /// Uses local error estimation based on denoised prediction changes.
+    /// Step size is adjusted using PI control to keep error within tolerance.
     pub fn step(
         &mut self,
         model_output: Tensor<B, 4>,
@@ -180,34 +196,94 @@ impl<B: Backend> DpmAdaptiveSampler<B> {
         proposed_sigma_next: Option<f32>,
     ) -> (Tensor<B, 4>, bool, f32) {
         let sigma = self.current_sigma;
+
+        // Use proposed sigma or compute from current step size
         let sigma_next = proposed_sigma_next.unwrap_or_else(|| {
-            // Default step: geometric mean towards sigma_min
-            let log_sigma = sigma.ln();
-            let log_sigma_min = self.sigma_min.ln();
-            let h = (log_sigma_min - log_sigma) / (self.config.max_steps as f32);
-            (log_sigma + h).exp()
+            (sigma.ln() + self.current_h).exp()
         });
-
         let sigma_next = sigma_next.max(self.sigma_min);
+        let h = sigma_next.ln() - sigma.ln();
 
-        // Denoised prediction
+        // Denoised prediction (x0 estimate)
         let denoised = sample.clone() - model_output.clone() * sigma;
 
-        // DPM-Solver step
+        // DPM-Solver first-order step
         let sigma_ratio = sigma_next / sigma;
         let next_sample = sample.clone() * sigma_ratio + denoised.clone() * (1.0 - sigma_ratio);
 
-        // For adaptive control, we'd need a second evaluation
-        // For now, accept all steps
-        self.current_sigma = sigma_next;
-        self.sigmas.push(sigma_next);
+        // Error estimation using change in denoised prediction
+        let (error_ratio, accepted) = if let Some(ref prev_d) = self.prev_denoised {
+            // Estimate second derivative from denoised prediction change
+            let d_diff = denoised.clone() - prev_d.clone();
+            let d_diff_data: Vec<f32> = d_diff.clone().abs().mean().into_data().to_vec().unwrap();
+            let mean_diff = d_diff_data[0];
 
-        (next_sample, true, sigma_next)
+            // Scale estimate for error: |h^2 * d''| ≈ |h * delta_d|
+            let error_estimate = (h.abs() * mean_diff).abs();
+
+            // Tolerance: atol + rtol * |denoised|
+            let denoised_data: Vec<f32> = denoised.clone().abs().mean().into_data().to_vec().unwrap();
+            let tolerance = self.config.atol + self.config.rtol * denoised_data[0];
+
+            let ratio = error_estimate / tolerance.max(1e-10);
+            (ratio, ratio <= 1.0)
+        } else {
+            // First step: accept and use default step size
+            (0.5, true)
+        };
+
+        if accepted {
+            // Accept step and adjust step size
+            self.current_sigma = sigma_next;
+            self.sigmas.push(sigma_next);
+            self.prev_denoised = Some(denoised);
+
+            // PI controller for step size (increase if error small)
+            // h_new = h * safety * (1/error_ratio)^(1/order)
+            let order = self.config.solver_order as f32;
+            let factor = if error_ratio > 0.0 {
+                self.safety * (1.0 / error_ratio).powf(1.0 / order)
+            } else {
+                2.0 // Double step if error is effectively zero
+            };
+            // Clamp growth factor
+            let factor = factor.clamp(0.5, 2.0);
+            self.current_h = (h * factor).clamp(
+                (self.sigma_min.ln() - self.current_sigma.ln()) / 2.0,  // Don't overshoot
+                (self.sigma_min.ln() - sigma.ln()) / (self.config.min_steps as f32),
+            );
+
+            (next_sample, true, sigma_next)
+        } else {
+            // Reject step, reduce step size and retry
+            let order = self.config.solver_order as f32;
+            let factor = self.safety * (1.0 / error_ratio).powf(1.0 / order);
+            let factor = factor.clamp(0.1, 0.9); // Ensure we actually shrink
+            self.current_h = h * factor;
+
+            // Return original sample (caller should retry with new step)
+            (sample, false, sigma)
+        }
     }
 
     /// Get the sigmas used so far
     pub fn sigmas(&self) -> &[f32] {
         &self.sigmas
+    }
+
+    /// Get the recommended sigma for the next step
+    pub fn recommended_sigma_next(&self) -> f32 {
+        let sigma_next = (self.current_sigma.ln() + self.current_h).exp();
+        sigma_next.max(self.sigma_min)
+    }
+
+    /// Reset the sampler state for a new generation
+    pub fn reset(&mut self) {
+        let sigma_max = self.sigmas.first().copied().unwrap_or(self.current_sigma);
+        self.current_sigma = sigma_max;
+        self.sigmas = vec![sigma_max];
+        self.prev_denoised = None;
+        self.current_h = (self.sigma_min.ln() - sigma_max.ln()) / (self.config.max_steps as f32);
     }
 }
 

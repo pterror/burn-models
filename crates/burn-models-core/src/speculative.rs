@@ -266,8 +266,34 @@ pub fn sample_token<B: Backend>(probs: Tensor<B, 2>, greedy: bool) -> Tensor<B, 
     let token = if greedy {
         probs.argmax(1)
     } else {
-        // Simplified sampling - actual implementation would use proper multinomial
-        probs.argmax(1)
+        // Multinomial sampling via inverse CDF
+        let [_batch, vocab_size] = probs.dims();
+        let device = probs.device();
+
+        // Compute cumulative sum along vocab dimension
+        // cumsum[i] = sum(probs[0..=i])
+        let probs_1d = probs.clone().flatten::<1>(0, 1);
+        let probs_data: Vec<f32> = probs_1d.to_data().to_vec().unwrap();
+
+        let mut cumsum = Vec::with_capacity(vocab_size);
+        let mut sum = 0.0f32;
+        for &p in &probs_data {
+            sum += p;
+            cumsum.push(sum);
+        }
+
+        // Sample uniform random value in [0, 1]
+        let uniform: Tensor<B, 1> =
+            Tensor::random([1], burn::tensor::Distribution::Uniform(0.0, 1.0), &device);
+        let threshold: f32 = uniform.into_scalar().elem();
+
+        // Find first index where cumsum > threshold
+        let sampled_idx = cumsum
+            .iter()
+            .position(|&cs| cs > threshold)
+            .unwrap_or(vocab_size - 1);
+
+        Tensor::from_ints([sampled_idx as i32], &device)
     };
     token.flatten(0, 1)
 }
