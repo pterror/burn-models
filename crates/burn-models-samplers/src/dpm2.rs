@@ -29,7 +29,6 @@ impl Default for Dpm2Config {
 
 /// DPM2 Sampler (second-order DPM solver)
 pub struct Dpm2Sampler<B: Backend> {
-    config: Dpm2Config,
     timesteps: Vec<usize>,
     sigmas: Vec<f32>,
     _marker: std::marker::PhantomData<B>,
@@ -42,7 +41,6 @@ impl<B: Backend> Dpm2Sampler<B> {
         let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
 
         Self {
-            config,
             timesteps,
             sigmas,
             _marker: std::marker::PhantomData,
@@ -77,7 +75,7 @@ impl<B: Backend> Dpm2Sampler<B> {
         let d = (sample.clone() - denoised.clone()) / sigma;
 
         // Estimate at midpoint
-        let sample_mid = sample.clone() + d.clone() * (sigma_mid - sigma);
+        let _sample_mid = sample.clone() + d.clone() * (sigma_mid - sigma);
 
         // This would need another model call in practice
         // For now, extrapolate
@@ -90,7 +88,6 @@ impl<B: Backend> Dpm2Sampler<B> {
 
 /// DPM2 Ancestral sampler (with noise injection)
 pub struct Dpm2AncestralSampler<B: Backend> {
-    config: Dpm2Config,
     timesteps: Vec<usize>,
     sigmas: Vec<f32>,
     _marker: std::marker::PhantomData<B>,
@@ -104,7 +101,6 @@ impl<B: Backend> Dpm2AncestralSampler<B> {
         sigmas.push(0.0);
 
         Self {
-            config,
             timesteps,
             sigmas,
             _marker: std::marker::PhantomData,

@@ -93,17 +93,13 @@ pub fn lerp_batch<B: Backend>(
     t_values: &[f32],
 ) -> Tensor<B, 5> {
     // [batch, time, channels, height, width]
-    let [batch, channels, height, width] = a.dims();
-    let device = a.device();
-
     let frames: Vec<_> = t_values
         .iter()
         .map(|&t| lerp(a.clone(), b.clone(), t))
         .collect();
 
     // Stack along new time dimension
-    let stacked = Tensor::stack(frames, 1);
-    stacked
+    Tensor::stack(frames, 1)
 }
 
 /// Spherical linear interpolation for normalized latent vectors
@@ -241,7 +237,6 @@ pub fn interpolate_video<B: Backend>(
     config: &InterpolationConfig,
 ) -> Tensor<B, 5> {
     let [batch, channels, time, height, width] = video.dims();
-    let device = video.device();
 
     if time < 2 {
         return video;
@@ -285,7 +280,7 @@ pub fn warp_frame<B: Backend>(
     frame: Tensor<B, 4>,  // [batch, channels, height, width]
     flow: Tensor<B, 4>,   // [batch, 2, height, width]
 ) -> Tensor<B, 4> {
-    let [batch, channels, height, width] = frame.dims();
+    let [batch, _channels, height, width] = frame.dims();
     let device = frame.device();
 
     // Create base grid
@@ -336,8 +331,7 @@ fn bilinear_sample<B: Backend>(
     x: Tensor<B, 3>,       // [batch, height, width] normalized coords
     y: Tensor<B, 3>,       // [batch, height, width] normalized coords
 ) -> Tensor<B, 4> {
-    let [batch, channels, height, width] = img.dims();
-    let device = img.device();
+    let [_batch, _channels, height, width] = img.dims();
 
     // Convert from [-1, 1] to pixel coordinates
     let x_pixel = (x + 1.0) * ((width - 1) as f32 / 2.0);
@@ -356,10 +350,10 @@ fn bilinear_sample<B: Backend>(
     let y1 = y1.clamp(0.0, (height - 1) as f32);
 
     // Calculate interpolation weights
-    let wa = (x1.clone() - x_pixel.clone()) * (y1.clone() - y_pixel.clone());
-    let wb = (x_pixel.clone() - x0.clone()) * (y1.clone() - y_pixel.clone());
-    let wc = (x1.clone() - x_pixel.clone()) * (y_pixel.clone() - y0.clone());
-    let wd = (x_pixel - x0.clone()) * (y_pixel - y0.clone());
+    let _wa = (x1.clone() - x_pixel.clone()) * (y1.clone() - y_pixel.clone());
+    let _wb = (x_pixel.clone() - x0.clone()) * (y1.clone() - y_pixel.clone());
+    let _wc = (x1.clone() - x_pixel.clone()) * (y_pixel.clone() - y0.clone());
+    let _wd = (x_pixel - x0.clone()) * (y_pixel - y0.clone());
 
     // Note: Full implementation would gather from img at (x0,y0), (x1,y0), (x0,y1), (x1,y1)
     // and combine with weights. This is a simplified placeholder that returns the input.

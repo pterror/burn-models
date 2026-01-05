@@ -133,6 +133,7 @@ impl<B: Backend> StableDiffusion1x<B> {
     }
 
     /// Find the position of the end-of-sequence token in the token list
+    #[allow(dead_code)]
     fn find_eos_position(tokens: &[u32]) -> usize {
         tokens.iter().position(|&t| t == END_OF_TEXT).unwrap_or(tokens.len() - 1)
     }
@@ -646,7 +647,7 @@ impl<B: Backend> StableDiffusionXL<B> {
         crop_coords: (usize, usize),
         target_size: (usize, usize),
     ) -> Tensor<B, 2> {
-        let [batch, _] = pooled.dims();
+        let [_batch, _] = pooled.dims();
 
         // Time embeddings for size/coord conditioning (each 256 dim)
         let orig_h_emb = self.size_embedding(original_size.0);
@@ -1508,7 +1509,7 @@ impl<B: Backend> StableDiffusionXLWithRefiner<B> {
     ) -> Tensor<B, 4> {
         // Calculate step splits
         let base_steps = ((config.refiner_start) * config.steps as f64) as usize;
-        let refiner_steps = config.steps - base_steps;
+        let _refiner_steps = config.steps - base_steps;
 
         // Run base model for initial denoising
         let base_config = SdxlSampleConfig {

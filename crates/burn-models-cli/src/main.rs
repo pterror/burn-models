@@ -298,7 +298,7 @@ fn main() -> Result<()> {
             pb.set_position(5);
 
             // Load tokenizer
-            let tokenizer = burn_models::clip::ClipTokenizer::from_file(&vocab)
+            let _tokenizer = burn_models::clip::ClipTokenizer::from_file(&vocab)
                 .context("Failed to load vocabulary file")?;
 
             pb.set_message("Loading model...");

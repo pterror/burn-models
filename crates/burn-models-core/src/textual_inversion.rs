@@ -114,10 +114,9 @@ impl<B: Backend> EmbeddingManager<B> {
         tokens: &[String],
     ) -> Tensor<B, 3> {
         let [batch, seq_len, dim] = embeddings.dims();
-        let device = embeddings.device();
 
         // For each token position, check if it's a placeholder
-        let mut result = embeddings;
+        let result = embeddings;
 
         for (pos, token) in tokens.iter().enumerate() {
             if let Some(ti) = self.get(token) {
@@ -129,9 +128,6 @@ impl<B: Backend> EmbeddingManager<B> {
                 // This is a simplified version - full implementation would
                 // need to handle multi-vector embeddings
                 for b in 0..batch {
-                    // Create indices for the slice
-                    let start = [b, pos, 0];
-                    let end = [b + 1, pos + 1, dim];
 
                     // Get current tensor and create a new one with replacement
                     let before = if pos > 0 {

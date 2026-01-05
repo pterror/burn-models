@@ -37,6 +37,7 @@ pub struct SafeTensorFile {
     tensors: HashMap<String, TensorInfo>,
     // Raw pointer to mmap data for tensor access
     data_ptr: *const u8,
+    #[allow(dead_code)]
     data_len: usize,
 }
 

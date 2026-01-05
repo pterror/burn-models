@@ -27,7 +27,6 @@ impl Default for HeunConfig {
 /// Uses Heun's method (improved Euler / modified trapezoidal) for
 /// solving the probability flow ODE.
 pub struct HeunSampler<B: Backend> {
-    config: HeunConfig,
     timesteps: Vec<usize>,
     sigmas: Vec<f32>,
     _marker: std::marker::PhantomData<B>,
@@ -40,7 +39,6 @@ impl<B: Backend> HeunSampler<B> {
         let sigmas = sigmas_from_timesteps(schedule, &timesteps);
 
         Self {
-            config,
             timesteps,
             sigmas,
             _marker: std::marker::PhantomData,
@@ -114,7 +112,6 @@ impl<B: Backend> HeunSampler<B> {
 /// A variant of Heun that uses a predictor-corrector approach
 /// for improved stability.
 pub struct HeunPP2Sampler<B: Backend> {
-    config: HeunConfig,
     timesteps: Vec<usize>,
     sigmas: Vec<f32>,
     _marker: std::marker::PhantomData<B>,
@@ -127,7 +124,6 @@ impl<B: Backend> HeunPP2Sampler<B> {
         let sigmas = sigmas_from_timesteps(schedule, &timesteps);
 
         Self {
-            config,
             timesteps,
             sigmas,
             _marker: std::marker::PhantomData,

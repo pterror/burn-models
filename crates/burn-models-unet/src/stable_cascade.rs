@@ -576,7 +576,7 @@ impl<B: Backend> StageC<B> {
             ch_in = ch_out;
         }
 
-        // Mid block
+        // Mid block (ch_in is the final channel count after the loop)
         let mid_res1 = CascadeResBlock::new(ch_in, ch_in, time_embed_dim, device);
         let mid_attn = CascadeAttention::new(ch_in, config.num_heads, config.head_dim, device);
         let mid_cross = CascadeCrossAttention::new(ch_in, config.context_dim, config.num_heads, config.head_dim, device);
@@ -599,7 +599,6 @@ impl<B: Backend> StageC<B> {
                 config.num_res_blocks, config.num_heads, config.head_dim,
                 config.context_dim, true, !is_last, device,
             ));
-            ch_in = ch_out;
         }
 
         let norm_out = GroupNorm::new(32.min(ch), ch, device);

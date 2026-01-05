@@ -90,16 +90,6 @@ impl<B: Backend> SaSolver<B> {
         self.timestep_history.clear();
     }
 
-    /// Computes tau value based on schedule type
-    fn get_tau(&self, t: f32, t_end: f32) -> f32 {
-        let progress = t / t_end;
-        match self.config.tau_type {
-            TauType::Linear => progress,
-            TauType::Polynomial => progress * progress,
-            TauType::Cosine => 1.0 - (progress * std::f32::consts::PI / 2.0).cos(),
-        }
-    }
-
     /// Returns Adams-Bashforth coefficients for given order
     fn get_ab_coefficients(order: usize) -> Vec<f32> {
         adams_bashforth_coefficients(order)

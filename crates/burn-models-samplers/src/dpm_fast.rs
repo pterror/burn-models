@@ -30,8 +30,6 @@ impl Default for DpmFastConfig {
 /// A fast variant of DPM-Solver that uses optimized step schedules
 /// for rapid sampling with fewer steps.
 pub struct DpmFastSampler<B: Backend> {
-    /// Sampler configuration
-    config: DpmFastConfig,
     /// Timestep indices for sampling
     timesteps: Vec<usize>,
     /// Sigma values at each timestep
@@ -52,7 +50,6 @@ impl<B: Backend> DpmFastSampler<B> {
         let log_sigmas: Vec<f32> = sigmas.iter().map(|s| (s + 1e-10).ln()).collect();
 
         Self {
-            config,
             timesteps,
             sigmas,
             log_sigmas,
@@ -92,7 +89,7 @@ impl<B: Backend> DpmFastSampler<B> {
 
         let log_sigma = self.log_sigmas[timestep_idx];
         let log_sigma_next = self.log_sigmas[timestep_idx + 1];
-        let h = log_sigma_next - log_sigma;
+        let _h = log_sigma_next - log_sigma;
 
         // Denoised prediction
         let denoised = sample.clone() - model_output.clone() * sigma;
@@ -139,7 +136,6 @@ pub struct DpmAdaptiveSampler<B: Backend> {
     sigmas: Vec<f32>,
     current_sigma: f32,
     sigma_min: f32,
-    sigma_max: f32,
     _marker: std::marker::PhantomData<B>,
 }
 
@@ -168,7 +164,6 @@ impl<B: Backend> DpmAdaptiveSampler<B> {
             sigmas: Vec::new(),
             current_sigma: sigma_max,
             sigma_min,
-            sigma_max,
             _marker: std::marker::PhantomData,
         }
     }
@@ -181,29 +176,6 @@ impl<B: Backend> DpmAdaptiveSampler<B> {
     /// Check if sampling is complete
     pub fn is_done(&self) -> bool {
         self.current_sigma <= self.sigma_min
-    }
-
-    /// Estimate local error for step size control
-    fn estimate_error(&self, pred1: &Tensor<B, 4>, pred2: &Tensor<B, 4>) -> f32 {
-        let diff = pred1.clone() - pred2.clone();
-        let abs_diff = diff.abs();
-        let max_val = abs_diff.max();
-        let max_data = max_val.into_data();
-        max_data.to_vec::<f32>().unwrap()[0]
-    }
-
-    /// Compute optimal step size based on error estimate
-    fn compute_step_size(&self, error: f32, current_h: f32) -> f32 {
-        let order = self.config.solver_order as f32;
-        let safety = 0.9;
-        let min_factor = 0.2;
-        let max_factor = 5.0;
-
-        let tolerance = self.config.atol + self.config.rtol * error.max(1e-8);
-        let factor = safety * (tolerance / error.max(1e-10)).powf(1.0 / (order + 1.0));
-        let factor = factor.clamp(min_factor, max_factor);
-
-        current_h * factor
     }
 
     /// Perform one adaptive DPM step

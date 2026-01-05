@@ -7,7 +7,7 @@ pub fn qkv_attention<B: Backend>(
     v: Tensor<B, 4>,
     mask: Option<Tensor<B, 2>>,
 ) -> Tensor<B, 4> {
-    let [batch, heads, seq_len, head_dim] = q.dims();
+    let [_batch, _heads, _seq_len, head_dim] = q.dims();
     let scale = (head_dim as f64).powf(-0.25);
 
     let q = q * scale;

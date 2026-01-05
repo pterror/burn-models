@@ -23,8 +23,6 @@
 
 use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
-
-use burn_models_core::glu::SwiGluFfn;
 use burn_models_core::layernorm::LayerNorm;
 use burn_models_core::rope::RotaryEmbedding;
 

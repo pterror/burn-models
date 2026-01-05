@@ -27,14 +27,14 @@ impl Default for EulerConfig {
 /// Uses the Euler method to solve the diffusion ODE.
 /// This is faster than DDIM and often produces good results.
 pub struct EulerSampler<B: Backend> {
-    /// Noise schedule
-    schedule: NoiseSchedule<B>,
-    /// Sampler configuration
-    config: EulerConfig,
     /// Timestep indices for sampling
     timesteps: Vec<usize>,
     /// Sigma values at each timestep
     sigmas: Vec<f32>,
+    /// Number of inference steps
+    num_inference_steps: usize,
+    /// Phantom for backend type
+    _marker: std::marker::PhantomData<B>,
 }
 
 impl<B: Backend> EulerSampler<B> {
@@ -45,10 +45,10 @@ impl<B: Backend> EulerSampler<B> {
         sigmas.push(0.0);
 
         Self {
-            schedule,
-            config,
             timesteps,
             sigmas,
+            num_inference_steps: config.num_inference_steps,
+            _marker: std::marker::PhantomData,
         }
     }
 
@@ -59,7 +59,7 @@ impl<B: Backend> EulerSampler<B> {
 
     /// Get the number of inference steps
     pub fn num_steps(&self) -> usize {
-        self.config.num_inference_steps
+        self.num_inference_steps
     }
 
     /// Perform one Euler step
@@ -113,14 +113,14 @@ impl<B: Backend> EulerSampler<B> {
 /// Adds noise during sampling for more stochastic results.
 /// Often produces more creative outputs.
 pub struct EulerAncestralSampler<B: Backend> {
-    /// Noise schedule
-    schedule: NoiseSchedule<B>,
-    /// Sampler configuration
-    config: EulerConfig,
     /// Timestep indices for sampling
     timesteps: Vec<usize>,
     /// Sigma values at each timestep
     sigmas: Vec<f32>,
+    /// Number of inference steps
+    num_inference_steps: usize,
+    /// Phantom for backend type
+    _marker: std::marker::PhantomData<B>,
 }
 
 impl<B: Backend> EulerAncestralSampler<B> {
@@ -131,10 +131,10 @@ impl<B: Backend> EulerAncestralSampler<B> {
         sigmas.push(0.0);
 
         Self {
-            schedule,
-            config,
             timesteps,
             sigmas,
+            num_inference_steps: config.num_inference_steps,
+            _marker: std::marker::PhantomData,
         }
     }
 
@@ -145,7 +145,7 @@ impl<B: Backend> EulerAncestralSampler<B> {
 
     /// Returns the number of inference steps
     pub fn num_steps(&self) -> usize {
-        self.config.num_inference_steps
+        self.num_inference_steps
     }
 
     /// Performs one Euler Ancestral step with stochastic noise injection

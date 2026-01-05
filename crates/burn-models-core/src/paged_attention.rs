@@ -273,8 +273,6 @@ impl<B: Backend> PagedKvCache<B> {
 
         // Store at the specific location using masking approach
         // This is not optimal but demonstrates the concept
-        let mut k_cache_data = self.k_cache.clone();
-        let mut v_cache_data = self.v_cache.clone();
 
         // In a real implementation, you'd want custom CUDA/Metal kernels
         // For now, we'll use a placeholder that at least compiles
@@ -283,7 +281,7 @@ impl<B: Backend> PagedKvCache<B> {
         // v_cache[block_idx, layer_idx, :, slot, :] = v
 
         // Placeholder: the architecture is correct, actual efficient impl needs backend support
-        let _ = (k_cache_data, v_cache_data, k_expanded, v_expanded, block_idx, layer_idx, slot, device);
+        let _ = (k_expanded, v_expanded, block_idx, layer_idx, slot, device);
     }
 
     /// Gather KV values for attention computation
@@ -400,7 +398,6 @@ pub struct PagedScheduler<B: Backend> {
 
 impl<B: Backend> PagedScheduler<B> {
     pub fn new(config: PagedKvCacheConfig, device: &B::Device) -> Self {
-        let block_size = config.block_size;
         Self {
             cache: PagedKvCache::new(config, device),
             sequences: Vec::new(),

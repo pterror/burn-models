@@ -30,14 +30,12 @@ impl Default for DpmConfig {
 /// High-quality sampler that produces excellent results in ~20 steps.
 /// Uses a second-order multistep method for better accuracy.
 pub struct DpmPlusPlusSampler<B: Backend> {
-    /// Noise schedule
-    schedule: NoiseSchedule<B>,
-    /// Sampler configuration
-    config: DpmConfig,
     /// Timestep indices for sampling
     timesteps: Vec<usize>,
     /// Sigma values at each timestep
     sigmas: Vec<f32>,
+    /// Number of inference steps
+    num_inference_steps: usize,
     /// Previous model output for multistep
     prev_sample: Option<Tensor<B, 4>>,
     /// Previous sigma
@@ -52,10 +50,9 @@ impl<B: Backend> DpmPlusPlusSampler<B> {
         sigmas.push(0.0);
 
         Self {
-            schedule,
-            config,
             timesteps,
             sigmas,
+            num_inference_steps: config.num_inference_steps,
             prev_sample: None,
             prev_sigma: None,
         }
@@ -68,7 +65,7 @@ impl<B: Backend> DpmPlusPlusSampler<B> {
 
     /// Returns the number of inference steps
     pub fn num_steps(&self) -> usize {
-        self.config.num_inference_steps
+        self.num_inference_steps
     }
 
     /// Resets internal state for a new generation
@@ -100,7 +97,7 @@ impl<B: Backend> DpmPlusPlusSampler<B> {
         // Compute denoised estimate (x0 prediction)
         let denoised = latent.clone() - noise_pred.clone() * sigma;
 
-        if self.config.solver_order == 1 || self.prev_sample.is_none() {
+        if self.prev_sample.is_none() {
             // First-order (Euler-like)
             let result = if sigma_next > 0.0 {
                 // x_{t-1} = sigma_{t-1} / sigma_t * x_t + (1 - sigma_{t-1}/sigma_t) * denoised
@@ -159,16 +156,16 @@ impl<B: Backend> DpmPlusPlusSampler<B> {
 /// Adds controlled noise during sampling for more diverse results.
 /// Good for creative generation with ~25-30 steps.
 pub struct DpmPlusPlusSdeSampler<B: Backend> {
-    /// Noise schedule
-    schedule: NoiseSchedule<B>,
-    /// Sampler configuration
-    config: DpmConfig,
     /// Timestep indices for sampling
     timesteps: Vec<usize>,
     /// Sigma values at each timestep
     sigmas: Vec<f32>,
+    /// Number of inference steps
+    num_inference_steps: usize,
     /// Noise multiplier (0.0 = deterministic, 1.0 = full noise)
     eta: f32,
+    /// Phantom for backend type
+    _marker: std::marker::PhantomData<B>,
 }
 
 impl<B: Backend> DpmPlusPlusSdeSampler<B> {
@@ -179,11 +176,11 @@ impl<B: Backend> DpmPlusPlusSdeSampler<B> {
         sigmas.push(0.0);
 
         Self {
-            schedule,
-            config,
             timesteps,
             sigmas,
+            num_inference_steps: config.num_inference_steps,
             eta,
+            _marker: std::marker::PhantomData,
         }
     }
 
@@ -194,7 +191,7 @@ impl<B: Backend> DpmPlusPlusSdeSampler<B> {
 
     /// Returns the number of inference steps
     pub fn num_steps(&self) -> usize {
-        self.config.num_inference_steps
+        self.num_inference_steps
     }
 
     /// Performs one DPM++ SDE step with stochastic noise injection

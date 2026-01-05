@@ -142,7 +142,7 @@ impl<B: Backend> Dpm3mSdeSampler<B> {
             };
 
             let r0 = h / h_1;
-            let r1 = h_1 / h_2;
+            let _r1 = h_1 / h_2;
 
             let d0 = denoised.clone();
             let d1 = denoised_1.clone();

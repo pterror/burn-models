@@ -179,11 +179,11 @@ impl<B: Backend> Conv3d<B> {
 pub fn temporal_downsample<B: Backend>(x: Tensor<B, 5>, factor: usize) -> Tensor<B, 5> {
     let [batch, channels, time, height, width] = x.dims();
     let new_time = time / factor;
+    let device = x.device();
 
     // Reshape to [batch, channels, new_time, factor, height, width]
     // Then average over factor dimension
     // Simplified: just slice every factor'th frame
-    let device = x.device();
 
     let mut frames = Vec::new();
     for t in 0..new_time {
@@ -206,8 +206,6 @@ pub fn temporal_downsample<B: Backend>(x: Tensor<B, 5>, factor: usize) -> Tensor
 
 /// Temporal upsampling (repeat frames)
 pub fn temporal_upsample<B: Backend>(x: Tensor<B, 5>, factor: usize) -> Tensor<B, 5> {
-    let [batch, channels, time, height, width] = x.dims();
-
     // Repeat each frame 'factor' times
     // [B, C, T, H, W] -> [B, C, T*factor, H, W]
     x.repeat_dim(2, factor)
@@ -218,7 +216,6 @@ pub fn spatial_downsample_3d<B: Backend>(x: Tensor<B, 5>, factor: usize) -> Tens
     let [batch, channels, time, height, width] = x.dims();
     let new_height = height / factor;
     let new_width = width / factor;
-    let device = x.device();
 
     // Simplified: slice to downsample
     // Real implementation would use strided conv or avg pool
@@ -239,6 +236,7 @@ pub fn spatial_downsample_3d<B: Backend>(x: Tensor<B, 5>, factor: usize) -> Tens
     }
 
     if result_frames.is_empty() {
+        let device = x.device();
         Tensor::zeros([batch, channels, 0, new_height, new_width], &device)
     } else {
         Tensor::cat(result_frames, 2)
@@ -249,7 +247,6 @@ fn subsample_2d<B: Backend>(x: Tensor<B, 4>, factor: usize) -> Tensor<B, 4> {
     let [batch, channels, height, width] = x.dims();
     let new_height = height / factor;
     let new_width = width / factor;
-    let device = x.device();
 
     // Simple subsample - take every factor'th element
     // Real implementation would do proper resampling
@@ -277,6 +274,7 @@ fn subsample_2d<B: Backend>(x: Tensor<B, 4>, factor: usize) -> Tensor<B, 4> {
     }
 
     if rows.is_empty() {
+        let device = x.device();
         Tensor::zeros([batch, channels, new_height, new_width], &device)
     } else {
         Tensor::cat(rows, 2).reshape([batch, channels, new_height, new_width])
@@ -288,10 +286,6 @@ pub fn spatial_upsample_3d<B: Backend>(x: Tensor<B, 5>, factor: usize) -> Tensor
     let [batch, channels, time, height, width] = x.dims();
     let new_height = height * factor;
     let new_width = width * factor;
-
-    // Use repeat for nearest neighbor upsampling
-    // [B, C, T, H, W] -> [B, C, T, H*f, W*f]
-    let device = x.device();
 
     let mut result_frames = Vec::new();
     for t in 0..time {
@@ -320,6 +314,7 @@ pub fn spatial_upsample_3d<B: Backend>(x: Tensor<B, 5>, factor: usize) -> Tensor
     }
 
     if result_frames.is_empty() {
+        let device = x.device();
         Tensor::zeros([batch, channels, 0, new_height, new_width], &device)
     } else {
         Tensor::cat(result_frames, 2)

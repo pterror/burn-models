@@ -204,7 +204,7 @@ impl<B: Backend> TimestepEmbedding<B> {
         let freqs = Tensor::<B, 1>::from_floats(freqs.as_slice(), &device);
 
         // t * freqs
-        let [batch] = t.dims();
+        let [_batch] = t.dims();
         let t_expanded = t.unsqueeze_dim::<2>(1); // [batch, 1]
         let freqs_expanded = freqs.unsqueeze_dim::<2>(0); // [1, half_dim]
         let angles = t_expanded.matmul(freqs_expanded); // [batch, half_dim]
@@ -299,7 +299,6 @@ impl<B: Backend> FluxAttention<B> {
         cross_x: Option<Tensor<B, 3>>,
     ) -> Tensor<B, 3> {
         let [batch, seq_len, _hidden] = x.dims();
-        let device = x.device();
 
         // Compute QKV
         let qkv = self.qkv.forward(x);
@@ -385,8 +384,8 @@ impl<B: Backend> FluxDoubleBlock<B> {
         cond: Tensor<B, 2>,
         rope: &RotaryEmbedding<B>,
     ) -> (Tensor<B, 3>, Tensor<B, 3>) {
-        let [batch, img_len, hidden] = img.dims();
-        let [_, txt_len, _] = txt.dims();
+        let [batch, _img_len, hidden] = img.dims();
+        let [_, _txt_len, _] = txt.dims();
 
         // Get modulation parameters (6 sets: shift, scale, gate for both streams)
         let mod_params = self.modulation.forward(cond);
@@ -484,7 +483,7 @@ impl<B: Backend> FluxSingleBlock<B> {
         cond: Tensor<B, 2>,
         rope: &RotaryEmbedding<B>,
     ) -> Tensor<B, 3> {
-        let [batch, seq_len, hidden] = x.dims();
+        let [batch, _seq_len, hidden] = x.dims();
 
         // Get modulation (shift, scale, gate)
         let mod_params = self.modulation.forward(cond);
@@ -600,7 +599,7 @@ impl<B: Backend> Flux<B> {
 
         // Project text embeddings
         let txt = self.txt_embed.forward(txt_embeds);
-        let [_, txt_len, _] = txt.dims();
+        let [_, _txt_len, _] = txt.dims();
 
         // Timestep embedding
         let t_vec = Tensor::<B, 1>::from_floats([timestep], &device);

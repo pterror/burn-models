@@ -331,7 +331,7 @@ impl<B: Backend> CogVideoTimestepEmbed<B> {
             .collect();
         let freqs = Tensor::<B, 1>::from_floats(freqs.as_slice(), &device);
 
-        let [batch] = t.dims();
+        let [_batch] = t.dims();
         let t_expanded = t.unsqueeze_dim::<2>(1);
         let freqs_expanded = freqs.unsqueeze_dim::<2>(0);
         let angles = t_expanded.matmul(freqs_expanded);

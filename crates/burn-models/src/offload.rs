@@ -2,8 +2,6 @@
 //!
 //! Enables running large models by moving components between CPU and GPU.
 
-use std::sync::Arc;
-
 /// Offloading strategy
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OffloadStrategy {

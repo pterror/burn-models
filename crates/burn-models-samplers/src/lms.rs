@@ -67,7 +67,7 @@ impl<B: Backend> LmsSampler<B> {
     }
 
     /// Compute LMS coefficients for given order
-    fn get_lms_coefficients(order: usize, t: f32, t_prev: f32, sigmas: &[f32], step_idx: usize) -> Vec<f32> {
+    fn get_lms_coefficients(order: usize, _t: f32, t_prev: f32, sigmas: &[f32], step_idx: usize) -> Vec<f32> {
         let mut coeffs = vec![0.0; order];
 
         for i in 0..order {

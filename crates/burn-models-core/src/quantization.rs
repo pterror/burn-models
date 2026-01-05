@@ -94,7 +94,6 @@ impl<B: Backend> QuantizedTensor<B> {
     /// Dequantize back to float
     pub fn dequantize(&self) -> Tensor<B, 2> {
         let [rows, cols] = self.data.dims();
-        let device = self.data.device();
 
         if self.params.config.group_size == 0 {
             // Per-tensor quantization
@@ -106,7 +105,7 @@ impl<B: Backend> QuantizedTensor<B> {
         } else {
             // Group-wise quantization
             let group_size = self.params.config.group_size;
-            let num_groups = (cols + group_size - 1) / group_size;
+            let num_groups = cols.div_ceil(group_size);
 
             let mut result_parts = Vec::new();
 
@@ -138,7 +137,6 @@ pub fn quantize<B: Backend>(
 ) -> QuantizedTensor<B> {
     let [rows, cols] = tensor.dims();
     let device = tensor.device();
-    let (qmin, qmax) = config.range();
 
     if config.group_size == 0 {
         // Per-tensor quantization
@@ -156,7 +154,7 @@ pub fn quantize<B: Backend>(
     } else {
         // Group-wise quantization
         let group_size = config.group_size;
-        let num_groups = (cols + group_size - 1) / group_size;
+        let num_groups = cols.div_ceil(group_size);
 
         let mut scales = Vec::new();
         let mut zero_points = Vec::new();
@@ -287,7 +285,7 @@ pub fn memory_savings(
 
     // Add overhead for scales/zero_points
     let num_groups = if config.group_size > 0 {
-        (num_params + config.group_size - 1) / config.group_size
+        num_params.div_ceil(config.group_size)
     } else {
         1
     };
@@ -442,7 +440,7 @@ impl<B: Backend> Fp8Tensor<B> {
     /// Get the dequantized tensor (already stored as f32)
     pub fn dequantize(&self) -> Tensor<B, 2> {
         // Data is already in f32, just needs to be scaled back
-        let [rows, cols] = self.data.dims();
+        let [rows, _cols] = self.data.dims();
         if self.scale.dims()[0] == 1 {
             // Per-tensor scale
             let scale = self.scale.clone().reshape([1, 1]);

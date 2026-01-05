@@ -18,12 +18,10 @@
 //! https://arxiv.org/abs/2410.10629
 
 use burn::prelude::*;
-use burn::module::Param;
 use burn::nn::{Linear, LinearConfig};
 use burn::tensor::activation;
 
-use burn_models_core::dit::{PatchEmbed, PatchEmbedConfig, unpatchify};
-use burn_models_core::glu::SwiGluFfn;
+use burn_models_core::dit::unpatchify;
 use burn_models_core::layernorm::LayerNorm;
 
 /// SANA Model Configuration
@@ -185,7 +183,7 @@ impl<B: Backend> Sana<B> {
         timesteps: Tensor<B, 1>,
         text_embeds: Tensor<B, 3>,
     ) -> SanaOutput<B> {
-        let [batch, _, _, _] = x.dims();
+        let [_batch, _, _, _] = x.dims();
 
         // Embed patches
         let x = self.patch_embed.forward(x);
@@ -294,7 +292,7 @@ impl<B: Backend> SanaTimeEmbed<B> {
     }
 
     fn sinusoidal_embedding<B2: Backend>(timesteps: Tensor<B2, 1>, dim: usize, device: &B2::Device) -> Tensor<B2, 2> {
-        let [batch] = timesteps.dims();
+        let [_batch] = timesteps.dims();
         let half_dim = dim / 2;
 
         // Create frequency bands: [half_dim]
@@ -334,7 +332,7 @@ pub struct SanaBlock<B: Backend> {
     /// Feed-forward network
     ffn: SanaFFN<B>,
     /// Scale shift for time conditioning
-    adaLN_modulation: Linear<B>,
+    ada_ln_modulation: Linear<B>,
 }
 
 impl<B: Backend> SanaBlock<B> {
@@ -345,7 +343,7 @@ impl<B: Backend> SanaBlock<B> {
             cross_attn: SanaCrossAttention::new(config, device),
             ln2: LayerNorm::new(config.hidden_size, device),
             ffn: SanaFFN::new(config, device),
-            adaLN_modulation: LinearConfig::new(config.hidden_size, config.hidden_size * 6)
+            ada_ln_modulation: LinearConfig::new(config.hidden_size, config.hidden_size * 6)
                 .with_bias(true)
                 .init(device),
         }
@@ -360,7 +358,7 @@ impl<B: Backend> SanaBlock<B> {
         let [batch, seq_len, hidden] = x.dims();
 
         // AdaLN modulation
-        let mods = self.adaLN_modulation.forward(activation::silu(t_emb));
+        let mods = self.ada_ln_modulation.forward(activation::silu(t_emb));
         let mods = mods.unsqueeze_dim::<3>(1).expand([batch, seq_len, hidden * 6]);
 
         let shift1 = mods.clone().slice([0..batch, 0..seq_len, 0..hidden]);

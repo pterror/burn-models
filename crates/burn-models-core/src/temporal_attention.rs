@@ -125,7 +125,6 @@ impl<B: Backend> TemporalAttention<B> {
     /// For video, reshape from [B, C, T, H, W] to [B*H*W, T, C] before calling.
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let [batch, seq_len, _dim] = x.dims();
-        let device = x.device();
 
         // Project to Q, K, V
         let q = self.to_q.forward(x.clone());
@@ -184,13 +183,14 @@ impl<B: Backend> TemporalAttention<B> {
 
         // Apply RoPE to current Q, K
         let pos_offset = k_cache.as_ref().map_or(0, |c| c.dims()[1]);
-        if let Some(ref freqs) = self.rope_freqs {
+        let q = if let Some(ref freqs) = self.rope_freqs {
             let freqs = freqs.clone().slice([pos_offset..pos_offset + seq_len]);
             let q_rope = apply_rope(q.clone(), freqs.clone());
             k = apply_rope(k, freqs);
-            // Note: q needs full position for query
-            let q = q_rope;
-        }
+            q_rope
+        } else {
+            q
+        };
 
         // Transpose for attention: [batch, heads, seq, head_dim]
         let q = q.swap_dims(1, 2);

@@ -448,8 +448,8 @@ impl<B: Backend> MMDiTBlock<B> {
         y: Tensor<B, 2>,
         rope: &RotaryEmbedding<B>,
     ) -> (Tensor<B, 3>, Tensor<B, 3>) {
-        let [batch, x_len, hidden] = x.dims();
-        let [_, c_len, _] = c.dims();
+        let [batch, _x_len, hidden] = x.dims();
+        let [_, _c_len, _] = c.dims();
 
         // Get modulation parameters (6 values: x_shift, x_scale, x_gate, c_shift, c_scale, c_gate)
         let mod_params = self.modulation.forward(y);
@@ -588,12 +588,12 @@ impl<B: Backend> Sd3<B> {
         pooled: Tensor<B, 2>,
         runtime: &Sd3Runtime<B>,
     ) -> Sd3Output<B> {
-        let [batch, _channels, height, width] = latents.dims();
+        let [_batch, _channels, height, width] = latents.dims();
         let device = latents.device();
 
         // Patchify image
         let x = self.x_embed.forward(latents);
-        let [_, x_len, _] = x.dims();
+        let [_, _x_len, _] = x.dims();
 
         // Project context
         let c = self.context_embed.forward(context);

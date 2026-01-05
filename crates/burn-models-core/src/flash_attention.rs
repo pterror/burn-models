@@ -141,7 +141,6 @@ fn flash_attention<B: Backend>(
     let [batch, heads, seq_len, head_dim] = q.dims();
     let [_, _, kv_len, _] = k.dims();
     let scale = (head_dim as f64).powf(-0.5);
-    let device = q.device();
 
     // If sequence is short enough, use standard attention
     if seq_len <= chunk_size && kv_len <= chunk_size {
@@ -149,7 +148,7 @@ fn flash_attention<B: Backend>(
     }
 
     // Process in chunks
-    let num_q_chunks = (seq_len + chunk_size - 1) / chunk_size;
+    let num_q_chunks = seq_len.div_ceil(chunk_size);
     let mut outputs = Vec::new();
 
     for q_chunk_idx in 0..num_q_chunks {
@@ -186,7 +185,7 @@ fn memory_efficient_attention<B: Backend>(
         return standard_attention(q, k, v);
     }
 
-    let num_chunks = (seq_len + chunk_size - 1) / chunk_size;
+    let num_chunks = seq_len.div_ceil(chunk_size);
     let mut outputs = Vec::new();
 
     for chunk_idx in 0..num_chunks {
@@ -223,7 +222,7 @@ fn sliced_attention<B: Backend>(
         return standard_attention(q, k, v);
     }
 
-    let num_slices = (heads + slice_size - 1) / slice_size;
+    let num_slices = heads.div_ceil(slice_size);
     let mut outputs = Vec::new();
 
     for slice_idx in 0..num_slices {

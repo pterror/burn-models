@@ -624,7 +624,7 @@ impl<B: Backend> Mochi<B> {
 
         // Patchify video
         let (x, nt, nh, nw, channels) = self.patchify(video_latents);
-        let [batch, _seq_len, _hidden] = x.dims();
+        let [_batch, _seq_len, _hidden] = x.dims();
 
         // Project text
         let mut text = self.text_embed.forward(text_embeds);

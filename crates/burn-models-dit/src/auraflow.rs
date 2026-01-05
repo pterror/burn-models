@@ -20,7 +20,6 @@
 //! - **Open source**: Fully open weights and training
 
 use burn::prelude::*;
-use burn::module::Param;
 use burn::nn::{Linear, LinearConfig};
 
 use burn_models_core::dit::{PatchEmbed, PatchEmbedConfig, unpatchify};
@@ -322,8 +321,8 @@ impl<B: Backend> AuraFlowBlock<B> {
         cond: Tensor<B, 2>,  // Timestep conditioning
         rope: &RotaryEmbedding<B>,
     ) -> (Tensor<B, 3>, Tensor<B, 3>) {
-        let [batch, x_len, hidden] = x.dims();
-        let [_, c_len, _] = c.dims();
+        let [batch, _x_len, hidden] = x.dims();
+        let [_, _c_len, _] = c.dims();
 
         // Get all modulation parameters (12 total: 6 for x, 6 for c)
         let mod_params = self.modulation.forward(cond);
@@ -463,7 +462,7 @@ impl<B: Backend> AuraFlow<B> {
         runtime: &AuraFlowRuntime<B>,
     ) -> AuraFlowOutput<B> {
         let device = latents.device();
-        let [batch, _channels, height, width] = latents.dims();
+        let [_batch, _channels, height, width] = latents.dims();
 
         // Patchify
         let x = self.patch_embed.forward(latents);

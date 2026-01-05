@@ -522,7 +522,7 @@ impl<B: Backend> HunyuanDiT<B> {
         runtime: &HunyuanDiTRuntime<B>,
     ) -> HunyuanDiTOutput<B> {
         let device = latents.device();
-        let [batch, _channels, height, width] = latents.dims();
+        let [_batch, _channels, height, width] = latents.dims();
 
         // Patchify
         let x = self.patch_embed.forward(latents);

@@ -46,7 +46,6 @@ pub struct UniPcSampler<B: Backend> {
     config: UniPcConfig,
     timesteps: Vec<usize>,
     sigmas: Vec<f32>,
-    lambda_t: Vec<f32>,
     /// History of model outputs
     model_outputs: VecDeque<Tensor<B, 4>>,
     /// History of timestep lambdas
@@ -59,25 +58,10 @@ impl<B: Backend> UniPcSampler<B> {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
         let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
 
-        // Compute lambda_t = log(alpha_t / sigma_t) for each timestep
-        let lambda_t: Vec<f32> = sigmas
-            .iter()
-            .map(|s| {
-                if *s > 0.0 {
-                    // alpha = 1/sqrt(1 + sigma^2), so alpha/sigma = 1/(sigma * sqrt(1 + sigma^2))
-                    let alpha = 1.0 / (1.0 + s * s).sqrt();
-                    (alpha / s).ln()
-                } else {
-                    f32::INFINITY
-                }
-            })
-            .collect();
-
         Self {
             config,
             timesteps,
             sigmas,
-            lambda_t,
             model_outputs: VecDeque::new(),
             lambda_history: VecDeque::new(),
         }

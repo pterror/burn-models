@@ -97,7 +97,7 @@ impl<B: Backend> ResBlock<B> {
     ///
     /// Output tensor of shape `[batch, out_channels, height, width]`
     pub fn forward(&self, x: Tensor<B, 4>, time_emb: Tensor<B, 2>) -> Tensor<B, 4> {
-        let [b, _, h, w] = x.dims();
+        let [b, _, _h, _w] = x.dims();
 
         let residual = match &self.skip_conv {
             Some(conv) => conv.forward(x.clone()),
@@ -183,7 +183,7 @@ impl<B: Backend> SpatialTransformer<B> {
     ///
     /// Output tensor with same shape as input
     pub fn forward(&self, x: Tensor<B, 4>, context: Tensor<B, 3>) -> Tensor<B, 4> {
-        let [b, c, h, w] = x.dims();
+        let [b, _c, h, w] = x.dims();
         let residual = x.clone();
 
         let x = self.norm.forward(x);

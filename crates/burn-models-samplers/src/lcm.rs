@@ -33,14 +33,10 @@ impl Default for LcmConfig {
 /// Latent Consistency Models use a consistency distillation approach
 /// to generate high-quality samples in very few steps.
 pub struct LcmSampler<B: Backend> {
-    /// Sampler configuration
-    config: LcmConfig,
     /// Timestep indices for sampling
     timesteps: Vec<usize>,
     /// Cumulative product of alphas
     alphas_cumprod: Vec<f32>,
-    /// Number of training timesteps
-    num_train_timesteps: usize,
     /// Phantom data for backend type
     _marker: std::marker::PhantomData<B>,
 }
@@ -61,10 +57,8 @@ impl<B: Backend> LcmSampler<B> {
         }
 
         Self {
-            config,
             timesteps,
             alphas_cumprod,
-            num_train_timesteps,
             _marker: std::marker::PhantomData,
         }
     }
