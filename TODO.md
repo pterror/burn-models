@@ -2,6 +2,11 @@
 
 ## Next Up
 
+- [ ] Rename project from burn-image to burn-models
+- [ ] Restructure crates for general model inference
+
+## Completed (Image Generation)
+
 - [x] Explore stable-diffusion-burn source to understand architecture
 - [x] Explore stable-diffusion-xl-burn source for SDXL differences
 - [x] Define crate structure (workspace with 7 crates)
@@ -115,3 +120,44 @@
 - [ ] PixArt-α/Σ - Efficient DiT, T5 text encoder
 - [ ] AuraFlow - Open source flow-based
 - [ ] Hunyuan-DiT - Bilingual DiT model
+
+### Video Generation
+
+- [ ] Wan 2.x (Alibaba) - DiT + MoE, 3D VAE, 14B active params
+- [ ] CogVideoX - Open source video DiT
+- [ ] Mochi - Genmo's open source video model
+- [ ] LTX-Video - Lightricks video model
+
+### Large Language Models
+
+- [ ] LLaMA 3.x - Meta's foundation model
+- [ ] Qwen 2.5 - Alibaba's multilingual LLM
+- [ ] Mistral / Mixtral - Mistral AI models
+- [ ] Gemma 2 - Google's open models
+- [ ] Phi-3/4 - Microsoft's small models
+- [ ] DeepSeek - DeepSeek's models
+
+### Shared Building Blocks (burn-models-core)
+
+#### Layers
+- [ ] Transformer block (shared by DiT, LLM, encoders)
+- [ ] RoPE (Rotary Position Embedding)
+- [ ] RMSNorm
+- [ ] SwiGLU / GeGLU activations
+- [ ] MoE (Mixture of Experts) routing
+
+#### Inference Optimization
+- [ ] KV cache for autoregressive models
+- [ ] Paged attention
+- [ ] Continuous batching
+- [ ] Speculative decoding
+
+#### Quantization
+- [ ] INT8 dynamic quantization
+- [ ] INT4 quantization (GPTQ, AWQ)
+- [ ] FP8 support
+
+#### Video-specific
+- [ ] 3D VAE (temporal compression)
+- [ ] Temporal attention layers
+- [ ] Frame interpolation
