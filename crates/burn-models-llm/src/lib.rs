@@ -30,11 +30,15 @@ pub mod llama_loader;
 pub mod mistral;
 pub mod mistral_loader;
 pub mod mixtral;
+pub mod phi;
+pub mod phi_loader;
 pub mod qwen;
 pub mod qwen_loader;
 
 pub use gemma::{Gemma, GemmaConfig, GemmaOutput, GemmaRuntime};
 pub use gemma_loader::{load_gemma, GemmaLoadError};
+pub use phi::{Phi, PhiConfig, PhiOutput, PhiRuntime};
+pub use phi_loader::{load_phi, PhiLoadError};
 pub use llama::{Llama, LlamaConfig, LlamaOutput, LlamaRuntime};
 pub use llama_loader::{load_llama, LlamaLoadError};
 pub use mistral::{Mistral, MistralConfig, MistralOutput, MistralRuntime};

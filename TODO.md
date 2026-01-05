@@ -136,7 +136,7 @@
 - [x] Mistral 7B/Nemo - Sliding window attention
 - [x] Qwen 2.5 - Alibaba's multilingual LLM (0.5B to 72B)
 - [x] Gemma 2 - Google's open models (interleaved sliding/global attention, logit soft-capping, GeGLU)
-- [ ] Phi-3/4 - Microsoft's small models
+- [x] Phi-3/3.5 - Microsoft's small models (fused QKV/gate-up, GQA)
 - [ ] DeepSeek - DeepSeek's models
 
 ### Shared Building Blocks (burn-models-core)
