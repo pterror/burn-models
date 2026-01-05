@@ -445,27 +445,76 @@ fn conv3d_kernel<E: Numeric>(
 - Hardware-specific (needs CMMA)
 - Biggest perf gains but most complex
 
-### Integration Options
+### Integration Decision: burn-models-cubecl crate
 
-**Option A: Contribute to burn-cubecl**
-- Pros: Benefits upstream, maintained
-- Cons: Review process, must match their style
+**Chosen: Option B** - Create `burn-models-cubecl` crate
 
-**Option B: Create burn-models-cubecl crate**
-- Pros: Full control, can move fast
-- Cons: Maintenance burden, duplication
+Rationale:
+- Full control over iteration speed
+- Avoid "vibe coded" concerns with upstream contributions
+- Can always upstream later once battle-tested
+- Clear separation of concerns
 
-**Option C: Feature-gate in burn-models-core**
-- Pros: Simplest integration
-- Cons: Mixes tensor-ops and CubeCL code
+Trade-offs accepted:
+- Maintenance burden (we own it)
+- Some duplication of patterns from burn-cubecl
 
-### Next Steps to Fill Gaps
+### Crate Structure
 
-1. [ ] Study LinearView usage in conv2d (for output optimization)
-2. [ ] Write simple conv3d kernel based on conv_transpose3d
-3. [ ] Create test harness comparing CubeCL vs im2col output
-4. [ ] Benchmark to validate performance gains
-5. [ ] If worthwhile, add vectorization (Phase 2)
+```
+crates/burn-models-cubecl/
+├── Cargo.toml
+├── src/
+│   ├── lib.rs
+│   ├── conv3d.rs          # Conv3d kernel
+│   ├── utils.rs           # Shared utilities (permute, etc.)
+│   └── bench.rs           # Benchmark infrastructure
+└── benches/
+    └── conv3d.rs          # Criterion benchmarks
+```
+
+**Cargo.toml skeleton:**
+```toml
+[package]
+name = "burn-models-cubecl"
+version = "0.1.0"
+edition.workspace = true
+
+[features]
+default = ["wgpu"]
+wgpu = ["cubecl/wgpu"]
+cuda = ["cubecl/cuda"]
+
+[dependencies]
+cubecl = "0.5"  # Match burn's version
+burn = { workspace = true }
+
+[dev-dependencies]
+criterion = "0.5"
+burn-models-core = { workspace = true }  # For im2col reference
+
+[[bench]]
+name = "conv3d"
+harness = false
+```
+
+### Queued Work (see TODO.md)
+
+**Phase 1: Infrastructure**
+- Create crate with cubecl dependency
+- Feature flags (wgpu, cuda)
+- Benchmark harness
+
+**Phase 2: Conv3d Kernel**
+- Port conv_transpose3d → conv3d
+- NHWC layout handling
+- Correctness tests vs im2col
+- Performance benchmarks
+
+**Phase 3: Optimization** (if justified)
+- Line<E> vectorization
+- Recursive kernel_loop
+- FastDivmod
 
 ## Configuration
 
