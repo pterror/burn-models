@@ -92,23 +92,27 @@ pub enum ModelType {
     Jamba,
 }
 
-impl ModelType {
-    /// Parse model type from string
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for ModelType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "llama" => Some(Self::Llama),
-            "mistral" => Some(Self::Mistral),
-            "mixtral" => Some(Self::Mixtral),
-            "gemma" => Some(Self::Gemma),
-            "phi" => Some(Self::Phi),
-            "qwen" => Some(Self::Qwen),
-            "deepseek" => Some(Self::DeepSeek),
-            "rwkv" => Some(Self::Rwkv),
-            "mamba" => Some(Self::Mamba),
-            "jamba" => Some(Self::Jamba),
-            _ => None,
+            "llama" => Ok(Self::Llama),
+            "mistral" => Ok(Self::Mistral),
+            "mixtral" => Ok(Self::Mixtral),
+            "gemma" => Ok(Self::Gemma),
+            "phi" => Ok(Self::Phi),
+            "qwen" => Ok(Self::Qwen),
+            "deepseek" => Ok(Self::DeepSeek),
+            "rwkv" => Ok(Self::Rwkv),
+            "mamba" => Ok(Self::Mamba),
+            "jamba" => Ok(Self::Jamba),
+            _ => Err(()),
         }
     }
+}
+
+impl ModelType {
 
     /// Get the model type name as a string
     pub fn as_str(&self) -> &'static str {
@@ -641,7 +645,7 @@ fn parse_mamba_config(json: &str) -> Result<MambaConfig, LlmError> {
         d_conv: v["d_conv"].as_u64().unwrap_or(4) as usize,
         expand: v["expand"].as_u64().unwrap_or(2) as usize,
         dt_rank: v["dt_rank"].as_u64().map(|x| x as usize)
-            .unwrap_or_else(|| (d_model + 15) / 16),
+            .unwrap_or_else(|| d_model.div_ceil(16)),
         layer_norm_eps: v["layer_norm_eps"].as_f64().unwrap_or(1e-5),
     })
 }
@@ -697,9 +701,10 @@ mod tests {
 
     #[test]
     fn test_model_type_parsing() {
-        assert_eq!(ModelType::from_str("llama"), Some(ModelType::Llama));
-        assert_eq!(ModelType::from_str("MISTRAL"), Some(ModelType::Mistral));
-        assert_eq!(ModelType::from_str("unknown"), None);
+        use std::str::FromStr;
+        assert_eq!(ModelType::from_str("llama"), Ok(ModelType::Llama));
+        assert_eq!(ModelType::from_str("MISTRAL"), Ok(ModelType::Mistral));
+        assert!(ModelType::from_str("unknown").is_err());
     }
 
     #[test]

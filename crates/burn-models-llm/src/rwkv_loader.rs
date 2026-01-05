@@ -191,14 +191,14 @@ fn load_time_mix<B: Backend>(
     file: &SafeTensorFile,
     prefix: &str,
     config: &RwkvConfig,
-    layer_id: usize,
+    _layer_id: usize,
     device: &B::Device,
 ) -> Result<RwkvTimeMix<B>, RwkvLoadError> {
     let hidden = config.hidden_size;
     let num_heads = config.num_heads;
     let head_dim = config.head_dim;
     let inner_dim = num_heads * head_dim;
-    let lora_dim = 32.min(hidden / 4);
+    let _lora_dim = 32.min(hidden / 4);
 
     let ln = load_layer_norm(file, &format!("{}.ln1", prefix), hidden, config.layer_norm_eps, device)?;
 

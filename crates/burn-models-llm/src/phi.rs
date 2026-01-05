@@ -371,7 +371,7 @@ impl<B: Backend> Phi<B> {
         runtime: &PhiRuntime<B>,
         mut cache: Option<&mut ModelKvCache<B>>,
     ) -> PhiOutput<B> {
-        let [batch, seq_len] = input_ids.dims();
+        let [_batch, seq_len] = input_ids.dims();
         let device = input_ids.device();
 
         let start_pos = cache.as_ref().map(|c| c.seq_len()).unwrap_or(0);

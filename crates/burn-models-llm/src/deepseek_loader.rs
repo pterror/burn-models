@@ -12,7 +12,7 @@ use burn_models_convert::loader::SafeTensorFile;
 use thiserror::Error;
 
 use crate::deepseek::{DeepSeek, DeepSeekConfig, DeepSeekRuntime, DeepSeekLayer, DeepSeekAttention};
-use burn_models_core::glu::{SwiGluFfn, SwiGluFfnConfig};
+use burn_models_core::glu::SwiGluFfn;
 use burn_models_core::rmsnorm::RmsNorm;
 use burn_models_core::rope::RotaryEmbedding;
 
