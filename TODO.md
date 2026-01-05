@@ -181,7 +181,7 @@
 - [x] Jamba - AI21's Transformer-Mamba-MoE hybrid, 1:7 attention:Mamba ratio, 256K context
 
 #### Fast Image Generation
-- [ ] SANA - NVIDIA's linear DiT, 32x compression, 4K images on laptop GPU in <1s
+- [x] SANA - NVIDIA's linear DiT, 32x compression, 4K images on laptop GPU in <1s
 
 #### Experimental / Research (Lower Priority)
 - [ ] xLSTM - Extended LSTM with exponential gating and matrix memory (Sepp Hochreiter)
