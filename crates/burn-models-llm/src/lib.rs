@@ -38,6 +38,7 @@ pub mod qwen;
 pub mod qwen_loader;
 pub mod rwkv;
 pub mod mamba;
+pub mod jamba;
 
 pub use deepseek::{DeepSeek, DeepSeekConfig, DeepSeekOutput, DeepSeekRuntime};
 pub use deepseek_loader::{load_deepseek, DeepSeekLoadError};
@@ -54,3 +55,4 @@ pub use qwen::{Qwen, QwenConfig, QwenOutput, QwenRuntime};
 pub use qwen_loader::{load_qwen, QwenLoadError};
 pub use rwkv::{Rwkv, RwkvConfig, RwkvOutput, RwkvRuntime, RwkvState};
 pub use mamba::{Mamba, MambaConfig, MambaOutput, MambaRuntime, MambaState};
+pub use jamba::{Jamba, JambaConfig, JambaOutput, JambaRuntime, JambaState};
