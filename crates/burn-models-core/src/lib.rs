@@ -1,8 +1,12 @@
 pub mod attention;
 pub mod flash_attention;
+pub mod glu;
 pub mod groupnorm;
 pub mod layernorm;
 pub mod lora;
 pub mod precision;
+pub mod rmsnorm;
+pub mod rope;
 pub mod silu;
 pub mod textual_inversion;
+pub mod transformer;

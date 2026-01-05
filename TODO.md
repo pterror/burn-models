@@ -2,7 +2,7 @@
 
 ## Next Up
 
-- [ ] Rename project from burn-image to burn-models
+- [x] Rename project from burn-image to burn-models
 - [ ] Restructure crates for general model inference
 
 ## Completed (Image Generation)
@@ -140,10 +140,11 @@
 ### Shared Building Blocks (burn-models-core)
 
 #### Layers
-- [ ] Transformer block (shared by DiT, LLM, encoders)
-- [ ] RoPE (Rotary Position Embedding)
-- [ ] RMSNorm
-- [ ] SwiGLU / GeGLU activations
+- [x] Transformer block (shared by DiT, LLM, encoders)
+- [x] RoPE (Rotary Position Embedding)
+- [x] RMSNorm
+- [x] SwiGLU / GeGLU activations
+- [x] Multi-head attention with GQA support
 - [ ] MoE (Mixture of Experts) routing
 
 #### Inference Optimization
