@@ -259,5 +259,5 @@ Found during dead code audit. These are stubs or broken implementations that nee
 - [ ] `main.rs:343` CLI generate - Outputs gradient placeholder image.
   Pipeline isn't wired up yet, this is just demo output. Fix when pipeline is complete.
 
-- [ ] `rwkv.rs:277-290` RWKV-7 dynamic mixing - Uses static ratios instead of dynamic low-rank projection.
-  Full RWKV-7 requires `x_maa @ time_maa_w1` projection. Current impl is RWKV-6 style.
+- [x] `rwkv.rs:277-290` RWKV-7 dynamic mixing - Now implements full low-rank projection.
+  Auto-detects RWKV-6 vs RWKV-7 by checking if `time_maa_w1` weights are present.

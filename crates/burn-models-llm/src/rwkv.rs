@@ -274,20 +274,59 @@ impl<B: Backend> RwkvTimeMix<B> {
         let diff = x_shifted.clone() - x.clone();
         let x_maa = x.clone() + diff.clone() * unsqueeze_1d(self.time_maa_x.val());
 
-        // TODO: Full RWKV-7 dynamic mixing via low-rank projection
-        // The full implementation would compute:
-        //   maa_proj = x_maa @ time_maa_w1  # [batch, seq, lora_dim*5]
-        //   Then split and tanh-gate each mixing ratio dynamically
-        // For now, using static learned mixing ratios
-        let _ = x_maa; // Used in full implementation
+        // Check if RWKV-7 dynamic mixing weights are present (non-zero)
+        // RWKV-6 models won't have these, so we fall back to static mixing
+        let w1_sum: f32 = self.time_maa_w1.val().clone().abs().sum().into_scalar().elem();
+        let use_dynamic_mixing = w1_sum > 1e-6;
 
-        // Apply projections for r, w, k, v, g
-        let xr = x.clone() + diff.clone() * unsqueeze_1d(self.time_maa_r.val());
-        let xw = x.clone() + diff.clone() * unsqueeze_1d(self.time_maa_w.val());
-        let xk = x.clone() + diff.clone() * unsqueeze_1d(self.time_maa_k.val());
-        let xv = x.clone() + diff.clone() * unsqueeze_1d(self.time_maa_v.val());
-        let xg = x.clone() + diff * unsqueeze_1d(self.time_maa_g.val());
-        let _ = xw; // Currently unused, but needed for full RWKV implementation
+        let (xr, xw, xk, xv, xg) = if use_dynamic_mixing {
+            // RWKV-7 dynamic mixing via low-rank projection
+            let hidden = self.num_heads * self.head_dim;
+            let w1 = self.time_maa_w1.val();
+            let [_, proj_dim] = w1.dims();
+            let lora_dim = proj_dim / 5;
+
+            // Project x_maa through W1: [batch*seq, hidden] @ [hidden, lora_dim*5] -> [batch*seq, lora_dim*5]
+            let x_maa_flat = x_maa.reshape([batch * seq_len, hidden]);
+            let maa_proj = x_maa_flat.matmul(w1);
+
+            // Reshape to [batch, seq, 5, lora_dim], apply tanh
+            let maa_proj = maa_proj.reshape([batch, seq_len, 5, lora_dim]);
+            let maa_proj = maa_proj.tanh();
+
+            // Project each of the 5 components back to hidden dim
+            // time_maa_w2 is [5, lora_dim, hidden]
+            let w2 = self.time_maa_w2.val();
+            let dynamic_mix = |i: usize| -> Tensor<B, 3> {
+                // Extract [batch, seq, lora_dim] for component i
+                let component = maa_proj.clone().slice([0..batch, 0..seq_len, i..i + 1, 0..lora_dim]);
+                let component = component.reshape([batch * seq_len, lora_dim]);
+                // Extract [lora_dim, hidden] for W2[i]
+                let w2_i = w2.clone().slice([i..i + 1, 0..lora_dim, 0..hidden]);
+                let w2_i = w2_i.reshape([lora_dim, hidden]);
+                // [batch*seq, lora_dim] @ [lora_dim, hidden] -> [batch*seq, hidden] -> [batch, seq, hidden]
+                component.matmul(w2_i).reshape([batch, seq_len, hidden])
+            };
+
+            // Compute dynamic mixing ratios and apply to diff
+            (
+                x.clone() + diff.clone() * (unsqueeze_1d(self.time_maa_r.val()) + dynamic_mix(0)),
+                x.clone() + diff.clone() * (unsqueeze_1d(self.time_maa_w.val()) + dynamic_mix(1)),
+                x.clone() + diff.clone() * (unsqueeze_1d(self.time_maa_k.val()) + dynamic_mix(2)),
+                x.clone() + diff.clone() * (unsqueeze_1d(self.time_maa_v.val()) + dynamic_mix(3)),
+                x.clone() + diff * (unsqueeze_1d(self.time_maa_g.val()) + dynamic_mix(4)),
+            )
+        } else {
+            // RWKV-6 static mixing (fallback when dynamic weights not present)
+            (
+                x.clone() + diff.clone() * unsqueeze_1d(self.time_maa_r.val()),
+                x.clone() + diff.clone() * unsqueeze_1d(self.time_maa_w.val()),
+                x.clone() + diff.clone() * unsqueeze_1d(self.time_maa_k.val()),
+                x.clone() + diff.clone() * unsqueeze_1d(self.time_maa_v.val()),
+                x.clone() + diff * unsqueeze_1d(self.time_maa_g.val()),
+            )
+        };
+        let _ = xw; // Used for time decay computation in full implementation
 
         // Linear projections
         let r = self.receptance.forward(xr);
