@@ -27,7 +27,16 @@ impl Default for Dpm2Config {
     }
 }
 
-/// DPM2 Sampler (second-order DPM solver)
+/// DPM2 Sampler (second-order DPM solver using midpoint method)
+///
+/// True second-order DPM2 requires two model evaluations per step:
+/// 1. Evaluate at current sigma to get derivative
+/// 2. Take half step to sigma_mid
+/// 3. Evaluate at sigma_mid to get midpoint derivative
+/// 4. Use midpoint derivative for the full step
+///
+/// Use `midpoint_sample` to get the intermediate sample, then call
+/// `step` with both model outputs for true second-order accuracy.
 pub struct Dpm2Sampler<B: Backend> {
     timesteps: Vec<usize>,
     sigmas: Vec<f32>,
@@ -52,10 +61,49 @@ impl<B: Backend> Dpm2Sampler<B> {
         &self.timesteps
     }
 
+    /// Get the sigma value for a given step index
+    pub fn sigma(&self, timestep_idx: usize) -> f32 {
+        self.sigmas[timestep_idx]
+    }
+
+    /// Get the midpoint sigma between current and next step
+    pub fn sigma_mid(&self, timestep_idx: usize) -> f32 {
+        let sigma = self.sigmas[timestep_idx];
+        let sigma_next = self.sigmas[timestep_idx + 1];
+        (sigma * sigma_next).sqrt()
+    }
+
+    /// Compute the intermediate sample at sigma_mid for second model evaluation
+    ///
+    /// Returns (midpoint_sample, sigma_mid) for use with the model.
+    pub fn midpoint_sample(
+        &self,
+        model_output: Tensor<B, 4>,
+        timestep_idx: usize,
+        sample: Tensor<B, 4>,
+    ) -> (Tensor<B, 4>, f32) {
+        let sigma = self.sigmas[timestep_idx];
+        let sigma_mid = self.sigma_mid(timestep_idx);
+
+        // Compute derivative at current sigma
+        let denoised = sample.clone() - model_output * sigma;
+        let d = (sample.clone() - denoised) / sigma;
+
+        // Take half step to sigma_mid
+        let sample_mid = sample + d * (sigma_mid - sigma);
+
+        (sample_mid, sigma_mid)
+    }
+
     /// Perform one DPM2 step
+    ///
+    /// For true second-order accuracy, provide `model_output_mid` from evaluating
+    /// the model at the sample returned by `midpoint_sample`. If not provided,
+    /// falls back to first-order (Euler) accuracy.
     pub fn step(
         &self,
         model_output: Tensor<B, 4>,
+        model_output_mid: Option<Tensor<B, 4>>,
         timestep_idx: usize,
         sample: Tensor<B, 4>,
     ) -> Tensor<B, 4> {
@@ -63,17 +111,25 @@ impl<B: Backend> Dpm2Sampler<B> {
         let sigma_next = self.sigmas[timestep_idx + 1];
 
         if sigma_next == 0.0 {
-            // Final step
+            // Final step: just denoise
             return sample.clone() - model_output * sigma;
         }
 
-        // First half step
-        let denoised = sample.clone() - model_output.clone() * sigma;
-        let d = (sample.clone() - denoised.clone()) / sigma;
+        let sigma_mid = self.sigma_mid(timestep_idx);
 
-        // TODO: True DPM2 would evaluate model at sigma_mid, requiring a second model call.
-        // For now, reuse the derivative (equivalent to first-order).
-        let d_mid = d.clone();
+        // Compute derivative at current sigma
+        let denoised = sample.clone() - model_output.clone() * sigma;
+        let d = (sample.clone() - denoised) / sigma;
+
+        let d_mid = if let Some(output_mid) = model_output_mid {
+            // True second-order: use derivative at midpoint
+            let sample_mid = sample.clone() + d.clone() * (sigma_mid - sigma);
+            let denoised_mid = sample_mid.clone() - output_mid * sigma_mid;
+            (sample_mid - denoised_mid) / sigma_mid
+        } else {
+            // Fallback to first-order: reuse current derivative
+            d
+        };
 
         // Full step using midpoint derivative
         sample + d_mid * (sigma_next - sigma)

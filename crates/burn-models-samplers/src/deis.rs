@@ -124,15 +124,38 @@ impl<B: Backend> DeisSampler<B> {
                     coeffs[0] = 1.0;
                 }
             }
-            _ => {
-                // Fourth order (simplified)
+            4 => {
+                // Fourth order
                 if step_idx >= 3 {
-                    // Use third order coefficients with correction
-                    coeffs = self.get_deis_coefficients(3, step_idx);
-                    coeffs.resize(4, 0.0);
+                    let h_0 = self.log_sigmas[step_idx] - self.log_sigmas[step_idx - 1];
+                    let h_1 = self.log_sigmas[step_idx - 1] - self.log_sigmas[step_idx - 2];
+                    let h_2 = self.log_sigmas[step_idx - 2] - self.log_sigmas[step_idx - 3];
+                    let r_0 = h / h_0;
+                    let r_1 = h_0 / h_1;
+                    let r_2 = h_1 / h_2;
+
+                    // Lagrange interpolation coefficients for 4 points
+                    let d0 = 1.0 + r_1 + r_1 * r_2;
+                    let d1 = 1.0 + r_0;
+                    let d2 = 1.0 + r_0 + r_0 * r_1;
+
+                    coeffs[0] = 1.0 + r_0 / 2.0 * d1 / d0
+                        + r_0 * r_0 / 6.0 * d2 / (d0 * (1.0 + r_2))
+                        + r_0 * r_0 * r_0 / 24.0 * (1.0 + r_0 + r_0 * r_1 + r_0 * r_1 * r_2) / (d0 * (1.0 + r_2));
+                    coeffs[1] = -r_0 / 2.0 * (1.0 + r_0 + r_1 + r_1 * r_2) / d0
+                        - r_0 * r_0 / 6.0 * (1.0 + r_0 + r_0 * r_1) / (d0 * r_1)
+                        - r_0 * r_0 * r_0 / 24.0 * (1.0 + r_0) / (d0 * r_1 * r_2);
+                    coeffs[2] = r_0 * r_0 / 6.0 * r_1 * (1.0 + r_1 + r_1 * r_2) / (d0 * (1.0 + r_2))
+                        + r_0 * r_0 * r_0 / 24.0 * r_1 / (d0 * r_2);
+                    coeffs[3] = -r_0 * r_0 * r_0 / 24.0 * r_1 * r_2 / d0;
                 } else {
-                    coeffs = self.get_deis_coefficients(step_idx.min(3) + 1, step_idx);
+                    // Fall back to lower order if not enough history
+                    return self.get_deis_coefficients((step_idx + 1).min(3), step_idx);
                 }
+            }
+            _ => {
+                // Order > 4: fall back to fourth order
+                return self.get_deis_coefficients(4.min(step_idx + 1), step_idx);
             }
         }
 

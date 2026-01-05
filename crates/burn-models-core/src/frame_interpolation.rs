@@ -328,29 +328,76 @@ fn create_grid<B: Backend>(
 /// Bilinear sampling from image given continuous coordinates
 fn bilinear_sample<B: Backend>(
     img: Tensor<B, 4>,     // [batch, channels, height, width]
-    x: Tensor<B, 3>,       // [batch, height, width] normalized coords
-    y: Tensor<B, 3>,       // [batch, height, width] normalized coords
+    x: Tensor<B, 3>,       // [batch, out_h, out_w] normalized coords [-1, 1]
+    y: Tensor<B, 3>,       // [batch, out_h, out_w] normalized coords [-1, 1]
 ) -> Tensor<B, 4> {
-    let [_batch, _channels, height, width] = img.dims();
+    let [batch, channels, height, width] = img.dims();
+    let [_, out_h, out_w] = x.dims();
 
-    // Convert from [-1, 1] to pixel coordinates
-    let x_pixel = (x + 1.0) * ((width - 1) as f32 / 2.0);
-    let y_pixel = (y + 1.0) * ((height - 1) as f32 / 2.0);
+    // Convert from [-1, 1] to pixel coordinates [0, width-1] and [0, height-1]
+    let x_pixel = (x.clone() + 1.0) * ((width - 1) as f32 / 2.0);
+    let y_pixel = (y.clone() + 1.0) * ((height - 1) as f32 / 2.0);
 
-    // Get integer coordinates
+    // Get integer coordinates for the four corners
     let x0 = x_pixel.clone().floor();
     let y0 = y_pixel.clone().floor();
     let x1 = x0.clone() + 1.0;
     let y1 = y0.clone() + 1.0;
 
-    // Clamp to valid range (needed when implementing full bilinear interpolation)
-    let _ = (x0.clamp(0.0, (width - 1) as f32), y0.clamp(0.0, (height - 1) as f32),
-             x1.clamp(0.0, (width - 1) as f32), y1.clamp(0.0, (height - 1) as f32),
-             x_pixel, y_pixel);
+    // Compute interpolation weights
+    let wa = (x1.clone() - x_pixel.clone()) * (y1.clone() - y_pixel.clone());
+    let wb = (x_pixel.clone() - x0.clone()) * (y1.clone() - y_pixel.clone());
+    let wc = (x1.clone() - x_pixel.clone()) * (y_pixel.clone() - y0.clone());
+    let wd = (x_pixel.clone() - x0.clone()) * (y_pixel.clone() - y0.clone());
 
-    // TODO: Full bilinear interpolation requires gather operations to sample from
-    // (x0,y0), (x1,y0), (x0,y1), (x1,y1) and blend with weights. For now, return input.
-    img
+    // Clamp coordinates to valid range
+    let x0 = x0.clamp(0.0, (width - 1) as f32);
+    let y0 = y0.clamp(0.0, (height - 1) as f32);
+    let x1 = x1.clamp(0.0, (width - 1) as f32);
+    let y1 = y1.clamp(0.0, (height - 1) as f32);
+
+    // Flatten image spatial dimensions: [batch, channels, height * width]
+    let img_flat = img.reshape([batch, channels, height * width]);
+
+    // Compute linear indices for each corner: idx = y * width + x
+    // Indices shape: [batch, out_h, out_w]
+    let x0_i = x0.int();
+    let y0_i = y0.int();
+    let x1_i = x1.int();
+    let y1_i = y1.int();
+
+    let width_i = width as i64;
+    let idx_a = (y0_i.clone() * width_i + x0_i.clone()).reshape([batch, 1, out_h * out_w]);
+    let idx_b = (y0_i.clone() * width_i + x1_i.clone()).reshape([batch, 1, out_h * out_w]);
+    let idx_c = (y1_i.clone() * width_i + x0_i).reshape([batch, 1, out_h * out_w]);
+    let idx_d = (y1_i * width_i + x1_i).reshape([batch, 1, out_h * out_w]);
+
+    // Expand indices for all channels: [batch, channels, out_h * out_w]
+    let idx_a = idx_a.repeat_dim(1, channels);
+    let idx_b = idx_b.repeat_dim(1, channels);
+    let idx_c = idx_c.repeat_dim(1, channels);
+    let idx_d = idx_d.repeat_dim(1, channels);
+
+    // Gather values from each corner
+    let va = img_flat.clone().gather(2, idx_a);
+    let vb = img_flat.clone().gather(2, idx_b);
+    let vc = img_flat.clone().gather(2, idx_c);
+    let vd = img_flat.gather(2, idx_d);
+
+    // Reshape gathered values: [batch, channels, out_h, out_w]
+    let va = va.reshape([batch, channels, out_h, out_w]);
+    let vb = vb.reshape([batch, channels, out_h, out_w]);
+    let vc = vc.reshape([batch, channels, out_h, out_w]);
+    let vd = vd.reshape([batch, channels, out_h, out_w]);
+
+    // Expand weights to match: [batch, 1, out_h, out_w] -> broadcast with channels
+    let wa = wa.unsqueeze_dim::<4>(1);
+    let wb = wb.unsqueeze_dim::<4>(1);
+    let wc = wc.unsqueeze_dim::<4>(1);
+    let wd = wd.unsqueeze_dim::<4>(1);
+
+    // Bilinear blend
+    va * wa + vb * wb + vc * wc + vd * wd
 }
 
 /// Normalize tensor to unit length
