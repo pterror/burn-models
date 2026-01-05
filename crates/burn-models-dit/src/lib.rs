@@ -40,6 +40,7 @@ pub mod mochi;
 pub mod pixart;
 pub mod qwenimage;
 pub mod sd3;
+pub mod wan;
 pub mod zimage;
 
 pub use auraflow::{AuraFlow, AuraFlowConfig, AuraFlowOutput, AuraFlowRuntime};
@@ -52,4 +53,5 @@ pub use mochi::{Mochi, MochiConfig, MochiOutput, MochiRuntime};
 pub use pixart::{PixArt, PixArtConfig, PixArtOutput};
 pub use qwenimage::{QwenImage, QwenImageConfig, QwenImageOutput, QwenImageRuntime};
 pub use sd3::{Sd3, Sd3Config, Sd3Output, Sd3Runtime};
+pub use wan::{Wan, WanConfig, WanOutput, WanRuntime};
 pub use zimage::{ZImage, ZImageConfig, ZImageOutput, ZImageRuntime};

@@ -123,7 +123,7 @@
 
 ### Video Generation
 
-- [ ] Wan 2.x (Alibaba) - DiT + MoE, 3D VAE, 14B active params
+- [x] Wan 2.x (Alibaba) - DiT + MoE with sparse routing, 3D VAE, factorized spatial-temporal attention
 - [x] CogVideoX - Open source video DiT, factorized spatial-temporal attention
 - [x] Mochi - Genmo's open source video model, asymmetric DiT, factorized attention
 - [x] LTX-Video - Lightricks video model, causal temporal attention
