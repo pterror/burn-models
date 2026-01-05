@@ -155,7 +155,7 @@
 - [x] KV cache for autoregressive models
 - [x] Paged attention (block tables, memory management, scheduler)
 - [ ] Continuous batching
-- [ ] Speculative decoding
+- [x] Speculative decoding (draft/target verification, acceptance sampling)
 
 #### Quantization
 - [ ] INT8 dynamic quantization

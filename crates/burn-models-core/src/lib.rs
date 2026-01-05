@@ -9,6 +9,7 @@ pub mod lora;
 pub mod moe;
 pub mod paged_attention;
 pub mod precision;
+pub mod speculative;
 pub mod rmsnorm;
 pub mod rope;
 pub mod silu;
