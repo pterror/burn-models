@@ -259,7 +259,7 @@ impl<B: Backend> SparseMoeFfn<B> {
         ).repeat_dim(0, num_tokens).repeat_dim(1, self.top_k);
 
         let matches = expert_indices.clone().equal(expert_tensor);
-        matches.any_dim(1).squeeze(1)
+        matches.any_dim(1).squeeze_dim::<1>(1)
     }
 
     /// Checks if any tokens are assigned to an expert
@@ -288,7 +288,7 @@ impl<B: Backend> SparseMoeFfn<B> {
         let matches_float = matches.float();
 
         // Extract weights where expert matches (sum across top_k dimension)
-        (routing_weights.clone() * matches_float).sum_dim(1).squeeze(1)
+        (routing_weights.clone() * matches_float).sum_dim(1).squeeze_dim::<1>(1)
     }
 }
 
@@ -323,7 +323,7 @@ mod tests {
 
         let sums: Vec<f32> = routing.routing_weights
             .sum_dim(1)
-            .squeeze::<1>(1)
+            .squeeze_dim::<1>(1)
             .into_data()
             .to_vec()
             .unwrap();

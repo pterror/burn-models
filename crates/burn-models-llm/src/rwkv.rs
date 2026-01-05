@@ -262,7 +262,7 @@ impl<B: Backend> RwkvTimeMix<B> {
         // Update state with last token
         if let Some(ref mut s) = state {
             let last_token = x.clone().slice([0..batch, seq_len - 1..seq_len, 0..self.num_heads * self.head_dim]);
-            s.time_mix_x = last_token.squeeze(1);
+            s.time_mix_x = last_token.squeeze_dim::<2>(1);
         }
 
         // Helper to unsqueeze [hidden] -> [1, 1, hidden] for broadcasting with [batch, seq, hidden]
@@ -347,13 +347,13 @@ impl<B: Backend> RwkvTimeMix<B> {
 
         for t in 0..seq_len {
             let r_t = r.clone().slice([0..batch, t..t + 1, 0..self.num_heads, 0..self.head_dim])
-                .squeeze::<3>(1);
+                .squeeze_dim::<3>(1);
             let k_t = k.clone().slice([0..batch, t..t + 1, 0..self.num_heads, 0..self.head_dim])
-                .squeeze::<3>(1);
+                .squeeze_dim::<3>(1);
             let v_t = v.clone().slice([0..batch, t..t + 1, 0..self.num_heads, 0..self.head_dim])
-                .squeeze::<3>(1);
+                .squeeze_dim::<3>(1);
             let w_t = w.clone().slice([0..batch, t..t + 1, 0..self.num_heads, 0..self.head_dim])
-                .squeeze::<3>(1);
+                .squeeze_dim::<3>(1);
 
             // Update state: S_t = w * S_{t-1} + k^T @ v (outer product)
             let kv = k_t.clone().unsqueeze_dim::<4>(3).matmul(v_t.clone().unsqueeze_dim::<4>(2));
@@ -361,7 +361,7 @@ impl<B: Backend> RwkvTimeMix<B> {
             wkv_state = wkv_state * w_expanded + kv;
 
             // Compute output: r @ S_t
-            let out_t = r_t.unsqueeze_dim::<4>(2).matmul(wkv_state.clone()).squeeze::<3>(2);
+            let out_t = r_t.unsqueeze_dim::<4>(2).matmul(wkv_state.clone()).squeeze_dim::<3>(2);
             outputs.push(out_t.unsqueeze_dim::<4>(1));
         }
 
@@ -443,7 +443,7 @@ impl<B: Backend> RwkvChannelMix<B> {
         // Update state with last token
         if let Some(s) = state {
             let last_token = x.clone().slice([0..batch, seq_len - 1..seq_len, 0..hidden]);
-            s.channel_mix_x = last_token.squeeze(1);
+            s.channel_mix_x = last_token.squeeze_dim::<2>(1);
         }
 
         // Mixed input - unsqueeze [hidden] -> [1, 1, hidden] for broadcasting
@@ -605,7 +605,7 @@ impl<B: Backend> Rwkv<B> {
         // Get last token prediction
         let [_, seq_len, vocab_size] = output.logits.dims();
         let mut last_logits = output.logits.slice([0..batch, seq_len - 1..seq_len, 0..vocab_size])
-            .squeeze::<2>(1);
+            .squeeze_dim::<2>(1);
 
         let mut all_tokens = input_ids;
 
@@ -622,7 +622,7 @@ impl<B: Backend> Rwkv<B> {
 
             // Forward single token with state
             let output = self.forward(next_token, Some(&mut states));
-            last_logits = output.logits.squeeze(1);
+            last_logits = output.logits.squeeze_dim::<2>(1);
         }
 
         all_tokens

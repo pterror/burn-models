@@ -280,7 +280,7 @@ impl<B: Backend> Jamba<B> {
         // Get last token prediction
         let [_, seq_len, vocab_size] = output.logits.dims();
         let mut last_logits = output.logits.slice([0..batch, seq_len - 1..seq_len, 0..vocab_size])
-            .squeeze::<2>(1);
+            .squeeze_dim::<2>(1);
 
         let mut all_tokens = input_ids;
 
@@ -297,7 +297,7 @@ impl<B: Backend> Jamba<B> {
 
             // Forward single token with state
             let output = self.forward(next_token, Some(&mut states));
-            last_logits = output.logits.squeeze(1);
+            last_logits = output.logits.squeeze_dim::<2>(1);
         }
 
         all_tokens
@@ -525,10 +525,10 @@ impl<B: Backend> JambaMambaMixer<B> {
         let mut outputs = Vec::with_capacity(seq_len);
 
         for t in 0..seq_len {
-            let x_t = x.clone().slice([0..batch, t..t + 1, 0..self.d_inner]).squeeze::<2>(1);
-            let dt_t = dt.clone().slice([0..batch, t..t + 1, 0..self.d_inner]).squeeze::<2>(1);
-            let b_t = b.clone().slice([0..batch, t..t + 1, 0..self.d_state]).squeeze::<2>(1);
-            let c_t = c.clone().slice([0..batch, t..t + 1, 0..self.d_state]).squeeze::<2>(1);
+            let x_t = x.clone().slice([0..batch, t..t + 1, 0..self.d_inner]).squeeze_dim::<2>(1);
+            let dt_t = dt.clone().slice([0..batch, t..t + 1, 0..self.d_inner]).squeeze_dim::<2>(1);
+            let b_t = b.clone().slice([0..batch, t..t + 1, 0..self.d_state]).squeeze_dim::<2>(1);
+            let c_t = c.clone().slice([0..batch, t..t + 1, 0..self.d_state]).squeeze_dim::<2>(1);
 
             let dt_expanded = dt_t.clone().unsqueeze_dim::<3>(2)
                 .expand([batch, self.d_inner, self.d_state]);
@@ -542,7 +542,7 @@ impl<B: Backend> JambaMambaMixer<B> {
             h = d_a * h + d_b * x_expanded;
 
             let c_expanded = c_t.unsqueeze_dim::<3>(1).expand([batch, self.d_inner, self.d_state]);
-            let y_t = (h.clone() * c_expanded).sum_dim(2).squeeze::<2>(2);
+            let y_t = (h.clone() * c_expanded).sum_dim(2).squeeze_dim::<2>(2);
             let d_expanded = d.clone().unsqueeze_dim::<2>(0).expand([batch, self.d_inner]);
             let y_t = y_t + d_expanded * x_t;
 

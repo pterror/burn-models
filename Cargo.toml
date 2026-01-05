@@ -30,11 +30,11 @@ burn-models-llm = { path = "crates/burn-models-llm" }
 burn-models-dit = { path = "crates/burn-models-dit" }
 
 # External dependencies
-burn = "0.16.1"
-burn-ndarray = "0.16.1"
-burn-tch = "0.16.1"
-burn-wgpu = "0.16.1"
-burn-cuda = "0.16.1"
+burn = "0.20.0-pre.6"
+burn-ndarray = "0.20.0-pre.6"
+burn-tch = "0.20.0-pre.6"
+burn-wgpu = "0.20.0-pre.6"
+burn-cuda = "0.20.0-pre.6"
 bytemuck = "1.24"
 half = "2.7"
 memmap2 = "0.9"
