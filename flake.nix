@@ -24,6 +24,8 @@
             # Fast linker for incremental builds
             mold
             clang
+            # JS tooling for docs
+            bun
           ];
           LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}:$LD_LIBRARY_PATH";
         };

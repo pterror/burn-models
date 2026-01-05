@@ -13,6 +13,14 @@ target/
 # direnv
 .direnv/
 
+# Node.js / Bun
+node_modules/
+bun.lockb
+
+# VitePress
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
 # Moss - ignore generated files but keep config
 .moss/*
 !.moss/config.toml

@@ -1,0 +1,7 @@
+{
+  "name": "burn-image",
+  "private": true,
+  "workspaces": [
+    "docs"
+  ]
+}
