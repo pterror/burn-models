@@ -25,9 +25,15 @@ impl Default for DdimConfig {
 }
 
 /// DDIM Sampler
+///
+/// Denoising Diffusion Implicit Models enable deterministic sampling
+/// with fewer steps than DDPM.
 pub struct DdimSampler<B: Backend> {
+    /// Noise schedule
     schedule: NoiseSchedule<B>,
+    /// Sampler configuration
     config: DdimConfig,
+    /// Timestep indices for sampling
     timesteps: Vec<usize>,
 }
 

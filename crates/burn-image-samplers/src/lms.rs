@@ -31,10 +31,13 @@ impl Default for LmsConfig {
 /// Linear Multi-Step method uses a linear combination of previous
 /// derivatives to estimate the next sample.
 pub struct LmsSampler<B: Backend> {
+    /// Sampler configuration
     config: LmsConfig,
+    /// Timestep indices for sampling
     timesteps: Vec<usize>,
+    /// Sigma values at each timestep
     sigmas: Vec<f32>,
-    /// History of derivatives
+    /// History of derivatives for multi-step
     derivatives: VecDeque<Tensor<B, 4>>,
 }
 

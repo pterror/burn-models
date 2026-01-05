@@ -70,6 +70,7 @@ pub struct LoraConvWeight<B: Backend> {
 }
 
 impl<B: Backend> LoraConvWeight<B> {
+    /// Create a new LoRA conv weight pair
     pub fn new(lora_down: Tensor<B, 4>, lora_up: Tensor<B, 4>, alpha: f32) -> Self {
         let rank = lora_down.dims()[0];
         Self {

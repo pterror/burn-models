@@ -30,10 +30,15 @@ impl Default for DpmFastConfig {
 /// A fast variant of DPM-Solver that uses optimized step schedules
 /// for rapid sampling with fewer steps.
 pub struct DpmFastSampler<B: Backend> {
+    /// Sampler configuration
     config: DpmFastConfig,
+    /// Timestep indices for sampling
     timesteps: Vec<usize>,
+    /// Sigma values at each timestep
     sigmas: Vec<f32>,
+    /// Log sigma values for numerical stability
     log_sigmas: Vec<f32>,
+    /// Phantom data for backend type
     _marker: std::marker::PhantomData<B>,
 }
 
@@ -55,6 +60,7 @@ impl<B: Backend> DpmFastSampler<B> {
         }
     }
 
+    /// Computes optimized timesteps for fast sampling
     fn compute_fast_timesteps(num_steps: usize, num_train_steps: usize) -> Vec<usize> {
         // Use a polynomial schedule for faster convergence
         (0..num_steps)

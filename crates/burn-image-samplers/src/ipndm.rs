@@ -31,14 +31,17 @@ impl Default for IpndmConfig {
 /// Improved Pseudo Numerical Diffusion Model uses a fourth-order
 /// linear multi-step method adapted for the diffusion ODE.
 pub struct IpndmSampler<B: Backend> {
+    /// Sampler configuration
     config: IpndmConfig,
+    /// Timestep indices for sampling
     timesteps: Vec<usize>,
+    /// Cumulative product of alphas
     alphas_cumprod: Vec<f32>,
     /// History of epsilon predictions
     ets: VecDeque<Tensor<B, 4>>,
 }
 
-/// Extract all alpha_cumprod values from a schedule
+/// Extracts all alpha_cumprod values from a noise schedule
 fn extract_alphas_cumprod<B: Backend>(schedule: &NoiseSchedule<B>) -> Vec<f32> {
     let mut alphas_cumprod = Vec::with_capacity(schedule.num_train_steps);
     for t in 0..schedule.num_train_steps {

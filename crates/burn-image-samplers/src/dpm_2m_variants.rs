@@ -34,8 +34,11 @@ impl Default for Dpm2mCfgPlusPlusConfig {
 /// Second-order multistep DPM-Solver++ with CFG++ guidance.
 /// CFG++ applies guidance in the denoised space for better quality.
 pub struct Dpm2mCfgPlusPlusSampler<B: Backend> {
+    /// Sampler configuration
     config: Dpm2mCfgPlusPlusConfig,
+    /// Timestep indices for sampling
     timesteps: Vec<usize>,
+    /// Sigma values at each timestep
     sigmas: Vec<f32>,
     /// Previous denoised prediction for multistep
     prev_denoised: Option<Tensor<B, 4>>,

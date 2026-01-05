@@ -120,7 +120,7 @@ impl<B: Backend> StableDiffusion1x<B> {
         }
     }
 
-    /// Encode a single text prompt
+    /// Encode a single text prompt to CLIP embeddings
     fn encode_text(&self, text: &str) -> Tensor<B, 3> {
         let tokens = self.tokenizer.encode_padded(text, 77);
         let token_tensor: Tensor<B, 1, Int> = Tensor::from_data(
@@ -132,7 +132,7 @@ impl<B: Backend> StableDiffusion1x<B> {
         self.text_encoder.forward(token_tensor)
     }
 
-    /// Find EOS token position
+    /// Find the position of the end-of-sequence token in the token list
     fn find_eos_position(tokens: &[u32]) -> usize {
         tokens.iter().position(|&t| t == END_OF_TEXT).unwrap_or(tokens.len() - 1)
     }
@@ -391,6 +391,7 @@ impl<B: Backend> StableDiffusion1xInpaint<B> {
         }
     }
 
+    /// Encode a single text prompt to embeddings
     fn encode_text(&self, text: &str) -> Tensor<B, 3> {
         let tokens = self.tokenizer.encode_padded(text, 77);
         let token_tensor: Tensor<B, 1, Int> = Tensor::from_data(
@@ -480,7 +481,7 @@ impl<B: Backend> StableDiffusion1xInpaint<B> {
         self.vae_decoder.decode_to_image(latent)
     }
 
-    /// Downsample mask from image space to latent space
+    /// Downsample mask from image space to latent space using nearest-neighbor sampling
     fn downsample_mask(&self, mask: Tensor<B, 4>, target_h: usize, target_w: usize) -> Tensor<B, 4> {
         let [b, c, h, w] = mask.dims();
 
@@ -606,7 +607,7 @@ impl<B: Backend> StableDiffusionXL<B> {
         }
     }
 
-    /// Encode text using both encoders and return concatenated context + pooled
+    /// Encode text using both CLIP and OpenCLIP encoders, returning concatenated context and pooled embedding
     fn encode_text(&self, text: &str) -> (Tensor<B, 3>, Tensor<B, 2>) {
         let tokens = self.tokenizer.encode_padded(text, 77);
         let token_tensor: Tensor<B, 1, Int> = Tensor::from_data(
@@ -667,6 +668,7 @@ impl<B: Backend> StableDiffusionXL<B> {
         ], 1)
     }
 
+    /// Compute a sinusoidal embedding for a size value
     fn size_embedding(&self, value: usize) -> Tensor<B, 1> {
         compute_size_embedding(value, &self.device)
     }
@@ -876,6 +878,7 @@ impl<B: Backend> StableDiffusionXLImg2Img<B> {
         ], 1)
     }
 
+    /// Compute a sinusoidal embedding for a size value
     fn size_embedding(&self, value: usize) -> Tensor<B, 1> {
         compute_size_embedding(value, &self.device)
     }
@@ -1054,10 +1057,12 @@ impl<B: Backend> StableDiffusionXLInpaint<B> {
         (context, pooled)
     }
 
+    /// Compute a sinusoidal embedding for a size value
     fn size_embedding(&self, value: usize) -> Tensor<B, 1> {
         compute_size_embedding(value, &self.device)
     }
 
+    /// Create add_embed tensor from pooled embedding and size/crop information
     fn create_add_embed(
         &self,
         pooled: Tensor<B, 2>,
@@ -1321,10 +1326,12 @@ impl<B: Backend> StableDiffusionXLRefiner<B> {
         ], 1)
     }
 
+    /// Compute a sinusoidal embedding for a size value
     fn size_embedding(&self, value: usize) -> Tensor<B, 1> {
         compute_size_embedding(value, &self.device)
     }
 
+    /// Compute a sinusoidal embedding for an aesthetic score value
     fn aesthetic_embedding(&self, score: f64) -> Tensor<B, 1> {
         // Aesthetic score embedding (same as size embedding but for score)
         let half_dim = 128;

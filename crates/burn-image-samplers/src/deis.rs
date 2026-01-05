@@ -44,9 +44,13 @@ impl Default for DeisConfig {
 /// Diffusion Exponential Integrator Sampler uses exponential integrators
 /// combined with polynomial extrapolation for fast, high-quality sampling.
 pub struct DeisSampler<B: Backend> {
+    /// Sampler configuration
     config: DeisConfig,
+    /// Timestep indices for sampling
     timesteps: Vec<usize>,
+    /// Sigma values at each timestep
     sigmas: Vec<f32>,
+    /// Log sigma values for numerical stability
     log_sigmas: Vec<f32>,
     /// History of model outputs for multi-step methods
     model_outputs: VecDeque<Tensor<B, 4>>,
