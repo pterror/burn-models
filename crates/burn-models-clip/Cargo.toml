@@ -1,0 +1,10 @@
+[package]
+name = "burn-models-clip"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+burn.workspace = true
+burn-models-core.workspace = true
+regex.workspace = true
+thiserror.workspace = true

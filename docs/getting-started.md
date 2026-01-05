@@ -2,11 +2,11 @@
 
 ## Installation
 
-Add burn-image to your `Cargo.toml`:
+Add burn-models to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-burn-image = "0.1"
+burn-models = "0.1"
 
 # Choose a backend
 burn-wgpu = "0.16"  # GPU via WebGPU (cross-platform)

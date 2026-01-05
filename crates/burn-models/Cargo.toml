@@ -1,0 +1,31 @@
+[package]
+name = "burn-models"
+version = "0.1.0"
+edition = "2021"
+description = "Stable Diffusion in pure Rust using the Burn deep learning framework"
+license = "MIT OR Apache-2.0"
+keywords = ["stable-diffusion", "ai", "machine-learning", "image-generation"]
+categories = ["science", "multimedia::images"]
+
+[features]
+default = []
+# Backend features - enable at most one
+ndarray = ["burn-ndarray"]
+tch = ["burn-tch"]
+wgpu = ["burn-wgpu"]
+cuda = ["burn-cuda"]
+
+[dependencies]
+burn.workspace = true
+burn-models-core.workspace = true
+burn-models-clip.workspace = true
+burn-models-vae.workspace = true
+burn-models-unet.workspace = true
+burn-models-samplers.workspace = true
+burn-models-convert.workspace = true
+
+# Optional backend dependencies
+burn-ndarray = { workspace = true, optional = true }
+burn-tch = { workspace = true, optional = true }
+burn-wgpu = { workspace = true, optional = true }
+burn-cuda = { workspace = true, optional = true }

@@ -3,21 +3,21 @@
 ## Crate Structure
 
 ```
-burn-image/
+burn-models/
 ├── crates/
-│   ├── burn-image/          # Main library, re-exports everything
-│   ├── burn-image-core/     # Shared layers and utilities
-│   ├── burn-image-clip/     # Text encoders (CLIP, OpenCLIP)
-│   ├── burn-image-vae/      # Autoencoder (encoder + decoder)
-│   ├── burn-image-unet/     # UNet diffusion models (SD 1.x, SDXL)
-│   ├── burn-image-samplers/ # Diffusion samplers (DDIM, DPM++, Euler, etc.)
-│   └── burn-image-convert/  # Weight conversion from safetensors
+│   ├── burn-models/          # Main library, re-exports everything
+│   ├── burn-models-core/     # Shared layers and utilities
+│   ├── burn-models-clip/     # Text encoders (CLIP, OpenCLIP)
+│   ├── burn-models-vae/      # Autoencoder (encoder + decoder)
+│   ├── burn-models-unet/     # UNet diffusion models (SD 1.x, SDXL)
+│   ├── burn-models-samplers/ # Diffusion samplers (DDIM, DPM++, Euler, etc.)
+│   └── burn-models-convert/  # Weight conversion from safetensors
 └── src/                     # CLI binary
 ```
 
 ## Module Breakdown
 
-### burn-image-core
+### burn-models-core
 
 Shared building blocks:
 
@@ -29,7 +29,7 @@ Shared building blocks:
 - `linear.rs` - Linear layer helpers
 - `timestep.rs` - Timestep embeddings
 
-### burn-image-clip
+### burn-models-clip
 
 Text encoding:
 
@@ -38,7 +38,7 @@ Text encoding:
 - `open_clip.rs` - OpenCLIP encoder (SDXL)
 - `embedder.rs` - Unified interface for single/dual encoders
 
-### burn-image-vae
+### burn-models-vae
 
 Variational Autoencoder:
 
@@ -46,7 +46,7 @@ Variational Autoencoder:
 - `decoder.rs` - Latent → image
 - `autoencoder.rs` - Combined VAE
 
-### burn-image-unet
+### burn-models-unet
 
 Diffusion backbone:
 
@@ -55,7 +55,7 @@ Diffusion backbone:
 - `unet_sdxl.rs` - SDXL UNet (larger, different architecture)
 - `conditioning.rs` - Conditioning types
 
-### burn-image-samplers
+### burn-models-samplers
 
 Noise schedulers and samplers:
 
@@ -65,7 +65,7 @@ Noise schedulers and samplers:
 - `dpm.rs` - DPM++ variants
 - `euler.rs` - Euler/Euler ancestral
 
-### burn-image-convert
+### burn-models-convert
 
 Weight conversion:
 

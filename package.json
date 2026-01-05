@@ -1,5 +1,5 @@
 {
-  "name": "burn-image",
+  "name": "burn-models",
   "private": true,
   "workspaces": [
     "docs"

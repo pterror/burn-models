@@ -513,88 +513,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "burn-image"
-version = "0.1.0"
-dependencies = [
- "burn",
- "burn-cuda",
- "burn-image-clip",
- "burn-image-convert",
- "burn-image-core",
- "burn-image-samplers",
- "burn-image-unet",
- "burn-image-vae",
- "burn-ndarray",
- "burn-tch",
- "burn-wgpu",
-]
-
-[[package]]
-name = "burn-image-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "burn-image",
- "clap",
- "image",
- "indicatif",
-]
-
-[[package]]
-name = "burn-image-clip"
-version = "0.1.0"
-dependencies = [
- "burn",
- "burn-image-core",
- "regex",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "burn-image-convert"
-version = "0.1.0"
-dependencies = [
- "burn",
- "burn-image-core",
- "bytemuck",
- "half",
- "memmap2",
- "safetensors 0.5.3",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "burn-image-core"
-version = "0.1.0"
-dependencies = [
- "burn",
- "burn-ndarray",
-]
-
-[[package]]
-name = "burn-image-samplers"
-version = "0.1.0"
-dependencies = [
- "burn",
-]
-
-[[package]]
-name = "burn-image-unet"
-version = "0.1.0"
-dependencies = [
- "burn",
- "burn-image-core",
-]
-
-[[package]]
-name = "burn-image-vae"
-version = "0.1.0"
-dependencies = [
- "burn",
- "burn-image-core",
-]
-
-[[package]]
 name = "burn-jit"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -615,6 +533,88 @@ dependencies = [
  "serde",
  "spin",
  "text_placeholder",
+]
+
+[[package]]
+name = "burn-models"
+version = "0.1.0"
+dependencies = [
+ "burn",
+ "burn-cuda",
+ "burn-models-clip",
+ "burn-models-convert",
+ "burn-models-core",
+ "burn-models-samplers",
+ "burn-models-unet",
+ "burn-models-vae",
+ "burn-ndarray",
+ "burn-tch",
+ "burn-wgpu",
+]
+
+[[package]]
+name = "burn-models-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "burn-models",
+ "clap",
+ "image",
+ "indicatif",
+]
+
+[[package]]
+name = "burn-models-clip"
+version = "0.1.0"
+dependencies = [
+ "burn",
+ "burn-models-core",
+ "regex",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "burn-models-convert"
+version = "0.1.0"
+dependencies = [
+ "burn",
+ "burn-models-core",
+ "bytemuck",
+ "half",
+ "memmap2",
+ "safetensors 0.5.3",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "burn-models-core"
+version = "0.1.0"
+dependencies = [
+ "burn",
+ "burn-ndarray",
+]
+
+[[package]]
+name = "burn-models-samplers"
+version = "0.1.0"
+dependencies = [
+ "burn",
+]
+
+[[package]]
+name = "burn-models-unet"
+version = "0.1.0"
+dependencies = [
+ "burn",
+ "burn-models-core",
+]
+
+[[package]]
+name = "burn-models-vae"
+version = "0.1.0"
+dependencies = [
+ "burn",
+ "burn-models-core",
 ]
 
 [[package]]

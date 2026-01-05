@@ -1,0 +1,24 @@
+[package]
+name = "burn-models-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Command-line interface for burn-models Stable Diffusion"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "burn-models"
+path = "src/main.rs"
+
+[features]
+default = ["wgpu"]
+ndarray = ["burn-models/ndarray"]
+tch = ["burn-models/tch"]
+wgpu = ["burn-models/wgpu"]
+cuda = ["burn-models/cuda"]
+
+[dependencies]
+burn-models = { path = "../burn-models" }
+clap = { version = "4.5", features = ["derive"] }
+image = "0.25"
+anyhow = "1.0"
+indicatif = "0.17"

@@ -1,6 +1,6 @@
 # Pipelines
 
-burn-image provides several pipeline types for different generation tasks.
+burn-models provides several pipeline types for different generation tasks.
 
 ## Pipeline Overview
 

@@ -1,8 +1,8 @@
-# burn-image
+# burn-models
 
 **Stable Diffusion inference in pure Rust with Burn.**
 
-burn-image provides a complete implementation of Stable Diffusion (1.x and XL) using the [Burn](https://burn.dev) deep learning framework.
+burn-models provides a complete implementation of Stable Diffusion (1.x and XL) using the [Burn](https://burn.dev) deep learning framework.
 
 ## Features
 
@@ -33,13 +33,13 @@ let image = pipeline.generate(
 
 | Crate | Description |
 |-------|-------------|
-| `burn-image` | Main pipeline and high-level API |
-| `burn-image-core` | Core building blocks (attention, normalization) |
-| `burn-image-unet` | UNet architecture for SD 1.x and SDXL |
-| `burn-image-vae` | VAE encoder and decoder |
-| `burn-image-clip` | CLIP and OpenCLIP text encoders |
-| `burn-image-samplers` | Diffusion samplers (DPM++, Euler, etc.) |
-| `burn-image-convert` | Weight loading from safetensors |
+| `burn-models` | Main pipeline and high-level API |
+| `burn-models-core` | Core building blocks (attention, normalization) |
+| `burn-models-unet` | UNet architecture for SD 1.x and SDXL |
+| `burn-models-vae` | VAE encoder and decoder |
+| `burn-models-clip` | CLIP and OpenCLIP text encoders |
+| `burn-models-samplers` | Diffusion samplers (DPM++, Euler, etc.) |
+| `burn-models-convert` | Weight loading from safetensors |
 
 ## Installation
 
@@ -47,5 +47,5 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-burn-image = "0.1"
+burn-models = "0.1"
 ```

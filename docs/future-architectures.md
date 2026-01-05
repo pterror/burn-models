@@ -1,6 +1,6 @@
 # Future Architectures
 
-This document tracks image generation architectures that could be implemented in burn-image.
+This document tracks image generation architectures that could be implemented in burn-models.
 
 ## UNet-based
 

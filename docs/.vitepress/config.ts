@@ -1,10 +1,10 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
-  title: 'burn-image',
+  title: 'burn-models',
   description: 'Stable Diffusion inference in pure Rust with Burn',
 
-  base: '/burn-image/',
+  base: '/burn-models/',
 
   themeConfig: {
     nav: [
@@ -33,7 +33,7 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/TODO/burn-image' }
+      { icon: 'github', link: 'https://github.com/TODO/burn-models' }
     ],
 
     search: {
