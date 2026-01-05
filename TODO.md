@@ -154,7 +154,7 @@
 #### Inference Optimization
 - [x] KV cache for autoregressive models
 - [x] Paged attention (block tables, memory management, scheduler)
-- [ ] Continuous batching
+- [x] Continuous batching (iteration-level scheduling, preemption)
 - [x] Speculative decoding (draft/target verification, acceptance sampling)
 
 #### Quantization
