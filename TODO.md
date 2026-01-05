@@ -132,8 +132,9 @@
 
 - [x] LLaMA 2/3 architecture (basic implementation)
 - [x] LLaMA weight loading from safetensors
+- [x] Mixtral 8x7B/8x22B (LLaMA + MoE)
 - [ ] Qwen 2.5 - Alibaba's multilingual LLM
-- [ ] Mistral / Mixtral - Mistral AI models
+- [ ] Mistral - Mistral AI dense model
 - [ ] Gemma 2 - Google's open models
 - [ ] Phi-3/4 - Microsoft's small models
 - [ ] DeepSeek - DeepSeek's models
