@@ -29,6 +29,7 @@ pub mod mistral;
 pub mod mistral_loader;
 pub mod mixtral;
 pub mod qwen;
+pub mod qwen_loader;
 
 pub use llama::{Llama, LlamaConfig, LlamaOutput, LlamaRuntime};
 pub use llama_loader::{load_llama, LlamaLoadError};
@@ -36,3 +37,4 @@ pub use mistral::{Mistral, MistralConfig, MistralOutput, MistralRuntime};
 pub use mistral_loader::{load_mistral, MistralLoadError};
 pub use mixtral::{Mixtral, MixtralConfig, MixtralOutput, MixtralRuntime};
 pub use qwen::{Qwen, QwenConfig, QwenOutput, QwenRuntime};
+pub use qwen_loader::{load_qwen, QwenLoadError};
