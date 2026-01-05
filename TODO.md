@@ -163,6 +163,6 @@
 - [ ] FP8 support
 
 #### Video-specific
-- [ ] 3D VAE (temporal compression)
+- [x] 3D VAE (temporal compression)
 - [ ] Temporal attention layers
 - [ ] Frame interpolation
