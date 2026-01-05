@@ -167,6 +167,12 @@
 - [x] Temporal attention layers
 - [x] Frame interpolation
 
+### Pre-Release
+
+- [ ] Architecture review - ensure consistent patterns across model implementations
+- [ ] API surface review - design public API for library consumers
+- [ ] Documentation - usage examples, model loading, inference patterns
+
 ### Future Backlog
 
 #### Alternative Architectures (Production-Ready)
