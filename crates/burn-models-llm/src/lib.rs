@@ -23,6 +23,8 @@
 //! let generated = model.generate(prompt, 100, 0.8);
 //! ```
 
+pub mod gemma;
+pub mod gemma_loader;
 pub mod llama;
 pub mod llama_loader;
 pub mod mistral;
@@ -31,6 +33,8 @@ pub mod mixtral;
 pub mod qwen;
 pub mod qwen_loader;
 
+pub use gemma::{Gemma, GemmaConfig, GemmaOutput, GemmaRuntime};
+pub use gemma_loader::{load_gemma, GemmaLoadError};
 pub use llama::{Llama, LlamaConfig, LlamaOutput, LlamaRuntime};
 pub use llama_loader::{load_llama, LlamaLoadError};
 pub use mistral::{Mistral, MistralConfig, MistralOutput, MistralRuntime};

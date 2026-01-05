@@ -135,7 +135,7 @@
 - [x] Mixtral 8x7B/8x22B (LLaMA + MoE)
 - [x] Mistral 7B/Nemo - Sliding window attention
 - [x] Qwen 2.5 - Alibaba's multilingual LLM (0.5B to 72B)
-- [ ] Gemma 2 - Google's open models
+- [x] Gemma 2 - Google's open models (interleaved sliding/global attention, logit soft-capping, GeGLU)
 - [ ] Phi-3/4 - Microsoft's small models
 - [ ] DeepSeek - DeepSeek's models
 
