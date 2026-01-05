@@ -82,3 +82,228 @@ crates/burn-image-samplers/src/ipndm.rs:240 = "get_linear_multistep_coeff - math
 # Precision conversion functions - fp16/bf16 share similar pattern
 crates/burn-image-core/src/precision.rs:61 = "fp16 precision conversion"
 crates/burn-image-core/src/precision.rs:71 = "bf16 precision conversion"
+
+# Symmetric encoder/decoder constructors - mirror implementations by design
+crates/burn-image-vae/src/decoder.rs:new
+crates/burn-image-unet/src/blocks.rs:new
+crates/burn-image-vae/src/encoder.rs:new
+
+# CLIP/OpenCLIP share forward structure (QuickGELU vs GELU activation)
+crates/burn-image-clip/src/clip.rs:forward
+crates/burn-image-clip/src/open_clip.rs:forward
+
+# CLIP/OpenCLIP attention constructor - similar pattern, different dimensions
+crates/burn-image-clip/src/clip.rs:new
+crates/burn-image-clip/src/open_clip.rs:new
+
+# SD pipeline constructors - similar initialization, different pipeline types
+crates/burn-image/src/pipeline.rs:new
+crates/burn-image/src/pipeline.rs:new
+
+# API wrapper for shared apply_cfg_plus_plus function
+crates/burn-image-samplers/src/euler_cfg.rs:apply_cfg_plus_plus_guidance
+crates/burn-image-samplers/src/euler_cfg.rs:apply_cfg_plus_plus_guidance
+crates/burn-image-samplers/src/dpm_2m_variants.rs:apply_cfg_plus_plus_guidance
+
+# Symmetric encoder/decoder - forward methods mirror each other
+crates/burn-image-vae/src/decoder.rs:forward
+crates/burn-image-vae/src/encoder.rs:forward
+
+# Sampler constructor - simple init pattern
+crates/burn-image-samplers/src/euler_cfg.rs:new
+crates/burn-image-samplers/src/euler_cfg.rs:new
+crates/burn-image-samplers/src/dpm2.rs:new
+crates/burn-image-samplers/src/dpm_2s.rs:new
+
+# Sampler constructor - simple init pattern
+crates/burn-image-samplers/src/euler.rs:new
+crates/burn-image-samplers/src/euler.rs:new
+
+# Sampler constructor - simple init pattern
+crates/burn-image-samplers/src/heun.rs:new
+crates/burn-image-samplers/src/heun.rs:new
+
+# Sampler constructor - simple init pattern
+crates/burn-image-samplers/src/dpm3m.rs:new
+crates/burn-image-samplers/src/dpm_2m_variants.rs:new
+
+# Sampler constructor - simple init pattern
+crates/burn-image-samplers/src/ipndm.rs:new
+crates/burn-image-samplers/src/ipndm.rs:new
+
+# init_latent wrapper for init_noise_latent
+crates/burn-image-samplers/src/euler.rs:init_latent
+crates/burn-image-samplers/src/dpm.rs:init_latent
+crates/burn-image-samplers/src/dpm.rs:init_latent
+
+# Test function for linear multistep coefficients
+crates/burn-image-samplers/src/ipndm.rs:test_linear_multistep_coeffs
+crates/burn-image-samplers/src/sa_solver.rs:test_ab_coefficients
+
+# Mathematical utility - coefficients defined inline in tests
+crates/burn-image-samplers/src/ipndm.rs:get_linear_multistep_coeff
+crates/burn-image-samplers/src/sa_solver.rs:get_ab_coefficients
+
+# fp16/bf16 precision conversion - similar pattern by design
+crates/burn-image-core/src/precision.rs:fp16
+crates/burn-image-core/src/precision.rs:bf16
+
+# Simple getter method - standard Rust pattern
+crates/burn-image-samplers/src/ddim.rs:timesteps
+crates/burn-image-samplers/src/ddpm.rs:timesteps
+crates/burn-image-samplers/src/lcm.rs:timesteps
+crates/burn-image-samplers/src/dpm3m.rs:timesteps
+crates/burn-image-samplers/src/euler_cfg.rs:timesteps
+crates/burn-image-samplers/src/euler_cfg.rs:timesteps
+crates/burn-image-samplers/src/dpm_2s.rs:timesteps
+crates/burn-image-samplers/src/dpm_2s.rs:timesteps
+crates/burn-image-samplers/src/res_multistep.rs:timesteps
+crates/burn-image-samplers/src/res_multistep.rs:timesteps
+crates/burn-image-samplers/src/unipc.rs:timesteps
+crates/burn-image-samplers/src/dpm_2m_variants.rs:timesteps
+crates/burn-image-samplers/src/dpm_2m_variants.rs:timesteps
+crates/burn-image-samplers/src/lms.rs:timesteps
+crates/burn-image-samplers/src/deis.rs:timesteps
+crates/burn-image-samplers/src/dpm_fast.rs:timesteps
+crates/burn-image-samplers/src/dpm_fast.rs:sigmas
+crates/burn-image-samplers/src/heun.rs:timesteps
+crates/burn-image-samplers/src/heun.rs:timesteps
+crates/burn-image-samplers/src/dpm2.rs:timesteps
+crates/burn-image-samplers/src/dpm2.rs:timesteps
+crates/burn-image-samplers/src/euler.rs:timesteps
+crates/burn-image-samplers/src/dpm.rs:timesteps
+crates/burn-image-samplers/src/dpm.rs:timesteps
+crates/burn-image-samplers/src/ipndm.rs:timesteps
+crates/burn-image-samplers/src/ipndm.rs:timesteps
+crates/burn-image-samplers/src/sa_solver.rs:timesteps
+
+# Simple clear method - standard Rust pattern
+crates/burn-image-samplers/src/dpm3m.rs:reset
+crates/burn-image-samplers/src/dpm_2m_variants.rs:reset
+crates/burn-image-samplers/src/lms.rs:reset
+crates/burn-image-samplers/src/deis.rs:reset
+crates/burn-image-samplers/src/ipndm.rs:reset
+crates/burn-image-samplers/src/ipndm.rs:reset
+
+# Simple len/is_empty getter - standard Rust pattern
+crates/burn-image/src/batch.rs:len
+crates/burn-image/src/batch.rs:is_empty
+crates/burn-image/src/batch.rs:num_success
+crates/burn-image-core/src/lora.rs:len
+crates/burn-image-core/src/lora.rs:is_empty
+crates/burn-image-core/src/textual_inversion.rs:len
+crates/burn-image-core/src/textual_inversion.rs:is_empty
+crates/burn-image-clip/src/tokenizer.rs:vocab_size
+crates/burn-image-unet/src/t2i_adapter.rs:num_levels
+
+# Simple config factory methods - standard pattern
+crates/burn-image/src/offload.rs:none
+crates/burn-image/src/batch.rs:single
+crates/burn-image-core/src/precision.rs:fp32
+crates/burn-image-vae/src/decoder.rs:sd1x
+crates/burn-image-vae/src/decoder.rs:sd
+crates/burn-image-vae/src/decoder.rs:sdxl
+crates/burn-image-vae/src/encoder.rs:sd1x
+crates/burn-image-vae/src/encoder.rs:sd
+crates/burn-image-vae/src/encoder.rs:sdxl
+crates/burn-image-unet/src/controlnet.rs:sd1x
+crates/burn-image-unet/src/t2i_adapter.rs:sd1x
+
+# Test function for default config - standard test pattern
+crates/burn-image/src/offload.rs:test_offload_strategy_default
+crates/burn-image-core/src/precision.rs:test_precision_mode_default
+crates/burn-image-core/src/flash_attention.rs:test_attention_strategy_default
+
+# Config factory methods - similar initialization pattern
+crates/burn-image/src/offload.rs:sequential
+crates/burn-image/src/offload.rs:aggressive
+
+# Config Default impl - standard Rust pattern
+crates/burn-image-samplers/src/dpm3m.rs:default
+crates/burn-image-samplers/src/dpm_2m_variants.rs:default
+
+# Display impl fmt - standard Rust error pattern
+crates/burn-image-convert/src/lora_loader.rs:fmt
+crates/burn-image-convert/src/controlnet_loader.rs:fmt
+crates/burn-image-convert/src/embedding_loader.rs:fmt
+
+# Simple struct constructor - similar initialization
+crates/burn-image-core/src/lora.rs:new
+crates/burn-image-core/src/textual_inversion.rs:new
+
+# ControlNet/T2I scale method - similar interface pattern
+crates/burn-image-unet/src/controlnet.rs:scale
+crates/burn-image-unet/src/t2i_adapter.rs:scale
+
+# Simple reset method - standard Rust pattern
+crates/burn-image-samplers/src/res_multistep.rs:reset
+crates/burn-image-samplers/src/res_multistep.rs:reset
+
+# Simple reset method - standard Rust pattern
+crates/burn-image-samplers/src/unipc.rs:reset
+crates/burn-image-samplers/src/sa_solver.rs:reset
+
+# UNet SD/SDXL forward - similar high-level pattern, different internal structure
+crates/burn-image-unet/src/unet_sd.rs:forward
+crates/burn-image-unet/src/unet_sdxl.rs:forward
+
+# Config Default impl - standard Rust pattern
+crates/burn-image-samplers/src/heun.rs:default
+crates/burn-image-samplers/src/euler.rs:default
+
+# Test function for default config - standard test pattern
+crates/burn-image-samplers/src/heun.rs:test_heun_config_default
+crates/burn-image-samplers/src/euler.rs:test_euler_config_default
+
+# VAE forward variants - similar pattern, different precision modes
+crates/burn-image-vae/src/decoder.rs:forward_sdxl
+crates/burn-image-vae/src/encoder.rs:encode_sdxl
+crates/burn-image-vae/src/encoder.rs:encode_deterministic
+crates/burn-image-vae/src/encoder.rs:encode_deterministic_sdxl
+
+# Simple setter method - standard Rust pattern
+crates/burn-image-core/src/lora.rs:set_scale
+crates/burn-image-unet/src/ip_adapter.rs:set_scale
+crates/burn-image-unet/src/t2i_adapter.rs:set_scale
+
+# Simple contains/has method - standard Rust pattern
+crates/burn-image-core/src/lora.rs:has
+crates/burn-image-core/src/textual_inversion.rs:has
+crates/burn-image-convert/src/loader.rs:contains
+
+# Recorder factory methods - similar pattern
+crates/burn-image-convert/src/serialize.rs:full_precision_recorder
+crates/burn-image-convert/src/serialize.rs:bytes_recorder
+
+# Simple getter method - different contexts
+crates/burn-image/src/offload.rs:estimated_vram
+crates/burn-image/src/batch.rs:num_failed
+
+# Simple getter method - standard Rust pattern
+crates/burn-image-samplers/src/ddim.rs:num_steps
+crates/burn-image-samplers/src/euler.rs:num_steps
+crates/burn-image-samplers/src/dpm.rs:num_steps
+crates/burn-image-samplers/src/dpm.rs:num_steps
+
+# Simple getter method - standard Rust pattern
+crates/burn-image-core/src/lora.rs:get
+crates/burn-image-core/src/textual_inversion.rs:get
+
+# Simple add methods - similar pattern
+crates/burn-image-core/src/lora.rs:add_linear
+crates/burn-image-core/src/lora.rs:add_conv
+
+# Wrapper method for shared compute_size_embedding function
+crates/burn-image/src/pipeline.rs:size_embedding
+crates/burn-image/src/pipeline.rs:size_embedding
+crates/burn-image/src/pipeline.rs:size_embedding
+crates/burn-image/src/pipeline.rs:size_embedding
+
+# Default impl - standard Rust pattern
+crates/burn-image/src/batch.rs:default
+crates/burn-image-unet/src/unet_sdxl.rs:default
+crates/burn-image-convert/src/mapping.rs:default
+
+# Downsample forward - similar pattern in different contexts
+crates/burn-image-unet/src/blocks.rs:forward
+crates/burn-image-unet/src/controlnet.rs:forward
