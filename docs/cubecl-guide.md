@@ -361,6 +361,112 @@ A CubeCL Conv3d kernel would:
 - SIMD vectorization
 - Potential for shared memory tiling
 
+## Readiness Assessment
+
+### What We Have
+
+1. **CubeCL fundamentals** - cube macro, position vars, Line<E>, comptime ✓
+2. **Tutorial examples** - reduction patterns, vectorization, benchmarking ✓
+3. **Conv2d patterns** - recursive kernel_loop, FastDivmod, ConvParam ✓
+4. **Conv3d pseudo-code** - basic structure outlined ✓
+5. **Working Conv3d** - im2col reference implementation to test against ✓
+
+### What's Missing
+
+1. **LinearView** - Used in conv2d for output, not documented
+   ```rust
+   // In conv2d direct.rs
+   output: &mut LinearView<Line<E>, ReadWrite>
+   ```
+
+2. **Integration path** - Conv kernels live in burn-cubecl itself
+   - Options: contribute upstream OR create burn-models-cubecl crate
+   - Need to understand backend trait registration
+
+3. **cubek crate** - High-level GEMM-based convolution components
+   - `cubek::convolution::components::ConvSetupError`
+   - Used for ImplicitGemm strategy (tensor core optimized)
+   - We probably don't need this for a simple direct kernel
+
+4. **Layout handling** - Burn uses NHWC internally
+   ```rust
+   // base.rs pattern
+   let input = permute_nchw_to_nhwc(input);
+   let out = conv_forward_nhwc(...)?;
+   Ok(permute_nhwc_to_nchw(out))
+   ```
+
+5. **Strategy pattern** - How to organize multiple implementations
+   ```rust
+   pub enum ConvStrategy {
+       Direct,          // Simple, works everywhere
+       Autotune,        // Benchmark and choose
+       ImplicitGemm,    // Tensor cores (CMMA)
+   }
+   ```
+
+### Reference Implementations in burn-cubecl
+
+| Kernel | Complexity | Vectorized | Uses cubek | Notes |
+|--------|------------|------------|------------|-------|
+| conv_transpose3d | Simple | No | No | Good starting template |
+| conv2d direct | Medium | Yes (Line<E>) | No | Recursive kernel_loop |
+| conv2d ImplicitGemm | Complex | Yes | Yes | Tensor core path |
+
+### Recommended Path for Conv3d
+
+**Phase 1: Simple direct kernel (like conv_transpose3d)**
+```rust
+#[cube(launch)]
+fn conv3d_kernel<E: Numeric>(
+    input: &Tensor<E>,
+    weight: &Tensor<E>,
+    bias: &Tensor<E>,
+    output: &mut Tensor<E>,
+    args: Conv3dArgs,
+) {
+    // ABSOLUTE_POS for each output element
+    // Nested loops over kernel dimensions
+    // No vectorization yet
+}
+```
+- Simplest to implement and debug
+- Compare against our im2col implementation
+- ~200 lines, mostly adapting conv_transpose3d
+
+**Phase 2: Optimized direct kernel (like conv2d)**
+- Add Line<E> vectorization
+- Recursive kernel_loop with comptime dimension
+- FastDivmod for index calculation
+- More complex but still no cubek dependency
+
+**Phase 3: ImplicitGemm (optional)**
+- Requires cubek understanding
+- Hardware-specific (needs CMMA)
+- Biggest perf gains but most complex
+
+### Integration Options
+
+**Option A: Contribute to burn-cubecl**
+- Pros: Benefits upstream, maintained
+- Cons: Review process, must match their style
+
+**Option B: Create burn-models-cubecl crate**
+- Pros: Full control, can move fast
+- Cons: Maintenance burden, duplication
+
+**Option C: Feature-gate in burn-models-core**
+- Pros: Simplest integration
+- Cons: Mixes tensor-ops and CubeCL code
+
+### Next Steps to Fill Gaps
+
+1. [ ] Study LinearView usage in conv2d (for output optimization)
+2. [ ] Write simple conv3d kernel based on conv_transpose3d
+3. [ ] Create test harness comparing CubeCL vs im2col output
+4. [ ] Benchmark to validate performance gains
+5. [ ] If worthwhile, add vectorization (Phase 2)
+
 ## Configuration
 
 CubeCL uses `cubecl.toml` for configuration. Create in project root:
