@@ -6,7 +6,7 @@
 use burn::prelude::*;
 use std::collections::VecDeque;
 
-use crate::scheduler::{NoiseSchedule, compute_sigmas, sampler_timesteps};
+use crate::scheduler::{NoiseSchedule, compute_sigmas, sampler_timesteps, adams_bashforth_coefficients};
 
 /// Configuration for SA-Solver
 #[derive(Debug, Clone)]
@@ -99,13 +99,7 @@ impl<B: Backend> SaSolver<B> {
 
     /// Adams-Bashforth coefficients
     fn get_ab_coefficients(order: usize) -> Vec<f32> {
-        match order {
-            1 => vec![1.0],
-            2 => vec![1.5, -0.5],
-            3 => vec![23.0 / 12.0, -16.0 / 12.0, 5.0 / 12.0],
-            4 => vec![55.0 / 24.0, -59.0 / 24.0, 37.0 / 24.0, -9.0 / 24.0],
-            _ => vec![1.0],
-        }
+        adams_bashforth_coefficients(order)
     }
 
     /// Adams-Moulton coefficients

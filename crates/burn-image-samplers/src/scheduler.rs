@@ -235,6 +235,20 @@ pub fn init_noise_latent<B: Backend>(
     noise * sigma
 }
 
+/// Adams-Bashforth coefficients for linear multi-step methods
+///
+/// These coefficients are used by iPNDM and SA-Solver samplers
+/// for multi-step ODE integration.
+pub fn adams_bashforth_coefficients(order: usize) -> Vec<f32> {
+    match order {
+        1 => vec![1.0],
+        2 => vec![1.5, -0.5],
+        3 => vec![23.0 / 12.0, -16.0 / 12.0, 5.0 / 12.0],
+        4 => vec![55.0 / 24.0, -59.0 / 24.0, 37.0 / 24.0, -9.0 / 24.0],
+        _ => vec![1.0], // Fallback to first order
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -6,7 +6,7 @@
 use burn::prelude::*;
 use std::collections::VecDeque;
 
-use crate::scheduler::{NoiseSchedule, sampler_timesteps};
+use crate::scheduler::{NoiseSchedule, sampler_timesteps, adams_bashforth_coefficients};
 
 /// Configuration for iPNDM sampler
 #[derive(Debug, Clone)]
@@ -76,13 +76,7 @@ impl<B: Backend> IpndmSampler<B> {
 
     /// Get coefficients for the linear multi-step method
     fn get_linear_multistep_coeff(order: usize) -> Vec<f32> {
-        match order {
-            1 => vec![1.0],
-            2 => vec![1.5, -0.5],
-            3 => vec![23.0 / 12.0, -16.0 / 12.0, 5.0 / 12.0],
-            4 => vec![55.0 / 24.0, -59.0 / 24.0, 37.0 / 24.0, -9.0 / 24.0],
-            _ => vec![1.0], // Fallback to first order
-        }
+        adams_bashforth_coefficients(order)
     }
 
     /// Perform one iPNDM step
