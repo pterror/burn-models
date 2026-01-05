@@ -27,6 +27,7 @@ export default defineConfig({
         items: [
           { text: 'Pipelines', link: '/pipelines' },
           { text: 'Samplers', link: '/samplers' },
+          { text: 'Future Architectures', link: '/future-architectures' },
         ]
       },
     ],
