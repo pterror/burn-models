@@ -19,9 +19,12 @@ use burn::prelude::*;
 /// ```
 #[derive(Module, Debug)]
 pub struct LayerNorm<B: Backend> {
-    weight: Tensor<B, 1>,
-    bias: Tensor<B, 1>,
-    eps: f64,
+    /// Scale parameter
+    pub weight: Tensor<B, 1>,
+    /// Shift parameter
+    pub bias: Tensor<B, 1>,
+    /// Epsilon for numerical stability
+    pub eps: f64,
 }
 
 impl<B: Backend> LayerNorm<B> {
@@ -35,6 +38,15 @@ impl<B: Backend> LayerNorm<B> {
         Self {
             weight: Tensor::ones([size], device),
             bias: Tensor::zeros([size], device),
+            eps: 1e-5,
+        }
+    }
+
+    /// Creates layer norm from pre-loaded weight and bias
+    pub fn from_weight_bias(weight: Tensor<B, 1>, bias: Tensor<B, 1>) -> Self {
+        Self {
+            weight,
+            bias,
             eps: 1e-5,
         }
     }

@@ -18,5 +18,7 @@
 //! - Flow matching objective (vs noise prediction)
 
 pub mod flux;
+pub mod flux_loader;
 
 pub use flux::{Flux, FluxConfig, FluxOutput, FluxRuntime};
+pub use flux_loader::{load_flux, FluxLoadError};
