@@ -166,3 +166,35 @@
 - [x] 3D VAE (temporal compression)
 - [x] Temporal attention layers
 - [x] Frame interpolation
+
+### Future Backlog
+
+#### Alternative Architectures (Non-Transformer LLMs)
+- [ ] RWKV-7 "Goose" - RNN with transformer performance, linear time/constant space, no KV cache
+- [ ] Mamba / Mamba-2 - Selective state space models, linear scaling, 5x faster inference than transformers
+- [ ] xLSTM - Extended LSTM with exponential gating and matrix memory (Sepp Hochreiter)
+- [ ] Griffin/Hawk - Google DeepMind's gated linear recurrences + local attention (RecurrentGemma)
+- [ ] RetNet - Microsoft's retentive network, parallel/recurrent/chunkwise modes, 8x faster decoding
+- [ ] Hyena - Long convolutions + gating, subquadratic attention replacement
+- [ ] TTT (Test-Time Training) - Hidden state is ML model updated via gradient descent during inference
+
+#### Hybrid Architectures (Transformer + SSM/RNN)
+- [ ] Jamba - AI21's Transformer-Mamba-MoE hybrid, 1:7 attention:Mamba ratio, 256K context
+- [ ] Zamba/Zamba2 - Zyphra's Mamba backbone + shared attention layers, efficient small models
+- [ ] StripedHyena - Together AI + Nous Research, attention + gated Hyena convolutions, 128K context
+
+#### Diffusion Language Models
+- [ ] LLaDA - Large Language Diffusion with Masking, bidirectional transformer, reversal curse solved
+- [ ] TESS-2 - Simplex diffusion LM, reward guidance for inference-time alignment
+
+#### Fast/Distilled Image Generation
+- [ ] SDXL-Lightning - ByteDance's 1-4 step distilled SDXL, progressive adversarial distillation
+- [ ] Hyper-SD/Hyper-SDXL - 1-8 step fast generation, quantitatively better than Lightning
+- [ ] SANA - NVIDIA's linear DiT, 32x compression, 4K images on laptop GPU in <1s
+
+#### Additional Video Generation
+- [ ] Open-Sora - Open source Sora-like video DiT, 3D VAE + DiT architecture
+
+#### Additional LLMs
+- [ ] OLMo 3 - AI2's fully open model (weights, data, code), 65K context, efficient training
+- [ ] DBRX - Databricks' fine-grained MoE (16 experts, choose 4), 132B total / 36B active params
