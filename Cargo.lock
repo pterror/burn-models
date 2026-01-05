@@ -544,6 +544,7 @@ dependencies = [
  "burn-models-clip",
  "burn-models-convert",
  "burn-models-core",
+ "burn-models-llm",
  "burn-models-samplers",
  "burn-models-unet",
  "burn-models-vae",

@@ -3,7 +3,7 @@
 ## Next Up
 
 - [x] Rename project from burn-image to burn-models
-- [ ] Restructure crates for general model inference
+- [x] Restructure crates for general model inference
 
 ## Completed (Image Generation)
 

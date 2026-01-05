@@ -1,7 +1,17 @@
-//! burn-models: Stable Diffusion in pure Rust
+//! burn-models: Model Inference in Pure Rust
 //!
-//! A pure Rust implementation of Stable Diffusion using the Burn deep learning framework.
-//! Supports both SD 1.x and SDXL models.
+//! A pure Rust implementation of popular AI models using the Burn deep learning framework.
+//!
+//! # Supported Models
+//!
+//! ## Image Generation
+//! - Stable Diffusion 1.x and SDXL
+//! - ControlNet, IP-Adapter, T2I-Adapter
+//! - LoRA and Textual Inversion
+//!
+//! ## Large Language Models
+//! - LLaMA 2/3 (7B, 13B, 70B, 8B)
+//! - Mixtral 8x7B/8x22B (Mixture of Experts)
 //!
 //! # Backend Selection
 //!
@@ -11,7 +21,9 @@
 //! - `wgpu`: WebGPU backend (cross-platform GPU)
 //! - `cuda`: Native CUDA backend (NVIDIA only)
 //!
-//! # Example
+//! # Examples
+//!
+//! ## Stable Diffusion
 //!
 //! ```toml
 //! [dependencies]
@@ -28,6 +40,17 @@
 //! let config = SdxlSampleConfig::default();
 //! let image = pipeline.generate("a sunset over mountains", "", &config);
 //! ```
+//!
+//! ## LLaMA
+//!
+//! ```ignore
+//! use burn_models::llm::{Llama, LlamaConfig, load_llama};
+//!
+//! let config = LlamaConfig::llama3_8b();
+//! let (model, runtime) = load_llama::<MyBackend>("model.safetensors", &config, &device)?;
+//!
+//! let output = model.forward(input_ids, &runtime, None);
+//! ```
 
 pub use burn_models_core as core;
 pub use burn_models_clip as clip;
@@ -35,6 +58,7 @@ pub use burn_models_vae as vae;
 pub use burn_models_unet as unet;
 pub use burn_models_samplers as samplers;
 pub use burn_models_convert as convert;
+pub use burn_models_llm as llm;
 
 // Re-export LoRA types for convenience
 pub use burn_models_core::lora::{LoraModel, LoraWeight, LoraConvWeight, LoraWeightType};
