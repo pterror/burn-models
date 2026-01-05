@@ -1,4 +1,5 @@
 pub mod attention;
+pub mod dit;
 pub mod flash_attention;
 pub mod glu;
 pub mod groupnorm;
