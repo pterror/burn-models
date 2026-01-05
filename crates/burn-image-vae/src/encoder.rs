@@ -78,6 +78,12 @@ pub struct Encoder<B: Backend> {
 }
 
 impl<B: Backend> Encoder<B> {
+    /// Creates a new VAE encoder
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Encoder configuration
+    /// * `device` - Device to create tensors on
     pub fn new(config: &EncoderConfig, device: &B::Device) -> Self {
         let ch = config.base_channels;
         let ch_mult = &config.channel_mult;
@@ -224,6 +230,7 @@ pub struct EncoderBlock<B: Backend> {
 }
 
 impl<B: Backend> EncoderBlock<B> {
+    /// Creates a new encoder block with optional downsampling
     pub fn new(
         in_channels: usize,
         out_channels: usize,
@@ -253,6 +260,7 @@ impl<B: Backend> EncoderBlock<B> {
         }
     }
 
+    /// Forward pass through residual blocks and optional downsampling
     pub fn forward(&self, mut x: Tensor<B, 4>) -> Tensor<B, 4> {
         for block in &self.res_blocks {
             x = block.forward(x);
@@ -273,6 +281,7 @@ pub struct Downsample<B: Backend> {
 }
 
 impl<B: Backend> Downsample<B> {
+    /// Creates a new 2x downsampling layer with strided convolution
     pub fn new(channels: usize, device: &B::Device) -> Self {
         // Asymmetric padding for even dimensions
         let conv = Conv2dConfig::new([channels, channels], [3, 3])
@@ -283,6 +292,7 @@ impl<B: Backend> Downsample<B> {
         Self { conv }
     }
 
+    /// Forward pass performing 2x spatial downsampling
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         // Use strided conv with asymmetric padding for 2x downsampling
         self.conv.forward(x)

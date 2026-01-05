@@ -49,6 +49,14 @@ pub struct ResBlock<B: Backend> {
 }
 
 impl<B: Backend> ResBlock<B> {
+    /// Creates a new residual block
+    ///
+    /// # Arguments
+    ///
+    /// * `in_channels` - Number of input channels
+    /// * `out_channels` - Number of output channels
+    /// * `time_emb_dim` - Dimension of the timestep embedding
+    /// * `device` - Device to create tensors on
     pub fn new(in_channels: usize, out_channels: usize, time_emb_dim: usize, device: &B::Device) -> Self {
         let norm1 = GroupNorm::new(32, in_channels, device);
         let conv1 = Conv2dConfig::new([in_channels, out_channels], [3, 3])
@@ -78,6 +86,16 @@ impl<B: Backend> ResBlock<B> {
         }
     }
 
+    /// Forward pass through the residual block
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input tensor of shape `[batch, in_channels, height, width]`
+    /// * `time_emb` - Timestep embedding of shape `[batch, time_emb_dim]`
+    ///
+    /// # Returns
+    ///
+    /// Output tensor of shape `[batch, out_channels, height, width]`
     pub fn forward(&self, x: Tensor<B, 4>, time_emb: Tensor<B, 2>) -> Tensor<B, 4> {
         let [b, _, h, w] = x.dims();
 
@@ -117,6 +135,16 @@ pub struct SpatialTransformer<B: Backend> {
 }
 
 impl<B: Backend> SpatialTransformer<B> {
+    /// Creates a new spatial transformer block
+    ///
+    /// # Arguments
+    ///
+    /// * `channels` - Number of input/output channels
+    /// * `num_heads` - Number of attention heads
+    /// * `head_dim` - Dimension per attention head
+    /// * `context_dim` - Dimension of the cross-attention context (text embeddings)
+    /// * `depth` - Number of transformer blocks to stack
+    /// * `device` - Device to create tensors on
     pub fn new(
         channels: usize,
         num_heads: usize,
@@ -144,6 +172,16 @@ impl<B: Backend> SpatialTransformer<B> {
         }
     }
 
+    /// Forward pass with cross-attention to text context
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input tensor of shape `[batch, channels, height, width]`
+    /// * `context` - Text embedding context of shape `[batch, seq_len, context_dim]`
+    ///
+    /// # Returns
+    ///
+    /// Output tensor with same shape as input
     pub fn forward(&self, x: Tensor<B, 4>, context: Tensor<B, 3>) -> Tensor<B, 4> {
         let [b, c, h, w] = x.dims();
         let residual = x.clone();
@@ -181,6 +219,15 @@ pub struct TransformerBlock<B: Backend> {
 }
 
 impl<B: Backend> TransformerBlock<B> {
+    /// Creates a new transformer block
+    ///
+    /// # Arguments
+    ///
+    /// * `dim` - Hidden dimension
+    /// * `num_heads` - Number of attention heads
+    /// * `head_dim` - Dimension per attention head
+    /// * `context_dim` - Dimension of cross-attention context
+    /// * `device` - Device to create tensors on
     pub fn new(
         dim: usize,
         num_heads: usize,
@@ -198,6 +245,16 @@ impl<B: Backend> TransformerBlock<B> {
         }
     }
 
+    /// Forward pass through self-attention, cross-attention, and FFN
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input sequence of shape `[batch, seq_len, dim]`
+    /// * `context` - Cross-attention context of shape `[batch, ctx_len, context_dim]`
+    ///
+    /// # Returns
+    ///
+    /// Output sequence with same shape as input
     pub fn forward(&self, x: Tensor<B, 3>, context: Tensor<B, 3>) -> Tensor<B, 3> {
         // Self-attention
         let x = x.clone() + self.attn1.forward(self.norm1.forward(x.clone()), None);
@@ -222,6 +279,15 @@ pub struct CrossAttention<B: Backend> {
 }
 
 impl<B: Backend> CrossAttention<B> {
+    /// Creates a new cross-attention (or self-attention) module
+    ///
+    /// # Arguments
+    ///
+    /// * `query_dim` - Dimension of query input
+    /// * `num_heads` - Number of attention heads
+    /// * `head_dim` - Dimension per attention head
+    /// * `context_dim` - Dimension of key/value context (None for self-attention)
+    /// * `device` - Device to create tensors on
     pub fn new(
         query_dim: usize,
         num_heads: usize,
@@ -242,6 +308,16 @@ impl<B: Backend> CrossAttention<B> {
         }
     }
 
+    /// Computes scaled dot-product attention
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Query input of shape `[batch, seq_len, query_dim]`
+    /// * `context` - Key/value context (None uses x for self-attention)
+    ///
+    /// # Returns
+    ///
+    /// Attention output of shape `[batch, seq_len, query_dim]`
     pub fn forward(&self, x: Tensor<B, 3>, context: Option<Tensor<B, 3>>) -> Tensor<B, 3> {
         let context = context.unwrap_or_else(|| x.clone());
 
@@ -278,6 +354,13 @@ pub struct FeedForward<B: Backend> {
 }
 
 impl<B: Backend> FeedForward<B> {
+    /// Creates a new feed-forward network with GEGLU activation
+    ///
+    /// # Arguments
+    ///
+    /// * `dim` - Input and output dimension
+    /// * `mult_dim` - Hidden layer dimension
+    /// * `device` - Device to create tensors on
     pub fn new(dim: usize, mult_dim: usize, device: &B::Device) -> Self {
         // GEGLU doubles the projection size
         Self {
@@ -286,6 +369,15 @@ impl<B: Backend> FeedForward<B> {
         }
     }
 
+    /// Forward pass through the FFN with GEGLU gating
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input tensor of shape `[batch, seq_len, dim]`
+    ///
+    /// # Returns
+    ///
+    /// Output tensor with same shape as input
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let hidden = self.net_0.forward(x);
 
@@ -307,6 +399,12 @@ pub struct Downsample<B: Backend> {
 }
 
 impl<B: Backend> Downsample<B> {
+    /// Creates a new downsample block (2x spatial reduction)
+    ///
+    /// # Arguments
+    ///
+    /// * `channels` - Number of input/output channels
+    /// * `device` - Device to create tensors on
     pub fn new(channels: usize, device: &B::Device) -> Self {
         let conv = Conv2dConfig::new([channels, channels], [3, 3])
             .with_stride([2, 2])
@@ -315,18 +413,33 @@ impl<B: Backend> Downsample<B> {
         Self { conv }
     }
 
+    /// Downsamples input by 2x using strided convolution
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input tensor of shape `[batch, channels, height, width]`
+    ///
+    /// # Returns
+    ///
+    /// Output tensor of shape `[batch, channels, height/2, width/2]`
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         self.conv.forward(x)
     }
 }
 
-/// Upsample block (nearest neighbor + conv)
+/// Upsample block using nearest neighbor interpolation followed by convolution
 #[derive(Module, Debug)]
 pub struct Upsample<B: Backend> {
     conv: Conv2d<B>,
 }
 
 impl<B: Backend> Upsample<B> {
+    /// Creates a new upsample block (2x spatial increase)
+    ///
+    /// # Arguments
+    ///
+    /// * `channels` - Number of input/output channels
+    /// * `device` - Device to create tensors on
     pub fn new(channels: usize, device: &B::Device) -> Self {
         let conv = Conv2dConfig::new([channels, channels], [3, 3])
             .with_padding(PaddingConfig2d::Explicit(1, 1))
@@ -334,6 +447,15 @@ impl<B: Backend> Upsample<B> {
         Self { conv }
     }
 
+    /// Upsamples input by 2x using nearest neighbor + convolution
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input tensor of shape `[batch, channels, height, width]`
+    ///
+    /// # Returns
+    ///
+    /// Output tensor of shape `[batch, channels, height*2, width*2]`
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let [b, c, h, w] = x.dims();
 

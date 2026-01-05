@@ -76,6 +76,12 @@ pub struct Decoder<B: Backend> {
 }
 
 impl<B: Backend> Decoder<B> {
+    /// Creates a new VAE decoder
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Decoder configuration
+    /// * `device` - Device to create tensors on
     pub fn new(config: &DecoderConfig, device: &B::Device) -> Self {
         let ch = config.base_channels;
         let ch_mult = &config.channel_mult;
@@ -194,6 +200,7 @@ pub struct DecoderBlock<B: Backend> {
 }
 
 impl<B: Backend> DecoderBlock<B> {
+    /// Creates a new decoder block with optional upsampling
     pub fn new(
         in_channels: usize,
         out_channels: usize,
@@ -223,6 +230,7 @@ impl<B: Backend> DecoderBlock<B> {
         }
     }
 
+    /// Forward pass through residual blocks and optional upsampling
     pub fn forward(&self, mut x: Tensor<B, 4>) -> Tensor<B, 4> {
         for block in &self.res_blocks {
             x = block.forward(x);
@@ -247,6 +255,7 @@ pub struct ResnetBlock<B: Backend> {
 }
 
 impl<B: Backend> ResnetBlock<B> {
+    /// Creates a new resnet block with optional skip connection
     pub fn new(in_channels: usize, out_channels: usize, device: &B::Device) -> Self {
         let norm1 = GroupNorm::new(32, in_channels, device);
         let conv1 = Conv2dConfig::new([in_channels, out_channels], [3, 3])
@@ -276,6 +285,7 @@ impl<B: Backend> ResnetBlock<B> {
         }
     }
 
+    /// Forward pass with residual connection
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let residual = match &self.skip_conv {
             Some(conv) => conv.forward(x.clone()),
@@ -301,6 +311,7 @@ pub struct Upsample<B: Backend> {
 }
 
 impl<B: Backend> Upsample<B> {
+    /// Creates a new 2x upsampling layer
     pub fn new(channels: usize, device: &B::Device) -> Self {
         let conv = Conv2dConfig::new([channels, channels], [3, 3])
             .with_padding(PaddingConfig2d::Explicit(1, 1))
@@ -309,6 +320,7 @@ impl<B: Backend> Upsample<B> {
         Self { conv }
     }
 
+    /// Forward pass with nearest neighbor upsampling and convolution
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let [b, c, h, w] = x.dims();
 
@@ -336,6 +348,7 @@ pub struct SelfAttention<B: Backend> {
 }
 
 impl<B: Backend> SelfAttention<B> {
+    /// Creates a new self-attention layer
     pub fn new(channels: usize, device: &B::Device) -> Self {
         let norm = GroupNorm::new(32, channels, device);
 
@@ -354,6 +367,7 @@ impl<B: Backend> SelfAttention<B> {
         }
     }
 
+    /// Forward pass computing scaled dot-product self-attention
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let [b, c, h, w] = x.dims();
         let residual = x.clone();

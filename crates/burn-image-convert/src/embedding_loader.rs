@@ -38,6 +38,7 @@ pub fn load_embedding<B: Backend>(
     }
 }
 
+/// Detects the embedding format from file extension
 fn detect_format(path: &Path) -> EmbeddingFormat {
     match path.extension().and_then(|e| e.to_str()) {
         Some("safetensors") => EmbeddingFormat::SafeTensors,
@@ -45,6 +46,7 @@ fn detect_format(path: &Path) -> EmbeddingFormat {
     }
 }
 
+/// Loads an embedding from a safetensors file
 fn load_safetensors_embedding<B: Backend>(
     path: &Path,
     device: &B::Device,
@@ -93,6 +95,7 @@ fn load_safetensors_embedding<B: Backend>(
     Ok(TextualInversionEmbedding::new(token, vectors))
 }
 
+/// Finds the embedding tensor key from available tensor names
 fn find_embedding_key(names: &[String]) -> Option<String> {
     // Priority order for finding embedding tensor
     let patterns = [
@@ -123,6 +126,7 @@ fn find_embedding_key(names: &[String]) -> Option<String> {
         .cloned()
 }
 
+/// Extracts a token name from the embedding key or filename
 fn extract_token_name(key: &str, path: &Path) -> String {
     // Try to extract token from key
     if key.starts_with('<') && key.ends_with('>') {

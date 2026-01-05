@@ -55,6 +55,12 @@ pub struct OpenClipTextEncoder<B: Backend> {
 }
 
 impl<B: Backend> OpenClipTextEncoder<B> {
+    /// Creates a new OpenCLIP text encoder
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - OpenCLIP model configuration
+    /// * `device` - Device to create tensors on
     pub fn new(config: &OpenClipConfig, device: &B::Device) -> Self {
         let token_embedding = EmbeddingConfig::new(config.vocab_size, config.embed_dim)
             .init(device);
@@ -180,6 +186,7 @@ pub struct OpenClipTransformerBlock<B: Backend> {
 }
 
 impl<B: Backend> OpenClipTransformerBlock<B> {
+    /// Creates a new OpenCLIP transformer block
     pub fn new(config: &OpenClipConfig, device: &B::Device) -> Self {
         Self {
             attn_norm: LayerNorm::new(config.embed_dim, device),
@@ -189,6 +196,7 @@ impl<B: Backend> OpenClipTransformerBlock<B> {
         }
     }
 
+    /// Forward pass with pre-norm residual connections
     pub fn forward(&self, x: Tensor<B, 3>, mask: Option<Tensor<B, 2>>) -> Tensor<B, 3> {
         // Self-attention with residual (pre-norm)
         let residual = x.clone();
@@ -214,6 +222,7 @@ pub struct OpenClipMultiHeadSelfAttention<B: Backend> {
 }
 
 impl<B: Backend> OpenClipMultiHeadSelfAttention<B> {
+    /// Creates a new multi-head self-attention layer
     pub fn new(config: &OpenClipConfig, device: &B::Device) -> Self {
         let embed_dim = config.embed_dim;
         let num_heads = config.num_heads;
@@ -229,6 +238,7 @@ impl<B: Backend> OpenClipMultiHeadSelfAttention<B> {
         }
     }
 
+    /// Forward pass computing scaled dot-product attention
     pub fn forward(&self, x: Tensor<B, 3>, mask: Option<Tensor<B, 2>>) -> Tensor<B, 3> {
         let [batch, seq_len, _] = x.dims();
 
@@ -264,6 +274,7 @@ pub struct OpenClipFeedForward<B: Backend> {
 }
 
 impl<B: Backend> OpenClipFeedForward<B> {
+    /// Creates a new feed-forward network
     pub fn new(config: &OpenClipConfig, device: &B::Device) -> Self {
         Self {
             fc1: LinearConfig::new(config.embed_dim, config.intermediate_size).init(device),
@@ -271,6 +282,7 @@ impl<B: Backend> OpenClipFeedForward<B> {
         }
     }
 
+    /// Forward pass with standard GELU activation
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let x = self.fc1.forward(x);
         let x = gelu(x); // Standard GELU, not QuickGELU

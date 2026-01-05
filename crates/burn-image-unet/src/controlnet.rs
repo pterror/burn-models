@@ -27,6 +27,7 @@ impl<B: Backend> ZeroConv<B> {
         Self { conv }
     }
 
+    /// Forward pass through the zero convolution
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         self.conv.forward(x)
     }
@@ -98,6 +99,7 @@ pub struct ControlNetEncoderBlock<B: Backend> {
 }
 
 impl<B: Backend> ControlNetEncoderBlock<B> {
+    /// Creates a new encoder block with res blocks, optional attention, and zero conv output
     pub fn new(
         in_channels: usize,
         out_channels: usize,
@@ -141,6 +143,7 @@ impl<B: Backend> ControlNetEncoderBlock<B> {
         }
     }
 
+    /// Forward pass returning hidden state and control output
     pub fn forward(
         &self,
         x: Tensor<B, 4>,

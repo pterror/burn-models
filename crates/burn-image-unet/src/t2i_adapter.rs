@@ -85,6 +85,7 @@ pub struct T2IAdapterBlock<B: Backend> {
 }
 
 impl<B: Backend> T2IAdapterBlock<B> {
+    /// Creates a new adapter residual block
     pub fn new(in_channels: usize, out_channels: usize, device: &B::Device) -> Self {
         let conv1 = Conv2dConfig::new([in_channels, out_channels], [3, 3])
             .with_padding(PaddingConfig2d::Explicit(1, 1))
@@ -103,6 +104,7 @@ impl<B: Backend> T2IAdapterBlock<B> {
         Self { conv1, conv2, skip }
     }
 
+    /// Forward pass with residual connection
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let residual = match &self.skip {
             Some(conv) => conv.forward(x.clone()),
@@ -124,6 +126,7 @@ pub struct T2IAdapterLevel<B: Backend> {
 }
 
 impl<B: Backend> T2IAdapterLevel<B> {
+    /// Creates a new adapter encoder level
     pub fn new(
         in_channels: usize,
         out_channels: usize,
@@ -155,6 +158,7 @@ impl<B: Backend> T2IAdapterLevel<B> {
         Self { blocks, downsample }
     }
 
+    /// Forward pass returning both downsampled and level outputs
     pub fn forward(&self, x: Tensor<B, 4>) -> (Tensor<B, 4>, Tensor<B, 4>) {
         let mut h = x;
 

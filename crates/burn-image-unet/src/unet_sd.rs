@@ -94,6 +94,12 @@ pub struct UNet<B: Backend> {
 }
 
 impl<B: Backend> UNet<B> {
+    /// Creates a new SD 1.x UNet
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - UNet configuration
+    /// * `device` - Device to create tensors on
     pub fn new(config: &UNetConfig, device: &B::Device) -> Self {
         let ch = config.model_channels;
         let time_embed_dim = ch * 4;
@@ -261,6 +267,7 @@ struct DownBlock<B: Backend> {
 }
 
 impl<B: Backend> DownBlock<B> {
+    /// Creates a new down block with residual and attention layers
     fn new(
         in_ch: usize,
         out_ch: usize,
@@ -281,6 +288,7 @@ impl<B: Backend> DownBlock<B> {
         }
     }
 
+    /// Forward pass, returns output and skip connections for up blocks
     fn forward(
         &self,
         x: Tensor<B, 4>,
@@ -318,6 +326,7 @@ struct MidBlock<B: Backend> {
 }
 
 impl<B: Backend> MidBlock<B> {
+    /// Creates a new mid block with ResBlock-Attention-ResBlock structure
     fn new(
         channels: usize,
         time_dim: usize,
@@ -334,6 +343,7 @@ impl<B: Backend> MidBlock<B> {
         }
     }
 
+    /// Forward pass through the mid block
     fn forward(&self, x: Tensor<B, 4>, t_emb: Tensor<B, 2>, context: Tensor<B, 3>) -> Tensor<B, 4> {
         let h = self.res1.forward(x, t_emb.clone());
         let h = self.attn.forward(h, context);
@@ -341,7 +351,7 @@ impl<B: Backend> MidBlock<B> {
     }
 }
 
-/// Up block: ResBlock + SpatialTransformer + optional Upsample
+/// Up block with residual, attention, and optional upsampling
 #[derive(Module, Debug)]
 struct UpBlock<B: Backend> {
     res: ResBlock<B>,
@@ -350,6 +360,7 @@ struct UpBlock<B: Backend> {
 }
 
 impl<B: Backend> UpBlock<B> {
+    /// Creates a new up block
     fn new(
         in_ch: usize,
         out_ch: usize,
@@ -368,6 +379,7 @@ impl<B: Backend> UpBlock<B> {
         }
     }
 
+    /// Forward pass through the up block
     fn forward(&self, x: Tensor<B, 4>, t_emb: Tensor<B, 2>, context: Tensor<B, 3>) -> Tensor<B, 4> {
         let h = self.res.forward(x, t_emb);
         let h = self.attn.forward(h, context);

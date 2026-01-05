@@ -39,6 +39,7 @@ pub fn load_controlnet_info(path: impl AsRef<Path>) -> Result<ControlNetInfo, Co
     })
 }
 
+/// Detects the ControlNet model type from tensor key names
 fn detect_controlnet_type(names: &[String]) -> ControlNetType {
     // Check for SDXL-specific patterns
     let has_sdxl_patterns = names.iter().any(|k| {

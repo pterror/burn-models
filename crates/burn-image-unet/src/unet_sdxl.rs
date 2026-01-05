@@ -75,6 +75,7 @@ impl UNetXLConfig {
         }
     }
 
+    /// Computes the number of attention heads for a given channel count
     fn num_heads_at(&self, channels: usize) -> usize {
         channels / self.head_dim
     }
@@ -112,6 +113,12 @@ pub struct UNetXL<B: Backend> {
 }
 
 impl<B: Backend> UNetXL<B> {
+    /// Creates a new SDXL UNet
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - SDXL UNet configuration
+    /// * `device` - Device to create tensors on
     pub fn new(config: &UNetXLConfig, device: &B::Device) -> Self {
         let ch = config.model_channels;
         let time_embed_dim = ch * 4;
@@ -314,6 +321,7 @@ struct DownBlockXL<B: Backend> {
 }
 
 impl<B: Backend> DownBlockXL<B> {
+    /// Creates a new SDXL down block with optional attention layers
     fn new(
         in_ch: usize,
         out_ch: usize,
@@ -348,6 +356,7 @@ impl<B: Backend> DownBlockXL<B> {
         }
     }
 
+    /// Forward pass, returns output and skip connections for up blocks
     fn forward(
         &self,
         x: Tensor<B, 4>,
@@ -393,6 +402,7 @@ struct MidBlockXL<B: Backend> {
 }
 
 impl<B: Backend> MidBlockXL<B> {
+    /// Creates a new SDXL mid block
     fn new(
         channels: usize,
         time_dim: usize,
@@ -410,6 +420,7 @@ impl<B: Backend> MidBlockXL<B> {
         }
     }
 
+    /// Forward pass through the mid block
     fn forward(&self, x: Tensor<B, 4>, emb: Tensor<B, 2>, context: Tensor<B, 3>) -> Tensor<B, 4> {
         let h = self.res1.forward(x, emb.clone());
         let h = self.attn.forward(h, context);
@@ -426,6 +437,7 @@ struct UpBlockXL<B: Backend> {
 }
 
 impl<B: Backend> UpBlockXL<B> {
+    /// Creates a new SDXL up block with optional attention and upsampling
     fn new(
         in_ch: usize,
         out_ch: usize,
@@ -451,6 +463,7 @@ impl<B: Backend> UpBlockXL<B> {
         }
     }
 
+    /// Forward pass through the up block
     fn forward(&self, x: Tensor<B, 4>, emb: Tensor<B, 2>, context: Tensor<B, 3>) -> Tensor<B, 4> {
         let h = self.res.forward(x, emb);
         let h = if let Some(attn) = &self.attn {

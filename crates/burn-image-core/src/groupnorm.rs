@@ -1,6 +1,26 @@
+//! Group normalization implementation
+//!
+//! Provides group normalization as used in UNet and VAE architectures.
+//! Divides channels into groups and normalizes within each group.
+
 use burn::prelude::*;
 
-/// Group normalization layer
+/// Group normalization module
+///
+/// Divides channels into groups and normalizes each group independently.
+/// This is commonly used in diffusion models (UNet, VAE) as an alternative
+/// to batch normalization that works well with small batch sizes.
+///
+/// # Formula
+///
+/// For input with C channels divided into G groups:
+/// ```text
+/// y = (x - mean(x_group)) / sqrt(var(x_group) + eps) * weight + bias
+/// ```
+///
+/// # Reference
+///
+/// "Group Normalization" - Wu & He, 2018
 #[derive(Module, Debug)]
 pub struct GroupNorm<B: Backend> {
     num_groups: usize,
@@ -10,6 +30,13 @@ pub struct GroupNorm<B: Backend> {
 }
 
 impl<B: Backend> GroupNorm<B> {
+    /// Creates a new group normalization module
+    ///
+    /// # Arguments
+    ///
+    /// * `num_groups` - Number of groups to divide channels into (typically 32)
+    /// * `num_channels` - Total number of input channels (must be divisible by num_groups)
+    /// * `device` - Device to create tensors on
     pub fn new(num_groups: usize, num_channels: usize, device: &B::Device) -> Self {
         Self {
             num_groups,
@@ -19,6 +46,15 @@ impl<B: Backend> GroupNorm<B> {
         }
     }
 
+    /// Applies group normalization to a 4D tensor
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Input tensor of shape `[batch, channels, height, width]`
+    ///
+    /// # Returns
+    ///
+    /// Normalized tensor with same shape as input
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let [batch, channels, height, width] = x.dims();
         let group_size = channels / self.num_groups;

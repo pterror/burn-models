@@ -57,15 +57,17 @@ impl<B: Backend> DpmPlusPlusSampler<B> {
         }
     }
 
+    /// Returns the timestep indices used for sampling
     pub fn timesteps(&self) -> &[usize] {
         &self.timesteps
     }
 
+    /// Returns the number of inference steps
     pub fn num_steps(&self) -> usize {
         self.config.num_inference_steps
     }
 
-    /// Reset state for new generation
+    /// Resets internal state for a new generation
     pub fn reset(&mut self) {
         self.prev_sample = None;
         self.prev_sigma = None;
@@ -135,6 +137,7 @@ impl<B: Backend> DpmPlusPlusSampler<B> {
         }
     }
 
+    /// Initializes a random noise latent scaled for the first sigma
     pub fn init_latent(
         &self,
         batch_size: usize,
@@ -176,15 +179,17 @@ impl<B: Backend> DpmPlusPlusSdeSampler<B> {
         }
     }
 
+    /// Returns the timestep indices used for sampling
     pub fn timesteps(&self) -> &[usize] {
         &self.timesteps
     }
 
+    /// Returns the number of inference steps
     pub fn num_steps(&self) -> usize {
         self.config.num_inference_steps
     }
 
-    /// Perform one DPM++ SDE step
+    /// Performs one DPM++ SDE step with stochastic noise injection
     pub fn step(
         &self,
         latent: Tensor<B, 4>,
@@ -220,6 +225,7 @@ impl<B: Backend> DpmPlusPlusSdeSampler<B> {
         latent_down + noise * sigma_up
     }
 
+    /// Initializes a random noise latent scaled for the first sigma
     pub fn init_latent(
         &self,
         batch_size: usize,

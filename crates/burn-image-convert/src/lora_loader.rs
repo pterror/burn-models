@@ -45,6 +45,7 @@ pub fn load_lora<B: Backend>(
     }
 }
 
+/// Detects the LoRA format from tensor key names
 fn detect_format(names: &[String]) -> LoraFormat {
     // Check for Kohya-style keys
     let has_kohya = names.iter().any(|k| k.starts_with("lora_unet_") || k.starts_with("lora_te_"));
@@ -56,6 +57,7 @@ fn detect_format(names: &[String]) -> LoraFormat {
     }
 }
 
+/// Loads a Kohya-style LoRA from safetensors
 fn load_kohya_lora<B: Backend>(
     file: &SafeTensorFile,
     names: &[String],
@@ -124,6 +126,7 @@ fn load_kohya_lora<B: Backend>(
     Ok(model)
 }
 
+/// Loads a Diffusers-style LoRA from safetensors
 fn load_diffusers_lora<B: Backend>(
     file: &SafeTensorFile,
     names: &[String],

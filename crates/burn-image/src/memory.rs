@@ -63,11 +63,17 @@ pub struct TiledVae {
 }
 
 impl TiledVae {
+    /// Creates a new tiled VAE processor
+    ///
+    /// # Arguments
+    ///
+    /// * `tile_size` - Size of each tile in pixels
+    /// * `overlap` - Overlap between adjacent tiles for blending
     pub fn new(tile_size: usize, overlap: usize) -> Self {
         Self { tile_size, overlap }
     }
 
-    /// Calculate tile positions for a given dimension
+    /// Calculates tile positions for a given dimension
     fn tile_positions(&self, size: usize) -> Vec<(usize, usize)> {
         let step = self.tile_size - self.overlap;
         let mut positions = Vec::new();
@@ -208,6 +214,7 @@ impl TiledVae {
         )
     }
 
+    /// Computes blend weight for smooth tile transitions
     fn blend_weight(pos: usize, size: usize, overlap: usize) -> f32 {
         if overlap == 0 || size <= overlap * 2 {
             return 1.0;
@@ -228,6 +235,7 @@ impl TiledVae {
         }
     }
 
+    /// Pads a tile to the target dimensions with zeros
     fn pad_tile<B: Backend>(
         tile: Tensor<B, 4>,
         target_h: usize,

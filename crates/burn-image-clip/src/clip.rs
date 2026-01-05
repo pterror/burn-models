@@ -47,6 +47,12 @@ pub struct ClipTextEncoder<B: Backend> {
 }
 
 impl<B: Backend> ClipTextEncoder<B> {
+    /// Creates a new CLIP text encoder
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - CLIP model configuration
+    /// * `device` - Device to create tensors on
     pub fn new(config: &ClipConfig, device: &B::Device) -> Self {
         let token_embedding = EmbeddingConfig::new(config.vocab_size, config.embed_dim)
             .init(device);
@@ -158,6 +164,7 @@ pub struct TransformerBlock<B: Backend> {
 }
 
 impl<B: Backend> TransformerBlock<B> {
+    /// Creates a new transformer block
     pub fn new(config: &ClipConfig, device: &B::Device) -> Self {
         Self {
             attn_norm: LayerNorm::new(config.embed_dim, device),
@@ -167,6 +174,7 @@ impl<B: Backend> TransformerBlock<B> {
         }
     }
 
+    /// Forward pass with pre-norm residual connections
     pub fn forward(&self, x: Tensor<B, 3>, mask: Option<Tensor<B, 2>>) -> Tensor<B, 3> {
         // Self-attention with residual
         let residual = x.clone();
@@ -192,6 +200,7 @@ pub struct MultiHeadSelfAttention<B: Backend> {
 }
 
 impl<B: Backend> MultiHeadSelfAttention<B> {
+    /// Creates a new multi-head self-attention layer
     pub fn new(config: &ClipConfig, device: &B::Device) -> Self {
         let embed_dim = config.embed_dim;
         let num_heads = config.num_heads;
@@ -207,6 +216,7 @@ impl<B: Backend> MultiHeadSelfAttention<B> {
         }
     }
 
+    /// Forward pass computing scaled dot-product attention
     pub fn forward(&self, x: Tensor<B, 3>, mask: Option<Tensor<B, 2>>) -> Tensor<B, 3> {
         let [batch, seq_len, _] = x.dims();
 
@@ -242,6 +252,7 @@ pub struct FeedForward<B: Backend> {
 }
 
 impl<B: Backend> FeedForward<B> {
+    /// Creates a new feed-forward network
     pub fn new(config: &ClipConfig, device: &B::Device) -> Self {
         Self {
             fc1: LinearConfig::new(config.embed_dim, config.intermediate_size).init(device),
@@ -249,6 +260,7 @@ impl<B: Backend> FeedForward<B> {
         }
     }
 
+    /// Forward pass with QuickGELU activation
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let x = self.fc1.forward(x);
         let x = quick_gelu(x);
@@ -257,6 +269,9 @@ impl<B: Backend> FeedForward<B> {
 }
 
 /// QuickGELU activation: x * sigmoid(1.702 * x)
+///
+/// An approximation of GELU used in original CLIP that is slightly
+/// faster to compute than the standard GELU.
 fn quick_gelu<B: Backend, const D: usize>(x: Tensor<B, D>) -> Tensor<B, D> {
     x.clone() * sigmoid(x * 1.702)
 }
