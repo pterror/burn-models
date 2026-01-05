@@ -2,6 +2,7 @@ pub mod attention;
 pub mod continuous_batching;
 pub mod dit;
 pub mod flash_attention;
+pub mod frame_interpolation;
 pub mod glu;
 pub mod groupnorm;
 pub mod kv_cache;

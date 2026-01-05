@@ -165,4 +165,4 @@
 #### Video-specific
 - [x] 3D VAE (temporal compression)
 - [x] Temporal attention layers
-- [ ] Frame interpolation
+- [x] Frame interpolation
