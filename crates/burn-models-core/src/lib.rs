@@ -7,6 +7,7 @@ pub mod kv_cache;
 pub mod layernorm;
 pub mod lora;
 pub mod moe;
+pub mod paged_attention;
 pub mod precision;
 pub mod rmsnorm;
 pub mod rope;
