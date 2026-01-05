@@ -23,6 +23,8 @@
 //! let generated = model.generate(prompt, 100, 0.8);
 //! ```
 
+pub mod deepseek;
+pub mod deepseek_loader;
 pub mod gemma;
 pub mod gemma_loader;
 pub mod llama;
@@ -35,6 +37,8 @@ pub mod phi_loader;
 pub mod qwen;
 pub mod qwen_loader;
 
+pub use deepseek::{DeepSeek, DeepSeekConfig, DeepSeekOutput, DeepSeekRuntime};
+pub use deepseek_loader::{load_deepseek, DeepSeekLoadError};
 pub use gemma::{Gemma, GemmaConfig, GemmaOutput, GemmaRuntime};
 pub use gemma_loader::{load_gemma, GemmaLoadError};
 pub use phi::{Phi, PhiConfig, PhiOutput, PhiRuntime};

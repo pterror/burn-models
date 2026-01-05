@@ -137,7 +137,7 @@
 - [x] Qwen 2.5 - Alibaba's multilingual LLM (0.5B to 72B)
 - [x] Gemma 2 - Google's open models (interleaved sliding/global attention, logit soft-capping, GeGLU)
 - [x] Phi-3/3.5 - Microsoft's small models (fused QKV/gate-up, GQA)
-- [ ] DeepSeek - DeepSeek's models
+- [x] DeepSeek V1/V2 - Multi-head Latent Attention (MLA) for compressed KV cache
 
 ### Shared Building Blocks (burn-models-core)
 
