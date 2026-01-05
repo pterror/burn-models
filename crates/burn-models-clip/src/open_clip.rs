@@ -41,6 +41,34 @@ impl OpenClipConfig {
             projection_dim: 1280,
         }
     }
+
+    /// Configuration for OpenCLIP ViT-H/14 used in SD 2.x
+    ///
+    /// SD 2.x uses the ViT-H/14 variant with 1024 embed dim
+    pub fn sd2x() -> Self {
+        Self {
+            vocab_size: 49408,
+            embed_dim: 1024,
+            num_heads: 16,
+            num_layers: 24,
+            context_length: 77,
+            intermediate_size: 4096, // 4x embed_dim
+            projection_dim: 1024,
+        }
+    }
+
+    /// Configuration for OpenCLIP ViT-H/14 with 768 context (SD 2.1 768)
+    pub fn sd2x_768() -> Self {
+        Self {
+            vocab_size: 49408,
+            embed_dim: 1024,
+            num_heads: 16,
+            num_layers: 24,
+            context_length: 77,
+            intermediate_size: 4096,
+            projection_dim: 1024,
+        }
+    }
 }
 
 /// OpenCLIP Text Encoder

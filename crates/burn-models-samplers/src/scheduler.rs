@@ -5,6 +5,109 @@
 use burn::prelude::*;
 
 // ============================================================================
+// Prediction Type (epsilon vs v-prediction)
+// ============================================================================
+
+/// Model prediction type
+///
+/// Different diffusion models are trained to predict different quantities:
+/// - Epsilon (noise): SD 1.x, SDXL
+/// - V-prediction (velocity): SD 2.x
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PredictionType {
+    /// Model predicts the noise (epsilon) added to the sample
+    #[default]
+    Epsilon,
+    /// Model predicts the velocity v = alpha_t * epsilon - sqrt(1-alpha_t) * x0
+    VPrediction,
+    /// Model predicts the original sample x0
+    Sample,
+}
+
+/// Convert v-prediction to epsilon prediction
+///
+/// v = alpha_t * epsilon - sigma_t * x
+/// epsilon = (v + sigma_t * x) / alpha_t
+pub fn v_to_epsilon<B: Backend>(
+    v: Tensor<B, 4>,
+    sample: Tensor<B, 4>,
+    alpha_t: Tensor<B, 1>,
+    sigma_t: Tensor<B, 1>,
+) -> Tensor<B, 4> {
+    (v + sample * sigma_t.unsqueeze()) / alpha_t.unsqueeze()
+}
+
+/// Convert epsilon prediction to v-prediction
+///
+/// v = alpha_t * epsilon - sigma_t * x
+pub fn epsilon_to_v<B: Backend>(
+    epsilon: Tensor<B, 4>,
+    sample: Tensor<B, 4>,
+    alpha_t: Tensor<B, 1>,
+    sigma_t: Tensor<B, 1>,
+) -> Tensor<B, 4> {
+    epsilon * alpha_t.unsqueeze() - sample * sigma_t.unsqueeze()
+}
+
+/// Convert v-prediction to predicted x0
+///
+/// From v = alpha_t * epsilon - sigma_t * x0, we can derive:
+/// x0 = alpha_t * x - sigma_t * v
+pub fn v_to_sample<B: Backend>(
+    v: Tensor<B, 4>,
+    sample: Tensor<B, 4>,
+    alpha_t: Tensor<B, 1>,
+    sigma_t: Tensor<B, 1>,
+) -> Tensor<B, 4> {
+    sample * alpha_t.unsqueeze() - v * sigma_t.unsqueeze()
+}
+
+/// Convert epsilon prediction to predicted x0
+///
+/// x0 = (x - sigma_t * epsilon) / alpha_t
+pub fn epsilon_to_sample<B: Backend>(
+    epsilon: Tensor<B, 4>,
+    sample: Tensor<B, 4>,
+    alpha_t: Tensor<B, 1>,
+    sigma_t: Tensor<B, 1>,
+) -> Tensor<B, 4> {
+    (sample - epsilon * sigma_t.unsqueeze()) / alpha_t.unsqueeze()
+}
+
+/// Convert any prediction type to epsilon
+pub fn to_epsilon<B: Backend>(
+    model_output: Tensor<B, 4>,
+    sample: Tensor<B, 4>,
+    alpha_t: Tensor<B, 1>,
+    sigma_t: Tensor<B, 1>,
+    prediction_type: PredictionType,
+) -> Tensor<B, 4> {
+    match prediction_type {
+        PredictionType::Epsilon => model_output,
+        PredictionType::VPrediction => v_to_epsilon(model_output, sample, alpha_t, sigma_t),
+        PredictionType::Sample => {
+            // epsilon = (x - alpha_t * x0) / sigma_t
+            (sample - model_output * alpha_t.unsqueeze()) / sigma_t.unsqueeze()
+        }
+    }
+}
+
+/// Convert any prediction type to predicted x0
+pub fn to_sample<B: Backend>(
+    model_output: Tensor<B, 4>,
+    sample: Tensor<B, 4>,
+    alpha_t: Tensor<B, 1>,
+    sigma_t: Tensor<B, 1>,
+    prediction_type: PredictionType,
+) -> Tensor<B, 4> {
+    match prediction_type {
+        PredictionType::Epsilon => epsilon_to_sample(model_output, sample, alpha_t, sigma_t),
+        PredictionType::VPrediction => v_to_sample(model_output, sample, alpha_t, sigma_t),
+        PredictionType::Sample => model_output,
+    }
+}
+
+// ============================================================================
 // Schedule Configuration
 // ============================================================================
 
@@ -88,6 +191,14 @@ impl<B: Backend> NoiseSchedule<B> {
 
     /// Create the default SD 1.x schedule
     pub fn sd1x(device: &B::Device) -> Self {
+        Self::linear(1000, 0.00085, 0.012, device)
+    }
+
+    /// Create the default SD 2.x schedule (same as SD 1.x but uses v-prediction)
+    ///
+    /// SD 2.x uses the same linear beta schedule as SD 1.x but the model
+    /// is trained with v-prediction instead of epsilon prediction.
+    pub fn sd2x(device: &B::Device) -> Self {
         Self::linear(1000, 0.00085, 0.012, device)
     }
 

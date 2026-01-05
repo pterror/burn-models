@@ -109,7 +109,7 @@
 ### Future Architectures
 
 #### UNet-based (similar to current)
-- [ ] Stable Diffusion 2.x - OpenCLIP text encoder, 768/512 variants, v-prediction
+- [x] Stable Diffusion 2.x - OpenCLIP ViT-H/14 text encoder, v-prediction support in samplers
 - [ ] Stable Cascade - Würstchen architecture, latent cascade
 
 #### DiT-based (new architecture needed)

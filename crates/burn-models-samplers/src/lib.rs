@@ -20,9 +20,10 @@ pub mod sa_solver;
 pub mod res_multistep;
 
 pub use scheduler::{
-    NoiseSchedule, ScheduleConfig,
+    NoiseSchedule, ScheduleConfig, PredictionType,
     compute_sigmas, sigmas_from_timesteps, apply_karras_schedule,
     get_ancestral_step, sampler_timesteps,
+    to_epsilon, to_sample, v_to_epsilon, epsilon_to_v, v_to_sample, epsilon_to_sample,
 };
 pub use guidance::{apply_cfg_plus_plus, compute_tensor_std, CfgPlusPlusConfig};
 pub use ddim::{DdimSampler, DdimConfig, apply_guidance};
