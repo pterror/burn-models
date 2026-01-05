@@ -9,7 +9,8 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: 'Guide', link: '/' },
-      { text: 'API', link: '/api/' },
+      { text: 'Samplers', link: '/samplers' },
+      { text: 'Pipelines', link: '/pipelines' },
     ],
 
     sidebar: [
@@ -17,7 +18,15 @@ export default defineConfig({
         text: 'Guide',
         items: [
           { text: 'Introduction', link: '/' },
+          { text: 'Getting Started', link: '/getting-started' },
           { text: 'Architecture', link: '/architecture' },
+        ]
+      },
+      {
+        text: 'Reference',
+        items: [
+          { text: 'Pipelines', link: '/pipelines' },
+          { text: 'Samplers', link: '/samplers' },
         ]
       },
     ],
