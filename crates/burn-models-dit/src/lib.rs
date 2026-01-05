@@ -42,6 +42,7 @@ pub mod qwenimage;
 pub mod sd3;
 pub mod wan;
 pub mod zimage;
+pub mod sana;
 
 pub use auraflow::{AuraFlow, AuraFlowConfig, AuraFlowOutput, AuraFlowRuntime};
 pub use cogvideox::{CogVideoX, CogVideoXConfig, CogVideoXOutput, CogVideoXRuntime};
@@ -55,3 +56,4 @@ pub use qwenimage::{QwenImage, QwenImageConfig, QwenImageOutput, QwenImageRuntim
 pub use sd3::{Sd3, Sd3Config, Sd3Output, Sd3Runtime};
 pub use wan::{Wan, WanConfig, WanOutput, WanRuntime};
 pub use zimage::{ZImage, ZImageConfig, ZImageOutput, ZImageRuntime};
+pub use sana::{Sana, SanaConfig, SanaOutput, SanaRuntime};
