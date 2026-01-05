@@ -1,0 +1,13 @@
+[package]
+name = "burn-models-llm"
+version = "0.1.0"
+edition = "2024"
+description = "LLM implementations for burn-models"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+burn-models-core = { path = "../burn-models-core" }
+burn = { workspace = true }
+
+[dev-dependencies]
+burn-ndarray = { workspace = true }
