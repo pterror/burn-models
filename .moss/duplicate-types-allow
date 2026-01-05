@@ -1,0 +1,932 @@
+# Config variants share common sampling parameters by design
+InpaintConfig SampleConfig
+
+# Config variants share common sampling parameters by design
+SampleConfig SdxlSampleConfig
+
+# Config variants share common sampling parameters by design
+SampleConfig SdxlInpaintConfig
+
+# Config variants share common sampling parameters by design
+Img2ImgConfig InpaintConfig
+
+# Config variants share common sampling parameters by design
+Img2ImgConfig SdxlImg2ImgConfig
+
+# Config variants share common sampling parameters by design
+Img2ImgConfig SdxlInpaintConfig
+
+# Config variants share common sampling parameters by design
+InpaintConfig SdxlSampleConfig
+
+# Config variants share common sampling parameters by design
+InpaintConfig SdxlImg2ImgConfig
+
+# Config variants share common sampling parameters by design
+InpaintConfig SdxlInpaintConfig
+
+# Config variants share common sampling parameters by design
+SdxlInpaintConfig SdxlSampleConfig
+
+# Config variants share common sampling parameters by design
+SdxlImg2ImgConfig SdxlInpaintConfig
+
+# Pipeline variants share common components (unet, vae, text_encoder)
+StableDiffusion1x StableDiffusion1xImg2Img
+
+# Pipeline variants share common components (unet, vae, text_encoder)
+StableDiffusion1x StableDiffusion1xInpaint
+
+# Pipeline variants share common components (unet, vae, text_encoder)
+StableDiffusion1x StableDiffusionXLRefiner
+
+# Pipeline variants share common components (unet, vae, text_encoder)
+StableDiffusion1xImg2Img StableDiffusion1xInpaint
+
+# Pipeline variants share common components (unet, vae, text_encoder)
+StableDiffusion1xImg2Img StableDiffusionXLRefiner
+
+# Pipeline variants share common components (unet, vae, text_encoder)
+StableDiffusion1xInpaint StableDiffusionXLRefiner
+
+# SDXL pipeline variants share common components
+StableDiffusionXL StableDiffusionXLImg2Img
+
+# SDXL pipeline variants share common components
+StableDiffusionXL StableDiffusionXLInpaint
+
+# SDXL pipeline variants share common components
+StableDiffusionXLImg2Img StableDiffusionXLInpaint
+
+# Normalization layers share common fields (weight, bias, eps)
+GroupNorm LayerNorm
+
+# Linear and Conv LoRA weights share same structure
+LoraConvWeight LoraWeight
+
+# CLIP/OpenCLIP share architecture - OpenCLIP adds pool_type
+ClipConfig OpenClipConfig
+
+# CLIP/OpenCLIP encoders share architecture
+ClipTextEncoder OpenClipTextEncoder
+
+# CLIP/OpenCLIP transformer blocks share architecture
+OpenClipTransformerBlock TransformerBlock
+
+# CLIP/OpenCLIP attention share architecture
+MultiHeadSelfAttention OpenClipMultiHeadSelfAttention
+
+# CLIP/OpenCLIP FFN share architecture
+FeedForward OpenClipFeedForward
+
+# VAE and UNet ResBlocks share similar structure
+ResBlock ResnetBlock
+
+# SD and SDXL UNets share base architecture
+UNet UNetXL
+
+# SD and SDXL down blocks share architecture
+DownBlock DownBlockXL
+
+# SD and SDXL mid blocks share architecture
+MidBlock MidBlockXL
+
+# SD and SDXL up blocks share architecture
+UpBlock UpBlockXL
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DdimConfig Dpm3mSdeConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DdimConfig Dpm2mSdeHeunConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DdimSampler EulerSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DdimSampler EulerAncestralSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DdimSampler DpmPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DdimSampler DpmPlusPlusSdeSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2sAncestralConfig Dpm3mSdeConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2mSdeHeunConfig Dpm3mSdeConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm3mSdeSampler ResMultistepSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm3mSdeSampler ResMultistepSdeSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm3mSdeSampler UniPcSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DeisSampler Dpm3mSdeSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2mCfgPlusPlusConfig EulerCfgPlusPlusConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+EulerAncestralCfgPlusPlusSampler EulerCfgPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2sAncestralSampler EulerCfgPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2sAncestralCfgPlusPlusSampler EulerCfgPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DpmFastSampler EulerCfgPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+EulerCfgPlusPlusSampler HeunSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+EulerCfgPlusPlusSampler HeunPP2Sampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+EulerAncestralSampler EulerSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+EulerSampler HeunSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+EulerSampler HeunPP2Sampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DpmPlusPlusSampler EulerSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DpmPlusPlusSdeSampler EulerSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm3mSdeSampler SaSolver
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2Sampler EulerCfgPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2AncestralSampler EulerCfgPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2sAncestralSampler EulerAncestralCfgPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2sAncestralCfgPlusPlusSampler EulerAncestralCfgPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DpmFastSampler EulerAncestralCfgPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+EulerAncestralCfgPlusPlusSampler HeunSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+EulerAncestralCfgPlusPlusSampler HeunPP2Sampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2Sampler EulerAncestralCfgPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2AncestralSampler EulerAncestralCfgPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2mSdeHeunConfig Dpm2sAncestralConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2sAncestralCfgPlusPlusSampler Dpm2sAncestralSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2sAncestralSampler DpmFastSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2sAncestralSampler HeunSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2sAncestralSampler HeunPP2Sampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2Sampler Dpm2sAncestralSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2AncestralSampler Dpm2sAncestralSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2sAncestralCfgPlusPlusSampler HeunSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2sAncestralCfgPlusPlusSampler HeunPP2Sampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2Sampler Dpm2sAncestralCfgPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2AncestralSampler Dpm2sAncestralCfgPlusPlusSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2sAncestralCfgPlusPlusSampler DpmFastSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DpmFastSampler HeunSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DpmFastSampler HeunPP2Sampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DpmFastConfig ResMultistepConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2Config ResMultistepConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DpmConfig ResMultistepConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+ResMultistepSampler ResMultistepSdeSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DpmFastConfig UniPcConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2Config UniPcConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DpmConfig UniPcConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DeisConfig LmsConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+IpndmConfig LmsConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+DeisConfig IpndmConfig
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2Sampler DpmFastSampler
+
+# Sampler types share common fields (config, timesteps, sigmas)
+Dpm2AncestralSampler DpmFastSampler
+
+# Related types share common fields by design
+Dpm2Config DpmFastConfig
+
+# Related types share common fields by design
+DpmConfig DpmFastConfig
+
+# Related types share common fields by design
+HeunPP2Sampler HeunSampler
+
+# Related types share common fields by design
+Dpm2Sampler HeunSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler HeunSampler
+
+# Related types share common fields by design
+Dpm2Sampler HeunPP2Sampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler HeunPP2Sampler
+
+# Related types share common fields by design
+Dpm2Config DpmConfig
+
+# Related types share common fields by design
+Dpm2AncestralSampler Dpm2Sampler
+
+# Related types share common fields by design
+DpmPlusPlusSampler EulerAncestralSampler
+
+# Related types share common fields by design
+DpmPlusPlusSdeSampler EulerAncestralSampler
+
+# Related types share common fields by design
+UNetConfig UNetXLConfig
+
+# Pipeline variants share common components by design
+StableDiffusion1xImg2Img StableDiffusionXLImg2Img
+
+# Pipeline variants share common components by design
+StableDiffusion1xImg2Img StableDiffusionXLInpaint
+
+# Pipeline variants share common components by design
+StableDiffusion1xInpaint StableDiffusionXLImg2Img
+
+# Pipeline variants share common components by design
+StableDiffusion1xInpaint StableDiffusionXLInpaint
+
+# Pipeline variants share common components by design
+Decoder Encoder
+
+# Pipeline variants share common components by design
+StableDiffusion1x StableDiffusionXL
+
+# Pipeline variants share common components by design
+StableDiffusion1x StableDiffusionXLImg2Img
+
+# Pipeline variants share common components by design
+StableDiffusion1x StableDiffusionXLInpaint
+
+# Pipeline variants share common components by design
+StableDiffusionXLImg2Img StableDiffusionXLRefiner
+
+# Pipeline variants share common components by design
+StableDiffusionXLInpaint StableDiffusionXLRefiner
+
+# Pipeline variants share common components by design
+StableDiffusionXL StableDiffusionXLRefiner
+
+# Related types share common fields by design
+BaseRefinerConfig SampleConfig
+
+# Related types share common fields by design
+BaseRefinerConfig SdxlSampleConfig
+
+# Related types share common fields by design
+DecoderConfig EncoderConfig
+
+# Related types share common fields by design
+DdpmSampler LcmSampler
+
+# Related types share common fields by design
+ResMultistepSampler UniPcSampler
+
+# Related types share common fields by design
+DeisSampler ResMultistepSampler
+
+# Related types share common fields by design
+ResMultistepSampler SaSolver
+
+# Related types share common fields by design
+DeisSampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+DpmPlusPlusSdeSampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+ResMultistepSdeSampler SaSolver
+
+# Related types share common fields by design
+SaSolverConfig UniPcConfig
+
+# Related types share common fields by design
+DeisSampler UniPcSampler
+
+# Related types share common fields by design
+SaSolver UniPcSampler
+
+# Related types share common fields by design
+DeisSampler DpmFastSampler
+
+# Related types share common fields by design
+DeisSampler SaSolver
+
+# Related types share common fields by design
+DpmPlusPlusSampler DpmPlusPlusSdeSampler
+
+# Related types share common fields by design
+Img2ImgConfig SampleConfig
+
+# Related types share common fields by design
+SampleConfig SdxlImg2ImgConfig
+
+# Related types share common fields by design
+Img2ImgConfig SdxlSampleConfig
+
+# Related types share common fields by design
+SdxlImg2ImgConfig SdxlSampleConfig
+
+# Related types share common fields by design
+DdpmSampler EulerCfgPlusPlusSampler
+
+# Related types share common fields by design
+DdpmSampler EulerAncestralCfgPlusPlusSampler
+
+# Related types share common fields by design
+DdpmSampler Dpm2sAncestralSampler
+
+# Related types share common fields by design
+DdpmSampler HeunSampler
+
+# Related types share common fields by design
+DdpmSampler HeunPP2Sampler
+
+# Related types share common fields by design
+DdpmSampler Dpm2Sampler
+
+# Related types share common fields by design
+DdpmSampler Dpm2AncestralSampler
+
+# Related types share common fields by design
+DdpmSampler IpndmSampler
+
+# Related types share common fields by design
+DdpmSampler IpndmVSampler
+
+# Related types share common fields by design
+EulerCfgPlusPlusSampler LcmSampler
+
+# Related types share common fields by design
+EulerAncestralCfgPlusPlusSampler LcmSampler
+
+# Related types share common fields by design
+Dpm2sAncestralSampler LcmSampler
+
+# Related types share common fields by design
+HeunSampler LcmSampler
+
+# Related types share common fields by design
+HeunPP2Sampler LcmSampler
+
+# Related types share common fields by design
+Dpm2Sampler LcmSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler LcmSampler
+
+# Related types share common fields by design
+IpndmSampler LcmSampler
+
+# Related types share common fields by design
+IpndmVSampler LcmSampler
+
+# Related types share common fields by design
+Dpm3mSdeSampler EulerCfgPlusPlusSampler
+
+# Related types share common fields by design
+Dpm3mSdeSampler EulerAncestralCfgPlusPlusSampler
+
+# Related types share common fields by design
+Dpm2sAncestralSampler Dpm3mSdeSampler
+
+# Related types share common fields by design
+Dpm2sAncestralCfgPlusPlusSampler Dpm3mSdeSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler Dpm3mSdeSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler Dpm3mSdeSampler
+
+# Related types share common fields by design
+Dpm3mSdeSampler LmsSampler
+
+# Related types share common fields by design
+Dpm3mSdeSampler DpmFastSampler
+
+# Related types share common fields by design
+Dpm3mSdeSampler HeunSampler
+
+# Related types share common fields by design
+Dpm3mSdeSampler HeunPP2Sampler
+
+# Related types share common fields by design
+Dpm2Sampler Dpm3mSdeSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler Dpm3mSdeSampler
+
+# Related types share common fields by design
+Dpm3mSdeSampler EulerSampler
+
+# Related types share common fields by design
+Dpm3mSdeSampler EulerAncestralSampler
+
+# Related types share common fields by design
+Dpm3mSdeSampler DpmPlusPlusSampler
+
+# Related types share common fields by design
+Dpm3mSdeSampler DpmPlusPlusSdeSampler
+
+# Related types share common fields by design
+EulerCfgPlusPlusSampler ResMultistepSampler
+
+# Related types share common fields by design
+EulerCfgPlusPlusSampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+EulerCfgPlusPlusSampler UniPcSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler EulerCfgPlusPlusSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler EulerCfgPlusPlusSampler
+
+# Related types share common fields by design
+EulerCfgPlusPlusSampler LmsSampler
+
+# Related types share common fields by design
+DeisSampler EulerCfgPlusPlusSampler
+
+# Related types share common fields by design
+DpmAdaptiveSampler EulerCfgPlusPlusSampler
+
+# Related types share common fields by design
+EulerCfgPlusPlusSampler EulerSampler
+
+# Related types share common fields by design
+EulerAncestralSampler EulerCfgPlusPlusSampler
+
+# Related types share common fields by design
+DpmPlusPlusSampler EulerCfgPlusPlusSampler
+
+# Related types share common fields by design
+DpmPlusPlusSdeSampler EulerCfgPlusPlusSampler
+
+# Related types share common fields by design
+EulerCfgPlusPlusSampler SaSolver
+
+# Related types share common fields by design
+EulerAncestralCfgPlusPlusSampler ResMultistepSampler
+
+# Related types share common fields by design
+EulerAncestralCfgPlusPlusSampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+EulerAncestralCfgPlusPlusSampler UniPcSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler EulerAncestralCfgPlusPlusSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler EulerAncestralCfgPlusPlusSampler
+
+# Related types share common fields by design
+EulerAncestralCfgPlusPlusSampler LmsSampler
+
+# Related types share common fields by design
+DeisSampler EulerAncestralCfgPlusPlusSampler
+
+# Related types share common fields by design
+DpmAdaptiveSampler EulerAncestralCfgPlusPlusSampler
+
+# Related types share common fields by design
+EulerAncestralCfgPlusPlusSampler EulerSampler
+
+# Related types share common fields by design
+EulerAncestralCfgPlusPlusSampler EulerAncestralSampler
+
+# Related types share common fields by design
+DpmPlusPlusSampler EulerAncestralCfgPlusPlusSampler
+
+# Related types share common fields by design
+DpmPlusPlusSdeSampler EulerAncestralCfgPlusPlusSampler
+
+# Related types share common fields by design
+EulerAncestralCfgPlusPlusSampler SaSolver
+
+# Related types share common fields by design
+Dpm2sAncestralSampler ResMultistepSampler
+
+# Related types share common fields by design
+Dpm2sAncestralSampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+Dpm2sAncestralSampler UniPcSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler Dpm2sAncestralSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler Dpm2sAncestralSampler
+
+# Related types share common fields by design
+Dpm2sAncestralSampler LmsSampler
+
+# Related types share common fields by design
+DeisSampler Dpm2sAncestralSampler
+
+# Related types share common fields by design
+Dpm2sAncestralSampler DpmAdaptiveSampler
+
+# Related types share common fields by design
+Dpm2sAncestralSampler EulerSampler
+
+# Related types share common fields by design
+Dpm2sAncestralSampler EulerAncestralSampler
+
+# Related types share common fields by design
+Dpm2sAncestralSampler DpmPlusPlusSampler
+
+# Related types share common fields by design
+Dpm2sAncestralSampler DpmPlusPlusSdeSampler
+
+# Related types share common fields by design
+Dpm2sAncestralSampler SaSolver
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler Dpm2sAncestralCfgPlusPlusSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler Dpm2sAncestralCfgPlusPlusSampler
+
+# Related types share common fields by design
+Dpm2sAncestralCfgPlusPlusSampler LmsSampler
+
+# Related types share common fields by design
+Dpm2sAncestralCfgPlusPlusSampler EulerSampler
+
+# Related types share common fields by design
+Dpm2sAncestralCfgPlusPlusSampler EulerAncestralSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler ResMultistepSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler ResMultistepSampler
+
+# Related types share common fields by design
+LmsSampler ResMultistepSampler
+
+# Related types share common fields by design
+HeunSampler ResMultistepSampler
+
+# Related types share common fields by design
+HeunPP2Sampler ResMultistepSampler
+
+# Related types share common fields by design
+Dpm2Sampler ResMultistepSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler ResMultistepSampler
+
+# Related types share common fields by design
+EulerSampler ResMultistepSampler
+
+# Related types share common fields by design
+EulerAncestralSampler ResMultistepSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+LmsSampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+HeunSampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+HeunPP2Sampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+Dpm2Sampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+EulerSampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+EulerAncestralSampler ResMultistepSdeSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler UniPcSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler UniPcSampler
+
+# Related types share common fields by design
+LmsSampler UniPcSampler
+
+# Related types share common fields by design
+HeunSampler UniPcSampler
+
+# Related types share common fields by design
+HeunPP2Sampler UniPcSampler
+
+# Related types share common fields by design
+Dpm2Sampler UniPcSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler UniPcSampler
+
+# Related types share common fields by design
+EulerSampler UniPcSampler
+
+# Related types share common fields by design
+EulerAncestralSampler UniPcSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler Dpm2mSdeHeunSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler LmsSampler
+
+# Related types share common fields by design
+DeisSampler Dpm2mCfgPlusPlusSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler DpmFastSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler HeunSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler HeunPP2Sampler
+
+# Related types share common fields by design
+Dpm2Sampler Dpm2mCfgPlusPlusSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler Dpm2mCfgPlusPlusSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler EulerSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler EulerAncestralSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler DpmPlusPlusSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler DpmPlusPlusSdeSampler
+
+# Related types share common fields by design
+Dpm2mCfgPlusPlusSampler SaSolver
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler LmsSampler
+
+# Related types share common fields by design
+DeisSampler Dpm2mSdeHeunSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler DpmFastSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler HeunSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler HeunPP2Sampler
+
+# Related types share common fields by design
+Dpm2Sampler Dpm2mSdeHeunSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler Dpm2mSdeHeunSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler EulerSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler EulerAncestralSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler DpmPlusPlusSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler DpmPlusPlusSdeSampler
+
+# Related types share common fields by design
+Dpm2mSdeHeunSampler SaSolver
+
+# Related types share common fields by design
+DeisSampler LmsSampler
+
+# Related types share common fields by design
+DpmFastSampler LmsSampler
+
+# Related types share common fields by design
+HeunSampler LmsSampler
+
+# Related types share common fields by design
+HeunPP2Sampler LmsSampler
+
+# Related types share common fields by design
+Dpm2Sampler LmsSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler LmsSampler
+
+# Related types share common fields by design
+EulerSampler LmsSampler
+
+# Related types share common fields by design
+EulerAncestralSampler LmsSampler
+
+# Related types share common fields by design
+DpmPlusPlusSampler LmsSampler
+
+# Related types share common fields by design
+DpmPlusPlusSdeSampler LmsSampler
+
+# Related types share common fields by design
+LmsSampler SaSolver
+
+# Related types share common fields by design
+DeisSampler HeunSampler
+
+# Related types share common fields by design
+DeisSampler HeunPP2Sampler
+
+# Related types share common fields by design
+DeisSampler Dpm2Sampler
+
+# Related types share common fields by design
+DeisSampler Dpm2AncestralSampler
+
+# Related types share common fields by design
+DeisSampler EulerSampler
+
+# Related types share common fields by design
+DeisSampler EulerAncestralSampler
+
+# Related types share common fields by design
+DpmFastSampler EulerSampler
+
+# Related types share common fields by design
+DpmFastSampler EulerAncestralSampler
+
+# Related types share common fields by design
+DpmAdaptiveSampler HeunSampler
+
+# Related types share common fields by design
+DpmAdaptiveSampler HeunPP2Sampler
+
+# Related types share common fields by design
+Dpm2Sampler DpmAdaptiveSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler DpmAdaptiveSampler
+
+# Related types share common fields by design
+EulerAncestralSampler HeunSampler
+
+# Related types share common fields by design
+DpmPlusPlusSampler HeunSampler
+
+# Related types share common fields by design
+DpmPlusPlusSdeSampler HeunSampler
+
+# Related types share common fields by design
+HeunSampler SaSolver
+
+# Related types share common fields by design
+EulerAncestralSampler HeunPP2Sampler
+
+# Related types share common fields by design
+DpmPlusPlusSampler HeunPP2Sampler
+
+# Related types share common fields by design
+DpmPlusPlusSdeSampler HeunPP2Sampler
+
+# Related types share common fields by design
+HeunPP2Sampler SaSolver
+
+# Related types share common fields by design
+Dpm2Sampler EulerSampler
+
+# Related types share common fields by design
+Dpm2Sampler EulerAncestralSampler
+
+# Related types share common fields by design
+Dpm2Sampler DpmPlusPlusSampler
+
+# Related types share common fields by design
+Dpm2Sampler DpmPlusPlusSdeSampler
+
+# Related types share common fields by design
+Dpm2Sampler SaSolver
+
+# Related types share common fields by design
+Dpm2AncestralSampler EulerSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler EulerAncestralSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler DpmPlusPlusSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler DpmPlusPlusSdeSampler
+
+# Related types share common fields by design
+Dpm2AncestralSampler SaSolver
+
+# Related types share common fields by design
+EulerSampler SaSolver
+
+# Related types share common fields by design
+EulerAncestralSampler SaSolver
+
+# Related types share common fields by design
+IpndmSampler IpndmVSampler
+
+# Related types share common fields by design
+StableDiffusion1xImg2Img StableDiffusionXL
+
+# Related types share common fields by design
+StableDiffusion1xInpaint StableDiffusionXL
