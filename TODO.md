@@ -148,6 +148,7 @@
 - [x] SwiGLU / GeGLU activations
 - [x] Multi-head attention with GQA support
 - [x] MoE (Mixture of Experts) routing
+- [x] DiT components (AdaLayerNorm, DiTBlock, PatchEmbed)
 
 #### Inference Optimization
 - [x] KV cache for autoregressive models
