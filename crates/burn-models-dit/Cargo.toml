@@ -1,9 +1,10 @@
 [package]
 name = "burn-models-dit"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+rust-version.workspace = true
 description = "DiT-based diffusion models (Flux, SD3, PixArt)"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 
 [dependencies]
 burn.workspace = true

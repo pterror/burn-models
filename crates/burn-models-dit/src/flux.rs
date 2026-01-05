@@ -607,7 +607,7 @@ impl<B: Backend> Flux<B> {
         let cond = self.time_embed.forward(t_vec);
 
         // Add guidance embedding if present
-        let cond = if let (Some(ref g_embed), Some(g)) = (&self.guidance_embed, guidance) {
+        let cond = if let (Some(g_embed), Some(g)) = (&self.guidance_embed, guidance) {
             let g_vec = Tensor::<B, 1>::from_floats([g], &device);
             cond + g_embed.forward(g_vec)
         } else {

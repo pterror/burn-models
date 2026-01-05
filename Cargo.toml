@@ -13,6 +13,11 @@ members = [
     "crates/burn-models-dit",
 ]
 
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+
 [workspace.dependencies]
 # Internal crates
 burn-models-core = { path = "crates/burn-models-core" }
@@ -25,14 +30,14 @@ burn-models-llm = { path = "crates/burn-models-llm" }
 burn-models-dit = { path = "crates/burn-models-dit" }
 
 # External dependencies
-burn = "0.16"
-burn-ndarray = "0.16"
-burn-tch = "0.16"
-burn-wgpu = "0.16"
-burn-cuda = "0.16"
-bytemuck = "1.21"
-half = "2.4"
+burn = "0.16.1"
+burn-ndarray = "0.16.1"
+burn-tch = "0.16.1"
+burn-wgpu = "0.16.1"
+burn-cuda = "0.16.1"
+bytemuck = "1.24"
+half = "2.7"
 memmap2 = "0.9"
-regex = "1.11"
-safetensors = "0.5"
+regex = "1.12"
+safetensors = "0.7"
 thiserror = "2.0"

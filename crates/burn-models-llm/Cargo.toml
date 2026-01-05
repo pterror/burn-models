@@ -1,9 +1,10 @@
 [package]
 name = "burn-models-llm"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 description = "LLM implementations for burn-models"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 
 [dependencies]
 burn-models-core = { path = "../burn-models-core" }

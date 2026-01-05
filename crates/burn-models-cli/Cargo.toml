@@ -1,9 +1,10 @@
 [package]
 name = "burn-models-cli"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+rust-version.workspace = true
 description = "Command-line interface for burn-models Stable Diffusion"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 
 [[bin]]
 name = "burn-models"
