@@ -100,3 +100,18 @@
 - [x] xFormers-style memory efficient attention
 - [x] Model offloading (sequential CPU/GPU)
 - [x] Batch processing
+
+### Future Architectures
+
+#### UNet-based (similar to current)
+- [ ] Stable Diffusion 2.x - OpenCLIP text encoder, 768/512 variants, v-prediction
+- [ ] Stable Cascade - Würstchen architecture, latent cascade
+
+#### DiT-based (new architecture needed)
+- [ ] Flux (Black Forest Labs) - Flow matching, DiT architecture
+- [ ] Stable Diffusion 3 / 3.5 - MMDiT (Multimodal Diffusion Transformer), rectified flow
+- [ ] Z-Image (Alibaba) - Single-stream DiT (S3-DiT), 6B params, very fast
+- [ ] Qwen-Image (Alibaba) - 20B MMDiT, Qwen2.5-VL text encoder, Apache 2.0
+- [ ] PixArt-α/Σ - Efficient DiT, T5 text encoder
+- [ ] AuraFlow - Open source flow-based
+- [ ] Hunyuan-DiT - Bilingual DiT model
