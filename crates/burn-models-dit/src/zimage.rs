@@ -188,6 +188,18 @@ impl<B: Backend> ZImageTimestepEmbed<B> {
         let x = burn::tensor::activation::silu(x);
         self.linear2.forward(x)
     }
+
+    /// Forward pass for a single scalar timestep (no tensor allocation).
+    pub fn forward_scalar(&self, t: f32) -> Tensor<B, 2> {
+        let angles = self.freqs.clone() * t;
+        let sin_emb = angles.clone().sin();
+        let cos_emb = angles.cos();
+        let emb = Tensor::cat(vec![sin_emb, cos_emb], 0).unsqueeze_dim(0);
+
+        let x = self.linear1.forward(emb);
+        let x = burn::tensor::activation::silu(x);
+        self.linear2.forward(x)
+    }
 }
 
 /// Z-Image Block Configuration
@@ -427,8 +439,6 @@ impl<B: Backend> ZImage<B> {
         text_embeds: Tensor<B, 3>,
         runtime: &ZImageRuntime<B>,
     ) -> ZImageOutput<B> {
-        let device = latents.device();
-
         // Patchify image
         let (img_tokens, nh, nw) = self.patchify(latents);
         let [_b, img_len, _hidden] = img_tokens.dims();
@@ -440,9 +450,8 @@ impl<B: Backend> ZImage<B> {
         // Concatenate text + image (single-stream)
         let x = Tensor::cat(vec![text_tokens, img_tokens], 1);
 
-        // Timestep embedding
-        let t_vec = Tensor::<B, 1>::from_floats([timestep], &device);
-        let cond = self.time_embed.forward(t_vec);
+        // Timestep embedding (using scalar forward to avoid tensor allocation)
+        let cond = self.time_embed.forward_scalar(timestep);
 
         // DiT blocks
         let mut x = x;

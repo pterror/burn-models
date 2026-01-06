@@ -233,6 +233,17 @@ impl<B: Backend> HunyuanTimestepEmbed<B> {
         let x = burn::tensor::activation::silu(x);
         self.linear2.forward(x)
     }
+
+    /// Forward pass for a single scalar timestep (no tensor allocation)
+    pub fn forward_scalar(&self, t: f32) -> Tensor<B, 2> {
+        let angles = self.freqs.clone() * t;
+        let sin_emb = angles.clone().sin();
+        let cos_emb = angles.cos();
+        let emb = Tensor::cat(vec![sin_emb, cos_emb], 0).unsqueeze_dim(0);
+        let x = self.linear1.forward(emb);
+        let x = burn::tensor::activation::silu(x);
+        self.linear2.forward(x)
+    }
 }
 
 /// Hunyuan Block Configuration
@@ -520,7 +531,6 @@ impl<B: Backend> HunyuanDiT<B> {
         clip_pooled: Tensor<B, 2>,
         runtime: &HunyuanDiTRuntime<B>,
     ) -> HunyuanDiTOutput<B> {
-        let device = latents.device();
         let [_batch, _channels, height, width] = latents.dims();
 
         // Patchify
@@ -531,9 +541,8 @@ impl<B: Backend> HunyuanDiT<B> {
         let mt5_ctx = self.mt5_proj.forward(mt5_embeds);
         let context = Tensor::cat(vec![clip_ctx, mt5_ctx], 1);
 
-        // Timestep + style conditioning
-        let t_vec = Tensor::<B, 1>::from_floats([timestep], &device);
-        let t_emb = self.time_embed.forward(t_vec);
+        // Timestep + style conditioning (using scalar forward to avoid tensor allocation)
+        let t_emb = self.time_embed.forward_scalar(timestep);
         let style_emb = self.style_embed.forward(clip_pooled);
         let cond = t_emb + style_emb;
 

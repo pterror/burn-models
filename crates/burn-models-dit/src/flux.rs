@@ -198,7 +198,7 @@ pub fn timestep_freqs<B: Backend>(embed_dim: usize, device: &B::Device) -> Tenso
 }
 
 impl<B: Backend> TimestepEmbedding<B> {
-    /// Forward pass - converts timestep scalar to hidden dimension embedding
+    /// Forward pass for batched timesteps
     ///
     /// Uses sinusoidal positional encoding followed by MLP
     pub fn forward(&self, t: Tensor<B, 1>) -> Tensor<B, 2> {
@@ -212,6 +212,24 @@ impl<B: Backend> TimestepEmbedding<B> {
         let sin_emb = angles.clone().sin();
         let cos_emb = angles.cos();
         let emb = Tensor::cat(vec![sin_emb, cos_emb], 1); // [batch, embed_dim]
+
+        // MLP
+        let x = self.linear1.forward(emb);
+        let x = burn::tensor::activation::silu(x);
+        self.linear2.forward(x)
+    }
+
+    /// Forward pass for a single scalar timestep (no tensor allocation)
+    ///
+    /// More efficient than `forward` when processing one timestep at a time.
+    pub fn forward_scalar(&self, t: f32) -> Tensor<B, 2> {
+        // Multiply precomputed freqs by scalar directly (no tensor creation)
+        let angles = self.freqs.clone() * t;
+
+        // Concatenate sin and cos
+        let sin_emb = angles.clone().sin();
+        let cos_emb = angles.cos();
+        let emb = Tensor::cat(vec![sin_emb, cos_emb], 0).unsqueeze_dim(0); // [1, embed_dim]
 
         // MLP
         let x = self.linear1.forward(emb);
@@ -590,7 +608,6 @@ impl<B: Backend> Flux<B> {
         runtime: &FluxRuntime<B>,
     ) -> FluxOutput<B> {
         let [batch, _channels, height, width] = latents.dims();
-        let device = latents.device();
 
         // Patchify image
         let img = self.img_embed.forward(latents);
@@ -600,14 +617,12 @@ impl<B: Backend> Flux<B> {
         let txt = self.txt_embed.forward(txt_embeds);
         let [_, _txt_len, _] = txt.dims();
 
-        // Timestep embedding
-        let t_vec = Tensor::<B, 1>::from_floats([timestep], &device);
-        let cond = self.time_embed.forward(t_vec);
+        // Timestep embedding (using scalar forward to avoid tensor allocation)
+        let cond = self.time_embed.forward_scalar(timestep);
 
         // Add guidance embedding if present
         let cond = if let (Some(g_embed), Some(g)) = (&self.guidance_embed, guidance) {
-            let g_vec = Tensor::<B, 1>::from_floats([g], &device);
-            cond + g_embed.forward(g_vec)
+            cond + g_embed.forward_scalar(g)
         } else {
             cond
         };

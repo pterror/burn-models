@@ -206,6 +206,17 @@ impl<B: Backend> WanTimestepEmbed<B> {
         let x = burn::tensor::activation::silu(x);
         self.linear2.forward(x)
     }
+
+    /// Forward pass for a single scalar timestep (no tensor allocation)
+    pub fn forward_scalar(&self, t: f32) -> Tensor<B, 2> {
+        let angles = self.freqs.clone() * t;
+        let sin_emb = angles.clone().sin();
+        let cos_emb = angles.cos();
+        let emb = Tensor::cat(vec![sin_emb, cos_emb], 0).unsqueeze_dim(0);
+        let x = self.linear1.forward(emb);
+        let x = burn::tensor::activation::silu(x);
+        self.linear2.forward(x)
+    }
 }
 
 /// Wan Block Configuration
@@ -625,17 +636,14 @@ impl<B: Backend> Wan<B> {
         text_embeds: Tensor<B, 3>,
         runtime: &WanRuntime<B>,
     ) -> WanOutput<B> {
-        let device = video_latents.device();
-
         // Patchify video
         let (x, nt, nh, nw, channels) = self.patchify(video_latents);
 
         // Project text
         let context = self.text_embed.forward(text_embeds);
 
-        // Timestep embedding
-        let t_vec = Tensor::<B, 1>::from_floats([timestep], &device);
-        let cond = self.time_embed.forward(t_vec);
+        // Timestep embedding (using scalar forward to avoid tensor allocation)
+        let cond = self.time_embed.forward_scalar(timestep);
 
         // DiT + MoE blocks
         let mut x = x;

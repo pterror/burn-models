@@ -189,6 +189,17 @@ impl<B: Backend> AuraFlowTimestepEmbed<B> {
         let x = burn::tensor::activation::silu(x);
         self.linear2.forward(x)
     }
+
+    /// Forward pass for a single scalar timestep (no tensor allocation)
+    pub fn forward_scalar(&self, t: f32) -> Tensor<B, 2> {
+        let angles = self.freqs.clone() * t;
+        let sin_emb = angles.clone().sin();
+        let cos_emb = angles.cos();
+        let emb = Tensor::cat(vec![sin_emb, cos_emb], 0).unsqueeze_dim(0);
+        let x = self.linear1.forward(emb);
+        let x = burn::tensor::activation::silu(x);
+        self.linear2.forward(x)
+    }
 }
 
 /// AuraFlow Block Configuration
@@ -460,7 +471,6 @@ impl<B: Backend> AuraFlow<B> {
         text_embeds: Tensor<B, 3>,
         runtime: &AuraFlowRuntime<B>,
     ) -> AuraFlowOutput<B> {
-        let device = latents.device();
         let [_batch, _channels, height, width] = latents.dims();
 
         // Patchify
@@ -469,9 +479,8 @@ impl<B: Backend> AuraFlow<B> {
         // Project text
         let c = self.text_embed.forward(text_embeds);
 
-        // Timestep embedding
-        let t_vec = Tensor::<B, 1>::from_floats([timestep], &device);
-        let cond = self.time_embed.forward(t_vec);
+        // Timestep embedding (using scalar forward to avoid tensor allocation)
+        let cond = self.time_embed.forward_scalar(timestep);
 
         // MMDiT blocks with joint attention
         let mut x = x;

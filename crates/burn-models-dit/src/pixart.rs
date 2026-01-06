@@ -224,6 +224,17 @@ impl<B: Backend> PixArtTimestepEmbed<B> {
         let x = burn::tensor::activation::silu(x);
         self.linear2.forward(x)
     }
+
+    /// Forward pass for a single scalar timestep (no tensor allocation)
+    pub fn forward_scalar(&self, t: f32) -> Tensor<B, 2> {
+        let angles = self.freqs.clone() * t;
+        let sin_emb = angles.clone().sin();
+        let cos_emb = angles.cos();
+        let emb = Tensor::cat(vec![sin_emb, cos_emb], 0).unsqueeze_dim(0);
+        let x = self.linear1.forward(emb);
+        let x = burn::tensor::activation::silu(x);
+        self.linear2.forward(x)
+    }
 }
 
 /// PixArt Block Configuration
@@ -481,7 +492,6 @@ impl<B: Backend> PixArt<B> {
         timestep: f32,
         text_embeds: Tensor<B, 3>,
     ) -> PixArtOutput<B> {
-        let device = latents.device();
         let [batch, _channels, height, width] = latents.dims();
 
         // Patchify
@@ -493,9 +503,8 @@ impl<B: Backend> PixArt<B> {
         let pos_embed = pos_embed.repeat_dim(0, batch);
         let x = x + pos_embed;
 
-        // Timestep embedding
-        let t_vec = Tensor::<B, 1>::from_floats([timestep], &device);
-        let cond = self.time_embed.forward(t_vec);
+        // Timestep embedding (using scalar forward to avoid tensor allocation)
+        let cond = self.time_embed.forward_scalar(timestep);
 
         // DiT blocks with cross-attention
         let mut x = x;

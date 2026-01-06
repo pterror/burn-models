@@ -196,6 +196,21 @@ impl<B: Backend> QwenImageTimestepEmbed<B> {
         let x = burn::tensor::activation::silu(x);
         self.linear2.forward(x)
     }
+
+    /// Forward pass for a single scalar timestep with pooled embeddings (no tensor allocation for timestep).
+    pub fn forward_scalar(&self, t: f32, pooled: Tensor<B, 2>) -> Tensor<B, 2> {
+        let angles = self.freqs.clone() * t;
+        let sin_emb = angles.clone().sin();
+        let cos_emb = angles.cos();
+        let time_emb = Tensor::cat(vec![sin_emb, cos_emb], 0).unsqueeze_dim(0);
+
+        // Concatenate time embedding with pooled text embedding
+        let emb = Tensor::cat(vec![time_emb, pooled], 1);
+
+        let x = self.linear1.forward(emb);
+        let x = burn::tensor::activation::silu(x);
+        self.linear2.forward(x)
+    }
 }
 
 /// Qwen-Image Block Configuration
@@ -505,17 +520,14 @@ impl<B: Backend> QwenImage<B> {
         pooled_embeds: Tensor<B, 2>,
         runtime: &QwenImageRuntime<B>,
     ) -> QwenImageOutput<B> {
-        let device = latents.device();
-
         // Patchify image
         let (img, nh, nw) = self.patchify(latents);
 
         // Project text
         let txt = self.text_embed.forward(text_embeds);
 
-        // Timestep embedding with pooled text conditioning
-        let t_vec = Tensor::<B, 1>::from_floats([timestep], &device);
-        let cond = self.time_embed.forward(t_vec, pooled_embeds);
+        // Timestep embedding with pooled text conditioning (using scalar forward to avoid tensor allocation)
+        let cond = self.time_embed.forward_scalar(timestep, pooled_embeds);
 
         // MMDiT blocks
         let mut img = img;

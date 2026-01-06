@@ -217,6 +217,17 @@ impl<B: Backend> MochiTimestepEmbed<B> {
         let x = burn::tensor::activation::silu(x);
         self.linear2.forward(x)
     }
+
+    /// Forward pass for a single scalar timestep (no tensor allocation)
+    pub fn forward_scalar(&self, t: f32) -> Tensor<B, 2> {
+        let angles = self.freqs.clone() * t;
+        let sin_emb = angles.clone().sin();
+        let cos_emb = angles.cos();
+        let emb = Tensor::cat(vec![sin_emb, cos_emb], 0).unsqueeze_dim(0);
+        let x = self.linear1.forward(emb);
+        let x = burn::tensor::activation::silu(x);
+        self.linear2.forward(x)
+    }
 }
 
 /// Mochi Text Block Configuration
@@ -620,8 +631,6 @@ impl<B: Backend> Mochi<B> {
         text_embeds: Tensor<B, 3>,
         runtime: &MochiRuntime<B>,
     ) -> MochiOutput<B> {
-        let device = video_latents.device();
-
         // Patchify video
         let (x, nt, nh, nw, channels) = self.patchify(video_latents);
         let [_batch, _seq_len, _hidden] = x.dims();
@@ -629,9 +638,8 @@ impl<B: Backend> Mochi<B> {
         // Project text
         let mut text = self.text_embed.forward(text_embeds);
 
-        // Timestep embedding
-        let t_vec = Tensor::<B, 1>::from_floats([timestep], &device);
-        let cond = self.time_embed.forward(t_vec);
+        // Timestep embedding (using scalar forward to avoid tensor allocation)
+        let cond = self.time_embed.forward_scalar(timestep);
 
         // Process text through text blocks
         for block in &self.text_blocks {
