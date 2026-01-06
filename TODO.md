@@ -430,6 +430,11 @@ Comparison: ComfyUI does SDXL @ 20 steps in ~26s (~1.3s/step). We're 37% slower 
   - Remaining issues:
     1. VAE decoder lacks CompVis naming support (separate file prefixes)
     2. Needs testing with actual CompVis checkpoint
+- [ ] Investigate white output regression (2026-01-07)
+  - After optional attention changes, output is pure white (all 255)
+  - May be f16-specific type conversion issue with timestep/freq tensors
+  - Test with --precision f32 to isolate
+  - Check if TensorData::new(vec![t as f32]) converts correctly to f16 backend
 
 ### f16 Performance Investigation (2026-01-07)
 
