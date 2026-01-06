@@ -229,10 +229,18 @@ See `docs/cubecl-guide.md` for implementation details.
     - Detects prefix (model.diffusion_model, unet, etc.)
     - Loads time embedding, conv_in, all down/mid/up blocks, conv_out
     - Each block: ResBlock, SpatialTransformer, Downsample/Upsample
+    - **Note**: Currently supports HF diffusers naming only. Single-file checkpoints
+      (CivitAI/CompVis format) use different naming and need mapping:
+      - CompVis: `input_blocks`/`output_blocks`, `in_layers.0/2`
+      - HF: `down_blocks`/`up_blocks`, `norm1/conv1`
   - [x] VAE decoder loader (`SdWeightLoader::load_vae_decoder`)
     - Detects prefix (decoder, vae.decoder, first_stage_model.decoder)
     - Loads conv_in, mid blocks, all up blocks, conv_out
     - Each block: ResnetBlock, SelfAttention, Upsample
+  - [ ] CompVis naming support for single-file checkpoints (CivitAI models)
+    - Map `input_blocks`/`middle_block`/`output_blocks` to HF naming
+    - Or add separate CompVis loader variant
+    - Affects UNet and VAE loaders
 
 ### Future Architectures
 
