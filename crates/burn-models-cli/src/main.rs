@@ -13,6 +13,16 @@ use image::{ImageBuffer, Rgb};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 
+/// Float precision for inference
+#[derive(Debug, Clone, Copy, ValueEnum, Default)]
+pub enum Precision {
+    /// 32-bit float (faster, more VRAM)
+    #[default]
+    F32,
+    /// 16-bit float (slower, less VRAM)
+    F16,
+}
+
 use burn_models::DiffusionPipeline;
 use burn_models_clip::{ClipConfig, ClipTokenizer};
 use burn_models_convert::sd_loader::SdWeightLoader;
@@ -92,6 +102,15 @@ enum Commands {
         /// LoRA scales (same order as --lora, default 1.0)
         #[arg(long = "lora-scale", value_name = "SCALE")]
         lora_scales: Vec<f64>,
+
+        /// Float precision (f32 = faster, f16 = less VRAM)
+        #[arg(long, value_enum, default_value = "f32")]
+        precision: Precision,
+
+        /// Debug modes (comma-separated): timing, shapes, all
+        /// Examples: --debug timing  --debug shapes,timing  --debug all
+        #[arg(long, value_delimiter = ',', num_args = 0..)]
+        debug: Vec<String>,
     },
 
     /// Transform an existing image based on a prompt
@@ -270,6 +289,8 @@ fn run_sd1x_generate(
     guidance: f64,
     _loras: &[PathBuf],
     _lora_scales: &[f64],
+    precision: Precision,
+    debug: &[String],
 ) -> Result<()> {
     #[cfg(feature = "wgpu")]
     {
@@ -278,24 +299,65 @@ fn run_sd1x_generate(
         let device = WgpuDevice::default();
         run_sd1x_generate_impl::<Backend>(
             prompt, negative, output, vocab, weights,
-            width, height, steps, guidance, &device,
+            width, height, steps, guidance, &device, debug,
         )
     }
 
-    #[cfg(all(feature = "ndarray", not(feature = "wgpu")))]
+    #[cfg(all(feature = "cuda", not(feature = "wgpu")))]
+    {
+        use burn_cuda::{Cuda, CudaDevice};
+        let device = CudaDevice::default();
+
+        match precision {
+            Precision::F16 => {
+                use half::f16;
+                type Backend = Cuda<f16>;
+                run_sd1x_generate_impl::<Backend>(
+                    prompt, negative, output, vocab, weights,
+                    width, height, steps, guidance, &device, debug,
+                )
+            }
+            Precision::F32 => {
+                type Backend = Cuda<f32>;
+                run_sd1x_generate_impl::<Backend>(
+                    prompt, negative, output, vocab, weights,
+                    width, height, steps, guidance, &device, debug,
+                )
+            }
+        }
+    }
+
+    #[cfg(all(feature = "ndarray", not(any(feature = "wgpu", feature = "cuda"))))]
     {
         use burn_ndarray::NdArray;
         type Backend = NdArray<f32>;
         let device = Default::default();
+        let _ = precision; // ndarray only supports f32
         run_sd1x_generate_impl::<Backend>(
             prompt, negative, output, vocab, weights,
-            width, height, steps, guidance, &device,
+            width, height, steps, guidance, &device, debug,
         )
     }
 
-    #[cfg(not(any(feature = "wgpu", feature = "ndarray")))]
+    #[cfg(not(any(feature = "wgpu", feature = "ndarray", feature = "cuda")))]
     {
-        anyhow::bail!("No backend enabled. Enable 'wgpu' or 'ndarray' feature.")
+        anyhow::bail!("No backend enabled. Enable 'wgpu', 'cuda', or 'ndarray' feature.")
+    }
+}
+
+/// Debug flags parsed from --debug option
+struct DebugFlags {
+    timing: bool,
+    shapes: bool,
+}
+
+impl DebugFlags {
+    fn from_args(debug: &[String]) -> Self {
+        let all = debug.iter().any(|s| s == "all") || debug.is_empty() && false;
+        Self {
+            timing: all || debug.iter().any(|s| s == "timing"),
+            shapes: all || debug.iter().any(|s| s == "shapes"),
+        }
     }
 }
 
@@ -312,7 +374,12 @@ fn run_sd1x_generate_impl<B: Backend>(
     steps: usize,
     guidance: f64,
     device: &B::Device,
+    debug: &[String],
 ) -> Result<()> {
+    use std::time::Instant;
+    let debug_flags = DebugFlags::from_args(debug);
+    let total_start = Instant::now();
+
     let pb = ProgressBar::new(100);
     pb.set_style(
         ProgressStyle::default_bar()
@@ -323,38 +390,58 @@ fn run_sd1x_generate_impl<B: Backend>(
     // Step 1: Load tokenizer (embedded vocab or from file)
     pb.set_message("Loading tokenizer...");
     pb.set_position(5);
+    let start = Instant::now();
     let tokenizer = match vocab {
         Some(path) => ClipTokenizer::from_file(path)
             .context("Failed to load vocabulary file")?,
         None => ClipTokenizer::new(), // Use embedded CLIP vocabulary
     };
+    if debug_flags.timing {
+        eprintln!("[timing] tokenizer: {:?}", start.elapsed());
+    }
 
     // Step 2: Open weight loader
     pb.set_message("Opening weights...");
     pb.set_position(10);
+    let start = Instant::now();
     let mut loader = SdWeightLoader::open(weights)
         .context("Failed to open weights")?;
+    if debug_flags.timing {
+        eprintln!("[timing] open weights: {:?}", start.elapsed());
+    }
 
     // Step 3: Load CLIP text encoder
     pb.set_message("Loading CLIP text encoder...");
     pb.set_position(15);
+    let start = Instant::now();
     let clip_config = ClipConfig::sd1x();
     let text_encoder = loader.load_clip_text_encoder::<B>(&clip_config, device)
         .context("Failed to load CLIP text encoder")?;
+    if debug_flags.timing {
+        eprintln!("[timing] load CLIP: {:?}", start.elapsed());
+    }
 
     // Step 4: Load UNet
     pb.set_message("Loading UNet...");
     pb.set_position(30);
+    let start = Instant::now();
     let unet_config = UNetConfig::sd1x();
     let unet = loader.load_unet::<B>(&unet_config, device)
         .context("Failed to load UNet")?;
+    if debug_flags.timing {
+        eprintln!("[timing] load UNet: {:?}", start.elapsed());
+    }
 
     // Step 5: Load VAE decoder
     pb.set_message("Loading VAE decoder...");
     pb.set_position(50);
+    let start = Instant::now();
     let vae_config = DecoderConfig::sd();
     let vae_decoder = loader.load_vae_decoder::<B>(&vae_config, device)
         .context("Failed to load VAE decoder")?;
+    if debug_flags.timing {
+        eprintln!("[timing] load VAE: {:?}", start.elapsed());
+    }
 
     // Step 6: Create pipeline
     pb.set_message("Initializing pipeline...");
@@ -371,6 +458,7 @@ fn run_sd1x_generate_impl<B: Backend>(
     // Step 7: Generate image
     pb.set_message("Generating image...");
     pb.set_position(60);
+    let start = Instant::now();
     let config = burn_models::SampleConfig {
         width,
         height,
@@ -380,10 +468,14 @@ fn run_sd1x_generate_impl<B: Backend>(
     };
 
     let image_tensor = pipeline.generate(prompt, negative, &config);
+    if debug_flags.timing {
+        eprintln!("[timing] inference ({} steps): {:?}", steps, start.elapsed());
+    }
 
     // Step 8: Convert to image and save
     pb.set_message("Saving image...");
     pb.set_position(95);
+    let start = Instant::now();
     let rgb_data = burn_models::tensor_to_rgb(image_tensor.clone());
     let [_, _, h, w] = image_tensor.dims();
 
@@ -391,9 +483,16 @@ fn run_sd1x_generate_impl<B: Backend>(
         ImageBuffer::from_raw(w as u32, h as u32, rgb_data)
             .context("Failed to create image buffer")?;
     img.save(output)?;
+    if debug_flags.timing {
+        eprintln!("[timing] save image: {:?}", start.elapsed());
+    }
 
     pb.finish_and_clear();
     println!("Image saved to: {}", output.display());
+
+    if debug_flags.timing {
+        eprintln!("[timing] total: {:?}", total_start.elapsed());
+    }
 
     Ok(())
 }
@@ -419,6 +518,8 @@ fn main() -> Result<()> {
             weights,
             loras,
             lora_scales,
+            precision,
+            debug,
         } => {
             println!("burn-models: Stable Diffusion in pure Rust\n");
             println!("Configuration:");
@@ -426,6 +527,7 @@ fn main() -> Result<()> {
             println!("  Size:     {}x{}", width, height);
             println!("  Steps:    {}", steps);
             println!("  Guidance: {}", guidance);
+            println!("  Precision: {:?}", precision);
             println!("  Vocab:    {}", vocab.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "(embedded)".to_string()));
             println!("  Weights:  {}", weights.display());
             if !loras.is_empty() {
@@ -455,7 +557,7 @@ fn main() -> Result<()> {
                     run_sd1x_generate(
                         &prompt, &negative, &output, vocab.as_ref(), &weights,
                         width, height, steps, guidance,
-                        &loras, &lora_scales,
+                        &loras, &lora_scales, precision, &debug,
                     )?;
                 }
                 ModelType::Sdxl | ModelType::SdxlRefiner => {

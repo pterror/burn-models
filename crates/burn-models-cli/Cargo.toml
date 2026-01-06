@@ -10,12 +10,16 @@ license.workspace = true
 name = "burn-models"
 path = "src/main.rs"
 
+[[bin]]
+name = "inspect-safetensors"
+path = "src/bin/inspect-safetensors.rs"
+
 [features]
 default = ["wgpu"]
 ndarray = ["burn-models/ndarray", "burn-ndarray"]
 tch = ["burn-models/tch"]
 wgpu = ["burn-models/wgpu", "burn-wgpu"]
-cuda = ["burn-models/cuda"]
+cuda = ["burn-models/cuda", "burn-cuda"]
 llm-serve = ["burn-models-llm/serve", "tokio"]
 
 [dependencies]
@@ -31,10 +35,14 @@ clap = { version = "4.5", features = ["derive"] }
 image = "0.25"
 anyhow = "1.0"
 indicatif = "0.17"
+memmap2 = "0.9"
+safetensors = "0.5"
+half = "2"
 
 # Backend dependencies (optional)
 burn-ndarray = { workspace = true, optional = true }
 burn-wgpu = { workspace = true, optional = true }
+burn-cuda = { workspace = true, optional = true }
 
 # Serve dependencies (optional)
 tokio = { version = "1", features = ["full"], optional = true }
