@@ -43,6 +43,7 @@
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs
             + ":/run/opengl-driver/lib"  # System NVIDIA driver (libcuda.so)
             + ":$LD_LIBRARY_PATH";
+          CUDA_PATH = pkgs.cudaPackages.cudatoolkit;
         };
       }
     );
