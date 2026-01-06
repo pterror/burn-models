@@ -9,32 +9,45 @@ use burn::prelude::*;
 use burn_models_core::groupnorm::GroupNorm;
 use burn_models_core::silu::silu;
 
+/// Precompute frequency tensor for timestep embedding
+///
+/// Call this once during initialization and pass to `timestep_embedding_with_freqs`.
+pub fn timestep_freqs<B: Backend>(dim: usize, device: &B::Device) -> Tensor<B, 1> {
+    let half_dim = dim / 2;
+    let max_period = 10000.0f64;
+
+    let freqs: Vec<f32> = (0..half_dim)
+        .map(|i| (-((i as f64) / half_dim as f64) * max_period.ln()).exp() as f32)
+        .collect();
+
+    Tensor::<B, 1>::from_data(TensorData::new(freqs, [half_dim]), device)
+}
+
+/// Timestep embedding using precomputed frequencies (fast path)
+pub fn timestep_embedding_with_freqs<B: Backend>(
+    timesteps: Tensor<B, 1>,
+    freqs: Tensor<B, 1>,
+) -> Tensor<B, 2> {
+    let [batch] = timesteps.dims();
+    let [half_dim] = freqs.dims();
+    let args = timesteps.reshape([batch, 1]) * freqs.reshape([1, half_dim]);
+
+    let sin = args.clone().sin();
+    let cos = args.cos();
+
+    Tensor::cat(vec![sin, cos], 1)
+}
+
 /// Timestep embedding using sinusoidal positional encoding
+///
+/// Note: For hot paths, prefer `timestep_embedding_with_freqs` with precomputed freqs.
 pub fn timestep_embedding<B: Backend>(
     timesteps: Tensor<B, 1>,
     dim: usize,
     device: &B::Device,
 ) -> Tensor<B, 2> {
-    let half_dim = dim / 2;
-    let max_period = 10000.0f64;
-
-    // Create frequency embedding
-    let freqs: Vec<f32> = (0..half_dim)
-        .map(|i| (-((i as f64) / half_dim as f64) * max_period.ln()).exp() as f32)
-        .collect();
-
-    let freqs = Tensor::<B, 1>::from_data(TensorData::new(freqs, [half_dim]), device);
-
-    // timesteps: [batch], freqs: [half_dim]
-    // args: [batch, half_dim]
-    let [batch] = timesteps.dims();
-    let args = timesteps.reshape([batch, 1]) * freqs.reshape([1, half_dim]);
-
-    // Concatenate sin and cos
-    let sin = args.clone().sin();
-    let cos = args.cos();
-
-    Tensor::cat(vec![sin, cos], 1) // [batch, dim]
+    let freqs = timestep_freqs(dim, device);
+    timestep_embedding_with_freqs(timesteps, freqs)
 }
 
 /// ResNet block with time embedding

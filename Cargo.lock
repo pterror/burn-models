@@ -825,6 +825,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "burn",
+ "burn-cpu",
  "burn-cuda",
  "burn-models",
  "burn-models-clip",

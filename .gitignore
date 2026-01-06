@@ -1,6 +1,9 @@
 # build output
 target/
 
+# generated images
+*.png
+
 # environment variables
 .env
 

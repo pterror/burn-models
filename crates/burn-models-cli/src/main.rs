@@ -16,11 +16,28 @@ use std::path::PathBuf;
 /// Float precision for inference
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
 pub enum Precision {
-    /// 32-bit float (faster, more VRAM)
-    #[default]
+    /// 32-bit float (more VRAM, no JIT overhead)
     F32,
-    /// 16-bit float (slower, less VRAM)
+    /// 16-bit float (less VRAM, faster after JIT warmup)
+    #[default]
     F16,
+}
+
+/// Compute device for inference
+#[derive(Debug, Clone, Copy, ValueEnum, Default)]
+pub enum Device {
+    /// Auto-detect best available (CUDA > WGPU > CPU)
+    #[default]
+    Auto,
+    /// NVIDIA CUDA GPU
+    #[cfg(feature = "cuda")]
+    Cuda,
+    /// WebGPU (Vulkan/Metal/DX12)
+    #[cfg(feature = "wgpu")]
+    Wgpu,
+    /// CPU (CubeCL CPU backend)
+    #[cfg(feature = "cpu")]
+    Cpu,
 }
 
 use burn_models::DiffusionPipeline;
@@ -67,13 +84,13 @@ enum Commands {
         #[arg(short, long, value_enum, default_value = "sdxl")]
         model: ModelType,
 
-        /// Image width
-        #[arg(long, default_value = "1024")]
-        width: usize,
+        /// Image width (default: model native - 512 for SD1x, 1024 for SDXL)
+        #[arg(long)]
+        width: Option<usize>,
 
-        /// Image height
-        #[arg(long, default_value = "1024")]
-        height: usize,
+        /// Image height (default: model native - 512 for SD1x, 1024 for SDXL)
+        #[arg(long)]
+        height: Option<usize>,
 
         /// Number of inference steps
         #[arg(long, default_value = "30")]
@@ -103,9 +120,13 @@ enum Commands {
         #[arg(long = "lora-scale", value_name = "SCALE")]
         lora_scales: Vec<f64>,
 
-        /// Float precision (f32 = faster, f16 = less VRAM)
-        #[arg(long, value_enum, default_value = "f32")]
+        /// Float precision (f32 = more VRAM, f16 = less VRAM, faster after warmup)
+        #[arg(long, value_enum, default_value = "f16")]
         precision: Precision,
+
+        /// Compute device (auto = detect best available)
+        #[arg(long, value_enum, default_value = "auto")]
+        device: Device,
 
         /// Debug modes (comma-separated): timing, shapes, all
         /// Examples: --debug timing  --debug shapes,timing  --debug all
@@ -205,12 +226,22 @@ enum Commands {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ModelType {
-    /// Stable Diffusion 1.x (512x512 default)
+    /// Stable Diffusion 1.x (512x512 native)
     Sd1x,
-    /// Stable Diffusion XL (1024x1024 default)
+    /// Stable Diffusion XL (1024x1024 native)
     Sdxl,
     /// SDXL with Refiner (highest quality)
     SdxlRefiner,
+}
+
+impl ModelType {
+    /// Returns the native resolution (width, height) for this model
+    fn native_resolution(&self) -> (usize, usize) {
+        match self {
+            ModelType::Sd1x => (512, 512),
+            ModelType::Sdxl | ModelType::SdxlRefiner => (1024, 1024),
+        }
+    }
 }
 
 /// Run LLM commands using the default backend
@@ -275,7 +306,56 @@ fn run_llm_command_with_backend<B: burn::prelude::Backend>(
     }
 }
 
-/// Run SD 1.x generation with the default backend
+/// Try to initialize CUDA and return true if successful
+#[cfg(feature = "cuda")]
+fn cuda_available() -> bool {
+    use std::panic;
+    // CudaDevice::default() will panic if CUDA is not available
+    panic::catch_unwind(|| {
+        let _ = burn_cuda::CudaDevice::default();
+    }).is_ok()
+}
+
+/// Try to initialize WGPU and return true if successful
+#[cfg(feature = "wgpu")]
+fn wgpu_available() -> bool {
+    use std::panic;
+    // WgpuDevice::default() may panic if no GPU is available
+    panic::catch_unwind(|| {
+        let _ = burn_wgpu::WgpuDevice::default();
+    }).is_ok()
+}
+
+/// Resolve Auto device to a concrete device
+fn resolve_device(requested: Device) -> Device {
+    match requested {
+        Device::Auto => {
+            // Try CUDA first, then WGPU, then CPU
+            #[cfg(feature = "cuda")]
+            if cuda_available() {
+                eprintln!("[device] Auto-detected CUDA");
+                return Device::Cuda;
+            }
+            #[cfg(feature = "wgpu")]
+            if wgpu_available() {
+                eprintln!("[device] Auto-detected WGPU");
+                return Device::Wgpu;
+            }
+            #[cfg(feature = "cpu")]
+            {
+                eprintln!("[device] Falling back to CPU");
+                return Device::Cpu;
+            }
+            #[allow(unreachable_code)]
+            {
+                panic!("No backend available. Enable 'cuda', 'wgpu', or 'cpu' feature.");
+            }
+        }
+        other => other,
+    }
+}
+
+/// Run SD 1.x generation with the specified backend
 #[allow(clippy::too_many_arguments)]
 fn run_sd1x_generate(
     prompt: &str,
@@ -290,58 +370,85 @@ fn run_sd1x_generate(
     _loras: &[PathBuf],
     _lora_scales: &[f64],
     precision: Precision,
+    requested_device: Device,
     debug: &[String],
 ) -> Result<()> {
-    #[cfg(feature = "wgpu")]
-    {
-        use burn_wgpu::{Wgpu, WgpuDevice};
-        type Backend = Wgpu<f32>;
-        let device = WgpuDevice::default();
-        run_sd1x_generate_impl::<Backend>(
-            prompt, negative, output, vocab, weights,
-            width, height, steps, guidance, &device, debug,
-        )
-    }
+    let device = resolve_device(requested_device);
 
-    #[cfg(all(feature = "cuda", not(feature = "wgpu")))]
-    {
-        use burn_cuda::{Cuda, CudaDevice};
-        let device = CudaDevice::default();
+    match device {
+        #[cfg(feature = "cuda")]
+        Device::Cuda => {
+            use burn_cuda::{Cuda, CudaDevice};
+            let cuda_device = CudaDevice::default();
 
-        match precision {
-            Precision::F16 => {
-                use half::f16;
-                type Backend = Cuda<f16>;
-                run_sd1x_generate_impl::<Backend>(
-                    prompt, negative, output, vocab, weights,
-                    width, height, steps, guidance, &device, debug,
-                )
-            }
-            Precision::F32 => {
-                type Backend = Cuda<f32>;
-                run_sd1x_generate_impl::<Backend>(
-                    prompt, negative, output, vocab, weights,
-                    width, height, steps, guidance, &device, debug,
-                )
+            match precision {
+                Precision::F16 => {
+                    use half::f16;
+                    type Backend = Cuda<f16>;
+                    run_sd1x_generate_impl::<Backend>(
+                        prompt, negative, output, vocab, weights,
+                        width, height, steps, guidance, &cuda_device, debug,
+                    )
+                }
+                Precision::F32 => {
+                    type Backend = Cuda<f32>;
+                    run_sd1x_generate_impl::<Backend>(
+                        prompt, negative, output, vocab, weights,
+                        width, height, steps, guidance, &cuda_device, debug,
+                    )
+                }
             }
         }
-    }
 
-    #[cfg(all(feature = "ndarray", not(any(feature = "wgpu", feature = "cuda"))))]
-    {
-        use burn_ndarray::NdArray;
-        type Backend = NdArray<f32>;
-        let device = Default::default();
-        let _ = precision; // ndarray only supports f32
-        run_sd1x_generate_impl::<Backend>(
-            prompt, negative, output, vocab, weights,
-            width, height, steps, guidance, &device, debug,
-        )
-    }
+        #[cfg(feature = "wgpu")]
+        Device::Wgpu => {
+            use burn_wgpu::{Wgpu, WgpuDevice};
+            let wgpu_device = WgpuDevice::default();
 
-    #[cfg(not(any(feature = "wgpu", feature = "ndarray", feature = "cuda")))]
-    {
-        anyhow::bail!("No backend enabled. Enable 'wgpu', 'cuda', or 'ndarray' feature.")
+            match precision {
+                Precision::F16 => {
+                    use half::f16;
+                    type Backend = Wgpu<f16>;
+                    run_sd1x_generate_impl::<Backend>(
+                        prompt, negative, output, vocab, weights,
+                        width, height, steps, guidance, &wgpu_device, debug,
+                    )
+                }
+                Precision::F32 => {
+                    type Backend = Wgpu<f32>;
+                    run_sd1x_generate_impl::<Backend>(
+                        prompt, negative, output, vocab, weights,
+                        width, height, steps, guidance, &wgpu_device, debug,
+                    )
+                }
+            }
+        }
+
+        #[cfg(feature = "cpu")]
+        Device::Cpu => {
+            use burn_cpu::{Cpu, CpuDevice};
+            let cpu_device = CpuDevice::default();
+
+            match precision {
+                Precision::F16 => {
+                    use half::f16;
+                    type Backend = Cpu<f16>;
+                    run_sd1x_generate_impl::<Backend>(
+                        prompt, negative, output, vocab, weights,
+                        width, height, steps, guidance, &cpu_device, debug,
+                    )
+                }
+                Precision::F32 => {
+                    type Backend = Cpu<f32>;
+                    run_sd1x_generate_impl::<Backend>(
+                        prompt, negative, output, vocab, weights,
+                        width, height, steps, guidance, &cpu_device, debug,
+                    )
+                }
+            }
+        }
+
+        Device::Auto => unreachable!("Auto should be resolved above"),
     }
 }
 
@@ -519,8 +626,14 @@ fn main() -> Result<()> {
             loras,
             lora_scales,
             precision,
+            device,
             debug,
         } => {
+            // Derive width/height from model if not specified
+            let (native_w, native_h) = model.native_resolution();
+            let width = width.unwrap_or(native_w);
+            let height = height.unwrap_or(native_h);
+
             println!("burn-models: Stable Diffusion in pure Rust\n");
             println!("Configuration:");
             println!("  Model:    {:?}", model);
@@ -528,6 +641,7 @@ fn main() -> Result<()> {
             println!("  Steps:    {}", steps);
             println!("  Guidance: {}", guidance);
             println!("  Precision: {:?}", precision);
+            println!("  Device:   {:?}", device);
             println!("  Vocab:    {}", vocab.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "(embedded)".to_string()));
             println!("  Weights:  {}", weights.display());
             if !loras.is_empty() {
@@ -557,7 +671,7 @@ fn main() -> Result<()> {
                     run_sd1x_generate(
                         &prompt, &negative, &output, vocab.as_ref(), &weights,
                         width, height, steps, guidance,
-                        &loras, &lora_scales, precision, &debug,
+                        &loras, &lora_scales, precision, device, &debug,
                     )?;
                 }
                 ModelType::Sdxl | ModelType::SdxlRefiner => {

@@ -63,6 +63,8 @@
 
 ## Backlog
 
+- [x] SD1x CLI defaults: 512x512 (native resolution), f16 precision (2026-01-07)
+
 ### Samplers
 - [x] DDIM
 - [x] Euler
@@ -218,8 +220,7 @@ See `docs/cubecl-guide.md` for implementation details.
 - [x] Benchmark CubeCL integrations
   - `benches/unet_blocks.rs`: ResBlock vs ResBlockCubeCL, CrossAttention vs CrossAttentionCubeCL
   - Run: `cargo bench -p burn-models-cubecl --features cuda --bench unet_blocks`
-- [ ] MLX backend (Apple Silicon) - via [burn-mlx](https://lib.rs/crates/burn-mlx)
-  - Note: burn-mlx 0.1.2 requires burn ^0.16, we're on 0.20 - wait for update
+- [ ] ~~MLX backend (Apple Silicon)~~ - **BLOCKED**: burn-mlx 0.1.2 requires burn ^0.16, we're on 0.20
 - [x] Wire up CLI `generate` command - now validates paths and shows helpful messages
 - [x] WeightLoader for SD models - enables actual image generation
   - [x] CLIP text encoder loader (`SdWeightLoader::load_clip_text_encoder`)
@@ -420,25 +421,76 @@ Comparison: ComfyUI does SDXL @ 20 steps in ~26s (~1.3s/step). We're 37% slower 
 
 **TODO:**
 - [x] Add `--debug timing,shapes` flag for diagnostics
-- [ ] Debug garbled output from CompVis models
+- [x] Debug garbled output from CompVis models (2026-01-07)
+  - **ROOT CAUSE**: Level 3 dummy SpatialTransformer had RANDOM WEIGHTS
+  - **FIX APPLIED**: Made `attn1`/`attn2` `Option<SpatialTransformer<B>>` in DownBlock/UpBlock
+    - forward() now skips attention when None
+    - Loaders set None for level 3 (both HF and CompVis)
+    - Removed `create_dummy_spatial_transformer()` function
+  - Remaining issues:
+    1. VAE decoder lacks CompVis naming support (separate file prefixes)
+    2. Needs testing with actual CompVis checkpoint
 
 ### f16 Performance Investigation (2026-01-07)
 
-**Root cause found**: Timestep tensors are created from f32 every step:
-```rust
-// pipeline.rs:172 - runs 30x per generation
-let t = Tensor::<B, 1>::from_data(
-    TensorData::new(vec![timestep as f32], [1]),  // ALWAYS f32
-    &self.device,
-);
+**Initial hypothesis (partial)**: Timestep tensors created from f32 every step.
+
+**Actual root cause**: CubeCL JIT compilation overhead on first kernel invocation.
+
+**Per-step timing (f16, SD 1.x @ 512x512):**
+```
+[step 0] 44.6s  ← JIT compilation for all kernels
+[step 1] 266ms
+[step 2] 336ms
+[step 3] 343ms
+[step 4] 586ms
 ```
 
-With f16 backend, this forces f32→f16 conversion each step, likely causing CPU→GPU sync stalls.
+After warmup, f16 is **~300ms/step** vs f32's ~1.77s/step - **f16 is 5-6x faster!**
 
-**Fix**:
-1. Precompute all timestep tensors at sampler initialization
-2. Use backend-native element type instead of hardcoded f32
-3. Avoid CPU→GPU transfers in the denoising loop
+**Fixes applied** (help marginally, but JIT dominates first run):
+1. Precompute timestep tensors before sampling loop (pipeline.rs)
+2. Cache timestep embedding frequencies in UNet struct (unet_sd.rs)
+3. Added `timestep_freqs()` and `timestep_embedding_with_freqs()` for hot paths
+
+**Status**: JIT overhead is a CubeCL limitation. No disk caching currently.
+Each process startup recompiles kernels. Subsequent steps are fast.
+
+**Workaround options**:
+- Use f32 for interactive use (no JIT, consistent ~1.8s/step)
+- Use f16 for batch generation (JIT cost amortized over many images)
+- ✅ Enable CubeCL kernel caching via `cubecl.toml`
+
+**CubeCL Kernel Caching (2026-01-07):**
+
+CubeCL 0.9.0 supports persistent kernel caching. Added `cubecl.toml` config file:
+```toml
+[compilation]
+cache = "target"  # Store compiled kernels in target/ directory
+```
+
+Cache location options:
+- `"local"` - current working directory
+- `"target"` - project's target directory (default when set)
+- `"global"` - system config directory (~/.config/)
+- `{ file = "/path/to/cache" }` - custom path
+
+This should eliminate ~45s JIT overhead on subsequent runs. First run compiles
+kernels, subsequent runs load from cache. Test with `--debug timing` to verify
+
+**f32<->f16 conversion audit (2026-01-07):**
+
+SD1x hot paths are clean:
+- UNet: timestep freqs precomputed in struct (fixed earlier)
+- DDIM sampler: uses tensor slicing from precomputed alphas_cumprod
+- NoiseSchedule: all values precomputed at construction
+- CLIP/VAE: no Vec<f32> in forward passes
+
+DiT models (NOT currently used, future work):
+- 12 models create `Vec<f32>` in TimestepEmbedding::forward() every step:
+  flux.rs, zimage.rs, qwenimage.rs, ltx.rs, sana.rs, cogvideox.rs,
+  auraflow.rs, pixart.rs, sd3.rs, wan.rs, hunyuan.rs, mochi.rs
+- Fix: Add `freqs: Tensor<B, 1>` field to each, precompute at construction
 
 ### Linear Weight Convention (2026-01-07)
 

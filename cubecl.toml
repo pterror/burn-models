@@ -1,0 +1,7 @@
+# CubeCL Configuration
+# See: https://github.com/tracel-ai/cubecl
+
+[compilation]
+# Enable kernel caching to persist compiled kernels across runs
+# Options: "local" (cwd), "target" (project target dir), "global" (system config dir)
+cache = "target"

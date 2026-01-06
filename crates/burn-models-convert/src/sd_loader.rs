@@ -530,7 +530,7 @@ fn load_conv2d_strided<B: Backend>(
 use burn_models_unet::{
     UNet, UNetConfig, DownBlock, MidBlock, UpBlock,
     ResBlock, SpatialTransformer, TransformerBlock, CrossAttention, FeedForward,
-    Downsample, Upsample,
+    Downsample, Upsample, timestep_freqs,
 };
 
 /// Naming convention used in safetensors files
@@ -679,6 +679,8 @@ fn load_unet_hf<B: Backend>(
     for (level, &mult) in config.channel_mult.iter().enumerate() {
         let ch_out = ch * mult;
         let is_last = level == config.channel_mult.len() - 1;
+        // SD 1.x: levels 0,1,2 have attention, level 3 does not
+        let has_attention = level < 3;
 
         let block = load_down_block(
             file,
@@ -691,6 +693,7 @@ fn load_unet_hf<B: Backend>(
             config.head_dim,
             config.context_dim,
             config.transformer_depth,
+            has_attention,
             !is_last,
             device,
         )?;
@@ -731,6 +734,9 @@ fn load_unet_hf<B: Backend>(
     for (level, &mult) in config.channel_mult.iter().rev().enumerate() {
         let ch_out = ch * mult;
         let is_last = level == config.channel_mult.len() - 1;
+        // Reversed: level 0 = original level 3 (no attention)
+        // levels 1,2,3 = original levels 2,1,0 (have attention)
+        let has_attention = level > 0;
 
         for i in 0..3 {
             let skip_ch = channels.pop().unwrap();
@@ -754,6 +760,7 @@ fn load_unet_hf<B: Backend>(
                 config.head_dim,
                 config.context_dim,
                 config.transformer_depth,
+                has_attention,
                 upsample,
                 device,
             )?;
@@ -787,6 +794,7 @@ fn load_unet_hf<B: Backend>(
     Ok(UNet {
         time_embed_0,
         time_embed_2,
+        time_freqs: timestep_freqs(ch, device),
         conv_in,
         down_blocks,
         mid_block,
@@ -990,6 +998,7 @@ fn load_unet_compvis<B: Backend>(
     Ok(UNet {
         time_embed_0,
         time_embed_2,
+        time_freqs: timestep_freqs(ch, device),
         conv_in,
         down_blocks,
         mid_block,
@@ -1012,15 +1021,24 @@ fn load_down_block<B: Backend>(
     head_dim: usize,
     context_dim: usize,
     transformer_depth: usize,
+    has_attention: bool,
     has_downsample: bool,
     device: &B::Device,
 ) -> Result<DownBlock<B>, SdLoadError> {
     let block_prefix = format!("{}.down_blocks.{}", prefix, level);
 
     let res1 = load_resblock(file, &format!("{}.resnets.0", block_prefix), in_ch, out_ch, time_dim, device)?;
-    let attn1 = load_spatial_transformer(file, &format!("{}.attentions.0", block_prefix), out_ch, num_heads, head_dim, context_dim, transformer_depth, device)?;
+    let attn1 = if has_attention {
+        Some(load_spatial_transformer(file, &format!("{}.attentions.0", block_prefix), out_ch, num_heads, head_dim, context_dim, transformer_depth, device)?)
+    } else {
+        None
+    };
     let res2 = load_resblock(file, &format!("{}.resnets.1", block_prefix), out_ch, out_ch, time_dim, device)?;
-    let attn2 = load_spatial_transformer(file, &format!("{}.attentions.1", block_prefix), out_ch, num_heads, head_dim, context_dim, transformer_depth, device)?;
+    let attn2 = if has_attention {
+        Some(load_spatial_transformer(file, &format!("{}.attentions.1", block_prefix), out_ch, num_heads, head_dim, context_dim, transformer_depth, device)?)
+    } else {
+        None
+    };
 
     let downsample = if has_downsample {
         Some(load_downsample(file, &format!("{}.downsamplers.0", block_prefix), out_ch, device)?)
@@ -1074,13 +1092,18 @@ fn load_up_block<B: Backend>(
     head_dim: usize,
     context_dim: usize,
     transformer_depth: usize,
+    has_attention: bool,
     has_upsample: bool,
     device: &B::Device,
 ) -> Result<UpBlock<B>, SdLoadError> {
     let block_prefix = format!("{}.up_blocks.{}", prefix, block_idx);
 
     let res = load_resblock(file, &format!("{}.resnets.0", block_prefix), in_ch, out_ch, time_dim, device)?;
-    let attn = load_spatial_transformer(file, &format!("{}.attentions.0", block_prefix), out_ch, num_heads, head_dim, context_dim, transformer_depth, device)?;
+    let attn = if has_attention {
+        Some(load_spatial_transformer(file, &format!("{}.attentions.0", block_prefix), out_ch, num_heads, head_dim, context_dim, transformer_depth, device)?)
+    } else {
+        None
+    };
 
     let upsample = if has_upsample {
         Some(load_upsample(file, &format!("{}.upsamplers.0", block_prefix), out_ch, device)?)
@@ -1482,10 +1505,9 @@ fn load_down_block_compvis<B: Backend>(
 
     let attn1 = if has_attn {
         let attn1_prefix = format!("{}.input_blocks.{}.1", prefix, indices[0]);
-        load_spatial_transformer_compvis(file, &attn1_prefix, out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)?
+        Some(load_spatial_transformer_compvis(file, &attn1_prefix, out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)?)
     } else {
-        // Create a dummy/passthrough spatial transformer for blocks without attention
-        create_dummy_spatial_transformer(out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)
+        None
     };
 
     // Second ResBlock + optional Attention
@@ -1494,9 +1516,9 @@ fn load_down_block_compvis<B: Backend>(
 
     let attn2 = if has_attn {
         let attn2_prefix = format!("{}.input_blocks.{}.1", prefix, indices[1]);
-        load_spatial_transformer_compvis(file, &attn2_prefix, out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)?
+        Some(load_spatial_transformer_compvis(file, &attn2_prefix, out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)?)
     } else {
-        create_dummy_spatial_transformer(out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)
+        None
     };
 
     // Downsample if needed
@@ -1593,9 +1615,9 @@ fn load_up_block_compvis<B: Backend>(
     // output_blocks.{block_idx}.1 = SpatialTransformer (if has_attn) or Upsample (if has_upsample and no attn)
     let attn = if has_attn {
         let attn_prefix = format!("{}.output_blocks.{}.1", prefix, block_idx);
-        load_spatial_transformer_compvis(file, &attn_prefix, out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)?
+        Some(load_spatial_transformer_compvis(file, &attn_prefix, out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)?)
     } else {
-        create_dummy_spatial_transformer(out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)
+        None
     };
 
     // Upsample: could be at .1 (if no attn) or .2 (if attn present)
@@ -1880,81 +1902,6 @@ fn load_upsample_compvis<B: Backend>(
     )?;
 
     Ok(Upsample { conv })
-}
-
-/// Create a dummy SpatialTransformer for blocks without attention
-///
-/// This is needed because SD 1.x level 3 doesn't have attention blocks,
-/// but our DownBlock/UpBlock structs always expect them.
-fn create_dummy_spatial_transformer<B: Backend>(
-    channels: usize,
-    num_heads: usize,
-    head_dim: usize,
-    context_dim: usize,
-    depth: usize,
-    device: &B::Device,
-) -> SpatialTransformer<B> {
-    let inner_dim = num_heads * head_dim;
-
-    // Create identity-like components
-    let norm = GroupNorm {
-        num_groups: 32,
-        weight: Tensor::ones([channels], device),
-        bias: Tensor::zeros([channels], device),
-        eps: 1e-6,
-    };
-
-    let proj_in = Conv2dConfig::new([channels, inner_dim], [1, 1])
-        .init(device);
-
-    let mut transformer_blocks = Vec::with_capacity(depth);
-    for _ in 0..depth {
-        // Create minimal transformer block
-        let ln = LayerNorm::from_weight_bias(
-            Tensor::ones([inner_dim], device),
-            Tensor::zeros([inner_dim], device),
-        );
-
-        let ca = CrossAttention {
-            to_q: LinearConfig::new(inner_dim, inner_dim).with_bias(false).init(device),
-            to_k: LinearConfig::new(context_dim, inner_dim).with_bias(false).init(device),
-            to_v: LinearConfig::new(context_dim, inner_dim).with_bias(false).init(device),
-            to_out: LinearConfig::new(inner_dim, inner_dim).init(device),
-            num_heads,
-            head_dim,
-        };
-
-        let ff = FeedForward {
-            net_0: LinearConfig::new(inner_dim, inner_dim * 4 * 2).init(device),
-            net_2: LinearConfig::new(inner_dim * 4, inner_dim).init(device),
-        };
-
-        transformer_blocks.push(TransformerBlock {
-            norm1: ln.clone(),
-            attn1: CrossAttention {
-                to_q: LinearConfig::new(inner_dim, inner_dim).with_bias(false).init(device),
-                to_k: LinearConfig::new(inner_dim, inner_dim).with_bias(false).init(device),
-                to_v: LinearConfig::new(inner_dim, inner_dim).with_bias(false).init(device),
-                to_out: LinearConfig::new(inner_dim, inner_dim).init(device),
-                num_heads,
-                head_dim,
-            },
-            norm2: ln.clone(),
-            attn2: ca,
-            norm3: ln,
-            ff,
-        });
-    }
-
-    let proj_out = Conv2dConfig::new([inner_dim, channels], [1, 1])
-        .init(device);
-
-    SpatialTransformer {
-        norm,
-        proj_in,
-        transformer_blocks,
-        proj_out,
-    }
 }
 
 // =============================================================================

@@ -15,7 +15,9 @@ name = "inspect-safetensors"
 path = "src/bin/inspect-safetensors.rs"
 
 [features]
-default = ["wgpu"]
+default = ["wgpu", "cpu"]
+# For NVIDIA GPUs, build with: cargo build --features cuda
+cpu = ["burn-cpu"]
 ndarray = ["burn-models/ndarray", "burn-ndarray"]
 tch = ["burn-models/tch"]
 wgpu = ["burn-models/wgpu", "burn-wgpu"]
@@ -43,6 +45,7 @@ half = "2"
 burn-ndarray = { workspace = true, optional = true }
 burn-wgpu = { workspace = true, optional = true }
 burn-cuda = { workspace = true, optional = true }
+burn-cpu = { version = "0.20.0-pre.6", optional = true, default-features = false }
 
 # Serve dependencies (optional)
 tokio = { version = "1", features = ["full"], optional = true }

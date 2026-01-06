@@ -52,7 +52,8 @@ pub mod unet_sdxl;
 pub mod cubecl;
 
 pub use blocks::{
-    timestep_embedding, CrossAttention, Downsample, FeedForward, ResBlock,
+    timestep_embedding, timestep_embedding_with_freqs, timestep_freqs,
+    CrossAttention, Downsample, FeedForward, ResBlock,
     SpatialTransformer, TransformerBlock, Upsample,
 };
 pub use controlnet::{ControlNet, ControlNetConfig, ControlNetOutput, ControlNetPreprocessor};

@@ -166,13 +166,21 @@ impl<B: Backend> DiffusionPipeline<B> for StableDiffusion1x<B> {
         // Initialize with random noise
         let mut latent = sampler.init_latent(1, 4, latent_height, latent_width, &self.device);
 
+        // Precompute all timestep tensors to avoid CPU->GPU transfer in hot loop
+        let timestep_tensors: Vec<Tensor<B, 1>> = sampler
+            .timesteps()
+            .iter()
+            .map(|&t| {
+                Tensor::<B, 1>::from_data(
+                    TensorData::new(vec![t as f32], [1]),
+                    &self.device,
+                )
+            })
+            .collect();
+
         // Sampling loop
         for step_idx in 0..sampler.num_steps() {
-            let timestep = sampler.timesteps()[step_idx];
-            let t = Tensor::<B, 1>::from_data(
-                TensorData::new(vec![timestep as f32], [1]),
-                &self.device,
-            );
+            let t = timestep_tensors[step_idx].clone();
 
             // Predict noise for unconditional
             let noise_uncond = self.unet.forward(
@@ -317,13 +325,21 @@ impl<B: Backend> StableDiffusion1xImg2Img<B> {
 
         let mut latent = init_latent * sqrt_alpha.unsqueeze() + noise * sqrt_one_minus_alpha.unsqueeze();
 
+        // Precompute timestep tensors
+        let timestep_tensors: Vec<Tensor<B, 1>> = sampler
+            .timesteps()
+            .iter()
+            .map(|&t| {
+                Tensor::<B, 1>::from_data(
+                    TensorData::new(vec![t as f32], [1]),
+                    &self.device,
+                )
+            })
+            .collect();
+
         // Denoising loop from start_step
         for step_idx in start_step..sampler.num_steps() {
-            let timestep = sampler.timesteps()[step_idx];
-            let t = Tensor::<B, 1>::from_data(
-                TensorData::new(vec![timestep as f32], [1]),
-                &self.device,
-            );
+            let t = timestep_tensors[step_idx].clone();
 
             let noise_uncond = self.unet.forward(latent.clone(), t.clone(), uncond.clone());
             let noise_cond = self.unet.forward(latent.clone(), t, cond.clone());
@@ -443,13 +459,22 @@ impl<B: Backend> StableDiffusion1xInpaint<B> {
         let [_, c, h, w] = init_latent.dims();
         let mut latent = sampler.init_latent(1, c, h, w, &self.device);
 
+        // Precompute timestep tensors
+        let timestep_tensors: Vec<Tensor<B, 1>> = sampler
+            .timesteps()
+            .iter()
+            .map(|&t| {
+                Tensor::<B, 1>::from_data(
+                    TensorData::new(vec![t as f32], [1]),
+                    &self.device,
+                )
+            })
+            .collect();
+
         // Inpainting loop
         for step_idx in 0..sampler.num_steps() {
             let timestep = sampler.timesteps()[step_idx];
-            let t = Tensor::<B, 1>::from_data(
-                TensorData::new(vec![timestep as f32], [1]),
-                &self.device,
-            );
+            let t = timestep_tensors[step_idx].clone();
 
             // Predict noise
             let noise_uncond = self.unet.forward(latent.clone(), t.clone(), uncond.clone());
@@ -725,13 +750,21 @@ impl<B: Backend> StableDiffusionXL<B> {
             (config.height, config.width),
         );
 
+        // Precompute timestep tensors
+        let timestep_tensors: Vec<Tensor<B, 1>> = sampler
+            .timesteps()
+            .iter()
+            .map(|&t| {
+                Tensor::<B, 1>::from_data(
+                    TensorData::new(vec![t as f32], [1]),
+                    &self.device,
+                )
+            })
+            .collect();
+
         // Sampling loop
         for step_idx in 0..sampler.num_steps() {
-            let timestep = sampler.timesteps()[step_idx];
-            let t = Tensor::<B, 1>::from_data(
-                TensorData::new(vec![timestep as f32], [1]),
-                &self.device,
-            );
+            let t = timestep_tensors[step_idx].clone();
 
             // Predict noise for unconditional
             let noise_uncond = self.unet.forward(
@@ -947,13 +980,21 @@ impl<B: Backend> StableDiffusionXLImg2Img<B> {
             (height, width),
         );
 
+        // Precompute timestep tensors
+        let timestep_tensors: Vec<Tensor<B, 1>> = sampler
+            .timesteps()
+            .iter()
+            .map(|&t| {
+                Tensor::<B, 1>::from_data(
+                    TensorData::new(vec![t as f32], [1]),
+                    &self.device,
+                )
+            })
+            .collect();
+
         // Denoising loop
         for step_idx in start_step..sampler.num_steps() {
-            let timestep = sampler.timesteps()[step_idx];
-            let t = Tensor::<B, 1>::from_data(
-                TensorData::new(vec![timestep as f32], [1]),
-                &self.device,
-            );
+            let t = timestep_tensors[step_idx].clone();
 
             let noise_uncond = self.unet.forward(
                 latent.clone(),
@@ -1148,13 +1189,22 @@ impl<B: Backend> StableDiffusionXLInpaint<B> {
         let [_, c, h, w] = init_latent.dims();
         let mut latent = sampler.init_latent(1, c, h, w, &self.device);
 
+        // Precompute timestep tensors
+        let timestep_tensors: Vec<Tensor<B, 1>> = sampler
+            .timesteps()
+            .iter()
+            .map(|&t| {
+                Tensor::<B, 1>::from_data(
+                    TensorData::new(vec![t as f32], [1]),
+                    &self.device,
+                )
+            })
+            .collect();
+
         // Inpainting loop
         for step_idx in 0..sampler.num_steps() {
             let timestep = sampler.timesteps()[step_idx];
-            let t = Tensor::<B, 1>::from_data(
-                TensorData::new(vec![timestep as f32], [1]),
-                &self.device,
-            );
+            let t = timestep_tensors[step_idx].clone();
 
             // Predict noise
             let noise_uncond = self.unet.forward(
@@ -1396,13 +1446,21 @@ impl<B: Backend> StableDiffusionXLRefiner<B> {
         let start_step = ((1.0 - config.denoise_start) * config.steps as f64) as usize;
         let mut latent = latent;
 
+        // Precompute timestep tensors
+        let timestep_tensors: Vec<Tensor<B, 1>> = sampler
+            .timesteps()
+            .iter()
+            .map(|&t| {
+                Tensor::<B, 1>::from_data(
+                    TensorData::new(vec![t as f32], [1]),
+                    &self.device,
+                )
+            })
+            .collect();
+
         // Refinement loop
         for step_idx in start_step..sampler.num_steps() {
-            let timestep = sampler.timesteps()[step_idx];
-            let t = Tensor::<B, 1>::from_data(
-                TensorData::new(vec![timestep as f32], [1]),
-                &self.device,
-            );
+            let t = timestep_tensors[step_idx].clone();
 
             let noise_uncond = self.unet.forward(
                 latent.clone(),
@@ -1574,13 +1632,21 @@ impl<B: Backend> StableDiffusionXLWithRefiner<B> {
             (config.height, config.width),
         );
 
+        // Precompute timestep tensors
+        let timestep_tensors: Vec<Tensor<B, 1>> = sampler
+            .timesteps()
+            .iter()
+            .map(|&t| {
+                Tensor::<B, 1>::from_data(
+                    TensorData::new(vec![t as f32], [1]),
+                    &self.device,
+                )
+            })
+            .collect();
+
         // Sampling loop - stop at specified step
         for step_idx in 0..stop_at_step {
-            let timestep = sampler.timesteps()[step_idx];
-            let t = Tensor::<B, 1>::from_data(
-                TensorData::new(vec![timestep as f32], [1]),
-                &self.device,
-            );
+            let t = timestep_tensors[step_idx].clone();
 
             // Predict noise for unconditional
             let noise_uncond = self.base.unet.forward(
@@ -1649,9 +1715,9 @@ pub fn tensor_to_rgb<B: Backend>(tensor: Tensor<B, 4>) -> Vec<u8> {
     // Clamp to [0, 255] and convert
     let tensor = tensor.clamp(0.0, 255.0);
 
-    // Get data as f32
+    // Get data as f32 (convert if backend uses different precision)
     let data = tensor.into_data();
-    let floats: Vec<f32> = data.to_vec().unwrap();
+    let floats: Vec<f32> = data.convert::<f32>().to_vec().unwrap();
 
     // Convert to u8 RGB (assuming tensor is [1, 3, H, W])
     let mut rgb = Vec::with_capacity(h * w * 3);
