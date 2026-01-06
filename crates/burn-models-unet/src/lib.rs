@@ -62,5 +62,5 @@ pub use stable_cascade::{
     StageB, StageBConfig, StageBOutput,
 };
 pub use t2i_adapter::{T2IAdapter, T2IAdapterConfig, T2IAdapterOutput};
-pub use unet_sd::{UNet, UNetConfig};
+pub use unet_sd::{UNet, UNetConfig, DownBlock, MidBlock, UpBlock};
 pub use unet_sdxl::{UNetXL, UNetXLConfig};

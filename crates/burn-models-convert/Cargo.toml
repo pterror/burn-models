@@ -8,6 +8,7 @@ rust-version.workspace = true
 burn.workspace = true
 burn-models-core.workspace = true
 burn-models-clip = { path = "../burn-models-clip" }
+burn-models-unet = { path = "../burn-models-unet" }
 bytemuck.workspace = true
 half.workspace = true
 memmap2.workspace = true

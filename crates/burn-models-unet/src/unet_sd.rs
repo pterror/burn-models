@@ -69,28 +69,30 @@ impl UNetConfig {
 /// SD 1.x UNet
 #[derive(Module, Debug)]
 pub struct UNet<B: Backend> {
-    // Time embedding
-    time_embed_0: Linear<B>,
-    time_embed_2: Linear<B>,
+    /// Time embedding first linear layer
+    pub time_embed_0: Linear<B>,
+    /// Time embedding second linear layer
+    pub time_embed_2: Linear<B>,
 
-    // Input
-    conv_in: Conv2d<B>,
+    /// Input convolution
+    pub conv_in: Conv2d<B>,
 
-    // Down blocks
-    down_blocks: Vec<DownBlock<B>>,
+    /// Down blocks (encoder path)
+    pub down_blocks: Vec<DownBlock<B>>,
 
-    // Mid block
-    mid_block: MidBlock<B>,
+    /// Middle block
+    pub mid_block: MidBlock<B>,
 
-    // Up blocks
-    up_blocks: Vec<UpBlock<B>>,
+    /// Up blocks (decoder path)
+    pub up_blocks: Vec<UpBlock<B>>,
 
-    // Output
-    norm_out: GroupNorm<B>,
-    conv_out: Conv2d<B>,
+    /// Output group normalization
+    pub norm_out: GroupNorm<B>,
+    /// Output convolution
+    pub conv_out: Conv2d<B>,
 
-    // Config
-    model_channels: usize,
+    /// Base model channels
+    pub model_channels: usize,
 }
 
 impl<B: Backend> UNet<B> {
@@ -258,12 +260,17 @@ impl<B: Backend> UNet<B> {
 
 /// Down block: ResBlock + SpatialTransformer + optional Downsample
 #[derive(Module, Debug)]
-struct DownBlock<B: Backend> {
-    res1: ResBlock<B>,
-    attn1: SpatialTransformer<B>,
-    res2: ResBlock<B>,
-    attn2: SpatialTransformer<B>,
-    downsample: Option<Downsample<B>>,
+pub struct DownBlock<B: Backend> {
+    /// First residual block
+    pub res1: ResBlock<B>,
+    /// First attention block
+    pub attn1: SpatialTransformer<B>,
+    /// Second residual block
+    pub res2: ResBlock<B>,
+    /// Second attention block
+    pub attn2: SpatialTransformer<B>,
+    /// Optional downsampling layer
+    pub downsample: Option<Downsample<B>>,
 }
 
 impl<B: Backend> DownBlock<B> {
@@ -319,10 +326,13 @@ impl<B: Backend> DownBlock<B> {
 
 /// Mid block: ResBlock + Attention + ResBlock
 #[derive(Module, Debug)]
-struct MidBlock<B: Backend> {
-    res1: ResBlock<B>,
-    attn: SpatialTransformer<B>,
-    res2: ResBlock<B>,
+pub struct MidBlock<B: Backend> {
+    /// First residual block
+    pub res1: ResBlock<B>,
+    /// Attention block
+    pub attn: SpatialTransformer<B>,
+    /// Second residual block
+    pub res2: ResBlock<B>,
 }
 
 impl<B: Backend> MidBlock<B> {
@@ -353,10 +363,13 @@ impl<B: Backend> MidBlock<B> {
 
 /// Up block with residual, attention, and optional upsampling
 #[derive(Module, Debug)]
-struct UpBlock<B: Backend> {
-    res: ResBlock<B>,
-    attn: SpatialTransformer<B>,
-    upsample: Option<Upsample<B>>,
+pub struct UpBlock<B: Backend> {
+    /// Residual block
+    pub res: ResBlock<B>,
+    /// Attention block
+    pub attn: SpatialTransformer<B>,
+    /// Optional upsampling layer
+    pub upsample: Option<Upsample<B>>,
 }
 
 impl<B: Backend> UpBlock<B> {

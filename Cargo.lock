@@ -852,6 +852,7 @@ dependencies = [
  "burn",
  "burn-models-clip",
  "burn-models-core",
+ "burn-models-unet",
  "bytemuck",
  "half",
  "memmap2",

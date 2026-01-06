@@ -225,7 +225,10 @@ See `docs/cubecl-guide.md` for implementation details.
   - [x] CLIP text encoder loader (`SdWeightLoader::load_clip_text_encoder`)
     - Detects prefix automatically (text_model, text_encoder.text_model, etc.)
     - Loads embeddings, all transformer layers, final layer norm
-  - [ ] UNet loader - complex, many block types (ResBlock, CrossAttn, Downsample, Upsample)
+  - [x] UNet loader (`SdWeightLoader::load_unet`)
+    - Detects prefix (model.diffusion_model, unet, etc.)
+    - Loads time embedding, conv_in, all down/mid/up blocks, conv_out
+    - Each block: ResBlock, SpatialTransformer, Downsample/Upsample
   - [ ] VAE decoder loader - similar pattern to UNet
   - Reference: `burn-models-llm/src/llama_loader.rs` for the pattern
 

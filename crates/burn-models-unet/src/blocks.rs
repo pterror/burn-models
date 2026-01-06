@@ -134,10 +134,14 @@ impl<B: Backend> ResBlock<B> {
 /// Spatial transformer block for cross-attention
 #[derive(Module, Debug)]
 pub struct SpatialTransformer<B: Backend> {
-    norm: GroupNorm<B>,
-    proj_in: Conv2d<B>,
-    transformer_blocks: Vec<TransformerBlock<B>>,
-    proj_out: Conv2d<B>,
+    /// Input normalization
+    pub norm: GroupNorm<B>,
+    /// Input projection
+    pub proj_in: Conv2d<B>,
+    /// Transformer blocks
+    pub transformer_blocks: Vec<TransformerBlock<B>>,
+    /// Output projection
+    pub proj_out: Conv2d<B>,
 }
 
 impl<B: Backend> SpatialTransformer<B> {
@@ -216,12 +220,18 @@ impl<B: Backend> SpatialTransformer<B> {
 /// Transformer block with self-attention, cross-attention, and FFN
 #[derive(Module, Debug)]
 pub struct TransformerBlock<B: Backend> {
-    norm1: burn_models_core::layernorm::LayerNorm<B>,
-    attn1: CrossAttention<B>, // Self-attention
-    norm2: burn_models_core::layernorm::LayerNorm<B>,
-    attn2: CrossAttention<B>, // Cross-attention
-    norm3: burn_models_core::layernorm::LayerNorm<B>,
-    ff: FeedForward<B>,
+    /// Self-attention layer norm
+    pub norm1: burn_models_core::layernorm::LayerNorm<B>,
+    /// Self-attention
+    pub attn1: CrossAttention<B>,
+    /// Cross-attention layer norm
+    pub norm2: burn_models_core::layernorm::LayerNorm<B>,
+    /// Cross-attention
+    pub attn2: CrossAttention<B>,
+    /// FFN layer norm
+    pub norm3: burn_models_core::layernorm::LayerNorm<B>,
+    /// Feed-forward network
+    pub ff: FeedForward<B>,
 }
 
 impl<B: Backend> TransformerBlock<B> {
@@ -361,8 +371,10 @@ impl<B: Backend> CrossAttention<B> {
 /// Feed-forward network with GEGLU activation
 #[derive(Module, Debug)]
 pub struct FeedForward<B: Backend> {
-    net_0: Linear<B>,
-    net_2: Linear<B>,
+    /// First linear (projects to 2x hidden for GEGLU)
+    pub net_0: Linear<B>,
+    /// Second linear (projects back to dim)
+    pub net_2: Linear<B>,
 }
 
 impl<B: Backend> FeedForward<B> {
@@ -407,7 +419,8 @@ impl<B: Backend> FeedForward<B> {
 /// Downsample block (strided conv)
 #[derive(Module, Debug)]
 pub struct Downsample<B: Backend> {
-    conv: Conv2d<B>,
+    /// Strided convolution for downsampling
+    pub conv: Conv2d<B>,
 }
 
 impl<B: Backend> Downsample<B> {
@@ -442,7 +455,8 @@ impl<B: Backend> Downsample<B> {
 /// Upsample block using nearest neighbor interpolation followed by convolution
 #[derive(Module, Debug)]
 pub struct Upsample<B: Backend> {
-    conv: Conv2d<B>,
+    /// Convolution after nearest-neighbor upsample
+    pub conv: Conv2d<B>,
 }
 
 impl<B: Backend> Upsample<B> {
