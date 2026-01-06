@@ -129,8 +129,8 @@ enum Commands {
         device: Device,
 
         /// Debug modes (comma-separated): timing, shapes, all
-        /// Examples: --debug timing  --debug shapes,timing  --debug all
-        #[arg(long, value_delimiter = ',', num_args = 0..)]
+        /// Examples: --debug  --debug timing  --debug shapes,timing
+        #[arg(long, value_delimiter = ',', num_args = 0.., default_missing_value = "all")]
         debug: Vec<String>,
     },
 
@@ -460,7 +460,7 @@ struct DebugFlags {
 
 impl DebugFlags {
     fn from_args(debug: &[String]) -> Self {
-        let all = debug.iter().any(|s| s == "all") || debug.is_empty() && false;
+        let all = debug.iter().any(|s| s == "all");
         Self {
             timing: all || debug.iter().any(|s| s == "timing"),
             shapes: all || debug.iter().any(|s| s == "shapes"),
@@ -595,7 +595,8 @@ fn run_sd1x_generate_impl<B: Backend>(
     }
 
     pb.finish_and_clear();
-    println!("Image saved to: {}", output.display());
+    let output_path = output.canonicalize().unwrap_or_else(|_| output.to_path_buf());
+    println!("\nSaved to: {}", output_path.display());
 
     if debug_flags.timing {
         eprintln!("[timing] total: {:?}", total_start.elapsed());
