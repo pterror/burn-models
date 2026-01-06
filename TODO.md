@@ -420,9 +420,25 @@ Comparison: ComfyUI does SDXL @ 20 steps in ~26s (~1.3s/step). We're 37% slower 
 
 **TODO:**
 - [x] Add `--debug timing,shapes` flag for diagnostics
-- [ ] Investigate f16 slowness (should be 2x faster per cubecl #984)
-- [ ] Profile inference to find bottleneck (1.78s/step vs expected ~1s)
 - [ ] Debug garbled output from CompVis models
+
+### f16 Performance Investigation (2026-01-07)
+
+**Root cause found**: Timestep tensors are created from f32 every step:
+```rust
+// pipeline.rs:172 - runs 30x per generation
+let t = Tensor::<B, 1>::from_data(
+    TensorData::new(vec![timestep as f32], [1]),  // ALWAYS f32
+    &self.device,
+);
+```
+
+With f16 backend, this forces f32→f16 conversion each step, likely causing CPU→GPU sync stalls.
+
+**Fix**:
+1. Precompute all timestep tensors at sampler initialization
+2. Use backend-native element type instead of hardcoded f32
+3. Avoid CPU→GPU transfers in the denoising loop
 
 ### Linear Weight Convention (2026-01-07)
 
