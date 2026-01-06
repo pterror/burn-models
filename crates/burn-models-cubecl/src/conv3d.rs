@@ -26,6 +26,16 @@ struct ConvArgs {
     groups: u32,
 }
 
+/// Memory layout for 5D tensors
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Layout {
+    /// Channels first: [batch, channels, time, height, width]
+    #[default]
+    NCTHW,
+    /// Channels last: [batch, time, height, width, channels]
+    NTHWC,
+}
+
 /// Options for Conv3d operation
 #[derive(Debug, Clone)]
 pub struct Conv3dOptions {
@@ -33,6 +43,8 @@ pub struct Conv3dOptions {
     pub padding: [usize; 3],
     pub dilation: [usize; 3],
     pub groups: usize,
+    /// Input/output layout. Weights are always NCTHW (out_ch, in_ch, T, H, W).
+    pub layout: Layout,
 }
 
 impl Default for Conv3dOptions {
@@ -42,6 +54,7 @@ impl Default for Conv3dOptions {
             padding: [0, 0, 0],
             dilation: [1, 1, 1],
             groups: 1,
+            layout: Layout::NCTHW,
         }
     }
 }
@@ -142,23 +155,65 @@ fn conv3d_kernel<E: Numeric>(
     output[ABSOLUTE_POS] = sum;
 }
 
+/// Permute a 5D tensor
+///
+/// Creates a new tensor with permuted dimensions and strides.
+fn permute_5d<R: CubeRuntime>(tensor: CubeTensor<R>, perm: [usize; 5]) -> CubeTensor<R> {
+    let old_shape = tensor.shape.dims;
+    let old_strides = &tensor.strides;
+
+    let new_shape = [
+        old_shape[perm[0]],
+        old_shape[perm[1]],
+        old_shape[perm[2]],
+        old_shape[perm[3]],
+        old_shape[perm[4]],
+    ];
+    let new_strides = vec![
+        old_strides[perm[0]],
+        old_strides[perm[1]],
+        old_strides[perm[2]],
+        old_strides[perm[3]],
+        old_strides[perm[4]],
+    ];
+
+    CubeTensor {
+        client: tensor.client,
+        handle: tensor.handle,
+        device: tensor.device,
+        shape: Shape::from(new_shape),
+        strides: new_strides,
+        dtype: tensor.dtype,
+        qparams: tensor.qparams,
+    }
+}
+
 /// Perform 3D convolution using CubeCL
 ///
 /// # Arguments
-/// * `input` - Input tensor [batch, in_channels, time, height, width]
+/// * `input` - Input tensor. Shape depends on layout:
+///   - NCTHW: [batch, in_channels, time, height, width]
+///   - NTHWC: [batch, time, height, width, in_channels]
 /// * `weight` - Weight tensor [out_channels, in_channels/groups, kernel_t, kernel_h, kernel_w]
+///   (always NCTHW layout)
 /// * `bias` - Optional bias tensor [out_channels]
-/// * `options` - Convolution options (stride, padding, dilation, groups)
+/// * `options` - Convolution options (stride, padding, dilation, groups, layout)
 ///
 /// # Returns
-/// Output tensor [batch, out_channels, out_t, out_h, out_w]
+/// Output tensor with same layout as input
 pub fn conv3d<R: CubeRuntime>(
     input: CubeTensor<R>,
     weight: CubeTensor<R>,
     bias: Option<CubeTensor<R>>,
     options: Conv3dOptions,
 ) -> Result<CubeTensor<R>, LaunchError> {
-    let [batch_size, _in_channels, in_t, in_h, in_w] = input.shape.dims();
+    // Convert NTHWC -> NCTHW if needed
+    let input_ncthw = match options.layout {
+        Layout::NCTHW => input,
+        Layout::NTHWC => permute_5d(input, [0, 4, 1, 2, 3]), // NTHWC -> NCTHW
+    };
+
+    let [batch_size, _in_channels, in_t, in_h, in_w] = input_ncthw.shape.dims();
     let [out_channels, _, kernel_t, kernel_h, kernel_w] = weight.shape.dims();
 
     // Calculate output dimensions
@@ -174,36 +229,36 @@ pub fn conv3d<R: CubeRuntime>(
 
     let shape_out = Shape::new([batch_size, out_channels, out_t, out_h, out_w]);
 
-    // Allocate output
+    // Allocate output (always NCTHW internally)
     let output = empty_device_dtype(
-        input.client.clone(),
-        input.device.clone(),
+        input_ncthw.client.clone(),
+        input_ncthw.device.clone(),
         shape_out.clone(),
-        input.dtype,
+        input_ncthw.dtype,
     );
 
     // Handle optional bias - create zeros if not provided
     let bias = match bias {
         Some(b) => b,
         None => zeros_client(
-            input.client.clone(),
-            input.device.clone(),
+            input_ncthw.client.clone(),
+            input_ncthw.device.clone(),
             Shape::from([out_channels]),
-            input.dtype,
+            input_ncthw.dtype,
         ),
     };
 
     // Launch configuration
     let num_elems = shape_out.num_elements();
-    let cube_dim = CubeDim::new(&input.client, num_elems);
-    let cube_count = calculate_cube_count_elemwise(&input.client, num_elems, cube_dim);
+    let cube_dim = CubeDim::new(&input_ncthw.client, num_elems);
+    let cube_count = calculate_cube_count_elemwise(&input_ncthw.client, num_elems, cube_dim);
 
     // Launch kernel
     conv3d_kernel::launch::<R>(
-        &input.client,
+        &input_ncthw.client,
         cube_count,
         cube_dim,
-        input.as_tensor_arg(1),
+        input_ncthw.as_tensor_arg(1),
         weight.as_tensor_arg(1),
         bias.as_tensor_arg(1),
         output.as_tensor_arg(1),
@@ -219,8 +274,14 @@ pub fn conv3d<R: CubeRuntime>(
             ScalarArg::new(options.padding[2] as i32),
             ScalarArg::new(options.groups as u32),
         ),
-        input.dtype.into(),
+        input_ncthw.dtype.into(),
     )?;
+
+    // Convert NCTHW -> NTHWC if needed
+    let output = match options.layout {
+        Layout::NCTHW => output,
+        Layout::NTHWC => permute_5d(output, [0, 2, 3, 4, 1]), // NCTHW -> NTHWC
+    };
 
     Ok(output)
 }

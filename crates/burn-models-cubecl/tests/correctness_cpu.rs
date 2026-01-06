@@ -10,7 +10,7 @@
 use burn::prelude::*;
 use burn_cpu::{Cpu, CpuDevice};
 use burn_cubecl::tensor::CubeTensor;
-use burn_models_cubecl::{conv3d, Conv3dOptions};
+use burn_models_cubecl::{conv3d, Conv3dOptions, Layout};
 use burn_ndarray::NdArray;
 use cubecl::cpu::CpuRuntime;
 
@@ -235,6 +235,7 @@ fn test_cpu_conv3d_1x1x1_kernel() {
         padding: [0, 0, 0],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(input, weight, Some(bias), options);
@@ -274,6 +275,7 @@ fn test_cpu_conv3d_3x3x3_same_padding() {
         padding: [1, 1, 1],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(input, weight, Some(bias), options);
@@ -307,6 +309,7 @@ fn test_cpu_conv3d_3x3x3_no_padding() {
         padding: [0, 0, 0],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(input, weight, None, options);
@@ -340,6 +343,7 @@ fn test_cpu_conv3d_stride_2() {
         padding: [1, 1, 1],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(input, weight, None, options);
@@ -379,6 +383,7 @@ fn test_cpu_conv3d_batch_2() {
         padding: [1, 1, 1],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(input, weight, Some(bias), options);
@@ -412,6 +417,7 @@ fn test_cpu_conv3d_asymmetric() {
         padding: [0, 1, 1],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(input, weight, None, options);
@@ -445,6 +451,7 @@ fn test_cpu_conv3d_deep_channels() {
         padding: [1, 1, 1],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(input, weight, None, options);
@@ -452,4 +459,108 @@ fn test_cpu_conv3d_deep_channels() {
 
     assert_eq!(cubecl_output.dims(), [1, 64, 4, 4, 4]);
     assert_tensors_approx_eq(cubecl_output, ref_output, 1e-3, "deep channels (CPU)");
+}
+
+// ============================================================================
+// NTHWC Layout Tests
+// ============================================================================
+
+/// Helper to permute NCTHW -> NTHWC for creating test inputs
+fn ncthw_to_nthwc<B: Backend>(tensor: Tensor<B, 5>) -> Tensor<B, 5> {
+    tensor.permute([0, 2, 3, 4, 1])
+}
+
+/// Helper to permute NTHWC -> NCTHW for comparing with reference
+fn nthwc_to_ncthw<B: Backend>(tensor: Tensor<B, 5>) -> Tensor<B, 5> {
+    tensor.permute([0, 4, 1, 2, 3])
+}
+
+#[test]
+fn test_cpu_conv3d_nthwc_3x3x3_same_padding() {
+    let cpu_device = CpuDevice;
+    let ref_device = Default::default();
+
+    // Create NCTHW input, then permute to NTHWC for the CubeCL test
+    let input_ncthw = Tensor::<TestBackend, 5>::random(
+        [1, 3, 8, 8, 8],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &cpu_device,
+    );
+    let weight = Tensor::<TestBackend, 5>::random(
+        [8, 3, 3, 3, 3],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &cpu_device,
+    );
+    let bias = Tensor::<TestBackend, 1>::random(
+        [8],
+        burn::tensor::Distribution::Uniform(-0.1, 0.1),
+        &cpu_device,
+    );
+
+    // Reference: NCTHW throughout
+    let input_ref = Tensor::<RefBackend, 5>::from_data(input_ncthw.to_data(), &ref_device);
+    let weight_ref = Tensor::<RefBackend, 5>::from_data(weight.to_data(), &ref_device);
+    let bias_ref = Tensor::<RefBackend, 1>::from_data(bias.to_data(), &ref_device);
+
+    // CubeCL: input in NTHWC format
+    let input_nthwc = ncthw_to_nthwc(input_ncthw);
+
+    let options = Conv3dOptions {
+        stride: [1, 1, 1],
+        padding: [1, 1, 1],
+        dilation: [1, 1, 1],
+        groups: 1,
+        layout: Layout::NTHWC,
+    };
+
+    let cubecl_output_nthwc = run_cubecl_conv3d(input_nthwc, weight, Some(bias), options);
+
+    // Output should be NTHWC: [1, 8, 8, 8, 8] -> batch, time, height, width, channels
+    assert_eq!(cubecl_output_nthwc.dims(), [1, 8, 8, 8, 8]);
+
+    // Convert back to NCTHW for comparison with reference
+    let cubecl_output_ncthw = nthwc_to_ncthw(cubecl_output_nthwc);
+    let ref_output = reference::conv3d_reference(input_ref, weight_ref, Some(bias_ref), [1, 1, 1], [1, 1, 1]);
+
+    assert_tensors_approx_eq(cubecl_output_ncthw, ref_output, 1e-4, "NTHWC 3x3x3 same padding (CPU)");
+}
+
+#[test]
+fn test_cpu_conv3d_nthwc_stride_2() {
+    let cpu_device = CpuDevice;
+    let ref_device = Default::default();
+
+    let input_ncthw = Tensor::<TestBackend, 5>::random(
+        [2, 4, 8, 8, 8],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &cpu_device,
+    );
+    let weight = Tensor::<TestBackend, 5>::random(
+        [8, 4, 3, 3, 3],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &cpu_device,
+    );
+
+    let input_ref = Tensor::<RefBackend, 5>::from_data(input_ncthw.to_data(), &ref_device);
+    let weight_ref = Tensor::<RefBackend, 5>::from_data(weight.to_data(), &ref_device);
+
+    let input_nthwc = ncthw_to_nthwc(input_ncthw);
+
+    let options = Conv3dOptions {
+        stride: [2, 2, 2],
+        padding: [1, 1, 1],
+        dilation: [1, 1, 1],
+        groups: 1,
+        layout: Layout::NTHWC,
+    };
+
+    let cubecl_output_nthwc = run_cubecl_conv3d(input_nthwc, weight, None, options);
+
+    // Output: [batch=2, time=4, height=4, width=4, channels=8]
+    assert_eq!(cubecl_output_nthwc.dims(), [2, 4, 4, 4, 8]);
+
+    let cubecl_output_ncthw = nthwc_to_ncthw(cubecl_output_nthwc);
+    let ref_output = reference::conv3d_reference(input_ref, weight_ref, None, [2, 2, 2], [1, 1, 1]);
+
+    assert_tensors_approx_eq(cubecl_output_ncthw, ref_output, 1e-4, "NTHWC stride 2 (CPU)");
 }

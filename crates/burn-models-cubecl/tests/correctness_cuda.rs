@@ -7,7 +7,7 @@
 use burn::prelude::*;
 use burn_cubecl::{tensor::CubeTensor, CubeBackend};
 use burn_cuda::CudaDevice;
-use burn_models_cubecl::{conv3d, Conv3dOptions};
+use burn_models_cubecl::{conv3d, Conv3dOptions, Layout};
 use cubecl::cuda::CudaRuntime;
 
 // Use CubeBackend directly to avoid FusionTensor wrapper
@@ -236,6 +236,7 @@ fn test_cuda_conv3d_1x1x1_kernel() {
         padding: [0, 0, 0],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(
@@ -284,6 +285,7 @@ fn test_cuda_conv3d_3x3x3_same_padding() {
         padding: [1, 1, 1],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), Some(bias.clone()), options);
@@ -314,6 +316,7 @@ fn test_cuda_conv3d_3x3x3_no_padding() {
         padding: [0, 0, 0],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
@@ -344,6 +347,7 @@ fn test_cuda_conv3d_stride_2() {
         padding: [1, 1, 1],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
@@ -379,6 +383,7 @@ fn test_cuda_conv3d_batch_2() {
         padding: [1, 1, 1],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), Some(bias.clone()), options);
@@ -410,6 +415,7 @@ fn test_cuda_conv3d_asymmetric() {
         padding: [0, 1, 1],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
@@ -440,6 +446,7 @@ fn test_cuda_conv3d_deep_channels() {
         padding: [1, 1, 1],
         dilation: [1, 1, 1],
         groups: 1,
+        layout: Layout::NCTHW,
     };
 
     let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
@@ -447,4 +454,63 @@ fn test_cuda_conv3d_deep_channels() {
 
     assert_eq!(cubecl_output.dims(), [1, 64, 4, 4, 4]);
     assert_tensors_approx_eq(cubecl_output, reference_output, 1e-3, "deep channels");
+}
+
+// ============================================================================
+// NTHWC Layout Tests
+// ============================================================================
+
+/// Helper to permute NCTHW -> NTHWC for creating test inputs
+fn ncthw_to_nthwc(tensor: Tensor<TestBackend, 5>) -> Tensor<TestBackend, 5> {
+    tensor.permute([0, 2, 3, 4, 1])
+}
+
+/// Helper to permute NTHWC -> NCTHW for comparing with reference
+fn nthwc_to_ncthw(tensor: Tensor<TestBackend, 5>) -> Tensor<TestBackend, 5> {
+    tensor.permute([0, 4, 1, 2, 3])
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_conv3d_nthwc_3x3x3_same_padding() {
+    let device = CudaDevice::default();
+
+    // Create NCTHW input, then permute to NTHWC for the CubeCL test
+    let input_ncthw = Tensor::<TestBackend, 5>::random(
+        [1, 3, 8, 8, 8],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    let weight = Tensor::<TestBackend, 5>::random(
+        [8, 3, 3, 3, 3],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &device,
+    );
+    let bias = Tensor::<TestBackend, 1>::random(
+        [8],
+        burn::tensor::Distribution::Uniform(-0.1, 0.1),
+        &device,
+    );
+
+    // CubeCL: input in NTHWC format
+    let input_nthwc = ncthw_to_nthwc(input_ncthw.clone());
+
+    let options = Conv3dOptions {
+        stride: [1, 1, 1],
+        padding: [1, 1, 1],
+        dilation: [1, 1, 1],
+        groups: 1,
+        layout: Layout::NTHWC,
+    };
+
+    let cubecl_output_nthwc = run_cubecl_conv3d(input_nthwc, weight.clone(), Some(bias.clone()), options);
+
+    // Output should be NTHWC: [1, 8, 8, 8, 8] -> batch, time, height, width, channels
+    assert_eq!(cubecl_output_nthwc.dims(), [1, 8, 8, 8, 8]);
+
+    // Convert back to NCTHW for comparison with reference
+    let cubecl_output_ncthw = nthwc_to_ncthw(cubecl_output_nthwc);
+    let ref_output = reference::conv3d_reference(input_ncthw, weight, Some(bias), [1, 1, 1], [1, 1, 1], [1, 1, 1]);
+
+    assert_tensors_approx_eq(cubecl_output_ncthw, ref_output, 1e-4, "NTHWC 3x3x3 same padding (CUDA)");
 }
