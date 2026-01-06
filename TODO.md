@@ -398,6 +398,50 @@ Found during dead code audit. These are stubs or broken implementations that nee
 - [x] `rwkv.rs:277-290` RWKV-7 dynamic mixing - Now implements full low-rank projection.
   Auto-detects RWKV-6 vs RWKV-7 by checking if `time_maa_w1` weights are present.
 
+### Precision and Performance (2026-01-07)
+
+**f16 vs f32 Precision:**
+- Added `--precision f16|f32` flag to CLI
+- f32: ~57 sec inference, ~11GB VRAM
+- f16: ~6GB VRAM, but ops run on CPU (0-1% GPU usage)
+- CubeCL issue #984 confirmed f16 should be ~2x faster - our slowness is something else
+
+**Timing (SD 1.x @ 512x512, f32, 30 steps):**
+```
+[timing] tokenizer: 38ms
+[timing] load CLIP: 578ms
+[timing] load UNet: 2.8s
+[timing] load VAE: 82ms
+[timing] inference: 53.4s (~1.78s/step)
+[timing] total: 57s
+```
+
+Comparison: ComfyUI does SDXL @ 20 steps in ~26s (~1.3s/step). We're 37% slower per step on a smaller model.
+
+**TODO:**
+- [x] Add `--debug timing,shapes` flag for diagnostics
+- [ ] Investigate f16 slowness (should be 2x faster per cubecl #984)
+- [ ] Profile inference to find bottleneck (1.78s/step vs expected ~1s)
+- [ ] Debug garbled output from CompVis models
+
+### Linear Weight Convention (2026-01-07)
+
+**RESOLVED**: Not a bug. Burn and PyTorch use different weight layouts:
+- Burn: `[d_input, d_output]` (Row layout, default)
+- PyTorch: `[d_output, d_input]`
+
+Burn's `linear()` does `input.matmul(weight)` - no transpose.
+PyTorch's `F.linear()` does `input @ weight.T`.
+
+**Solution**: Transpose Linear weights when loading from PyTorch safetensors:
+```rust
+// In load_linear():
+linear.weight = Param::from_tensor(weight.transpose());
+```
+
+Previously observed errors like `[1, 77, 768] @ [1, 3072, 768]` were from missing transpose.
+
+
 ### Session Notes (2026-01-06) - CubeCL Phase 4
 
 #### Key Files Modified
