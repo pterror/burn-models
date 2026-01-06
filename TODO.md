@@ -112,12 +112,12 @@ Custom GPU kernels for operations that benefit from fusion/specialization.
 Decision: Own crate rather than upstream (faster iteration, avoid "vibe code" concerns).
 
 #### Phase 1: Infrastructure
-- [ ] Create burn-models-cubecl crate with cubecl dependency
-- [ ] Set up feature flags (wgpu, cuda) mirroring burn-cubecl
-- [ ] Add benchmark harness for comparing against tensor-ops implementations
+- [x] Create burn-models-cubecl crate with cubecl dependency
+- [x] Set up feature flags (wgpu, cuda) - delegated to consuming crate
+- [x] Add benchmark harness for comparing against tensor-ops implementations
 
 #### Phase 2: Conv3d Kernel
-- [ ] Port conv_transpose3d pattern to conv3d (simple direct kernel, ~200 lines)
+- [x] Port conv_transpose3d pattern to conv3d (simple direct kernel, ~200 lines)
 - [ ] NHWC layout handling (permute in, permute out)
 - [ ] Test harness comparing CubeCL vs im2col output (correctness)
 - [ ] Benchmark against im2col implementation
