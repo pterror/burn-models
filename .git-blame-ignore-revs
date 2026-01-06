@@ -1,0 +1,5 @@
+# Ignore formatting-only commits for git blame
+# Configure with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: apply cargo fmt to entire codebase
+b00104262f08b08c7e7ede5e319c65e9f22222e6
