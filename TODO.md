@@ -120,10 +120,11 @@ Decision: Own crate rather than upstream (faster iteration, avoid "vibe code" co
 - [x] Port conv_transpose3d pattern to conv3d (simple direct kernel, ~200 lines)
 - [ ] NHWC layout handling (permute in, permute out)
 - [x] Test harness comparing CubeCL vs im2col output (correctness) ✓ PASSING
-  - WGPU: `cargo test -p burn-models-cubecl --features wgpu --test correctness -- --ignored`
   - CUDA: `cargo test -p burn-models-cubecl --features cuda --test correctness_cuda -- --ignored`
-- [ ] Benchmark against im2col implementation
-- [ ] Replace im2col with CubeCL kernel (move im2col to test module or remove)
+- [x] Benchmark against im2col implementation ✓ **630-40,900× speedup**
+  - Run: `cargo bench -p burn-models-cubecl --features cuda --bench conv3d`
+  - Results: see `docs/cubecl-guide.md` for full benchmark table
+- [ ] Replace im2col with CubeCL kernel in vae3d.rs
 
 #### Phase 3: Conv3d Optimization (if benchmarks justify)
 - [ ] Add Line<E> vectorization

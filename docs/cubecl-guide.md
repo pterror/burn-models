@@ -353,13 +353,30 @@ To use a CubeCL kernel in Burn:
 
 ## Current Status for Conv3d
 
-Our pure tensor-ops Conv3d works on all backends but is slow (many kernel launches for im2col).
+### Benchmark Results (RTX 3060, CUDA 12.8, 2025-01-06)
 
-A CubeCL Conv3d kernel would:
-- Single kernel launch
-- Fused im2col + matmul
-- SIMD vectorization
-- Potential for shared memory tiling
+CubeCL direct kernel vs im2col+matmul reference implementation:
+
+| Config | CubeCL | im2col | Speedup |
+|--------|--------|--------|---------|
+| small (4→8ch, 8×32×32) | **63 µs** | 2.58 s | **40,900×** |
+| medium (8→16ch, 8×64×64) | **682 µs** | 14.7 s | **21,500×** |
+| strided (8→16ch, stride 2) | **101 µs** | 765 ms | **7,600×** |
+| deep (32→64ch, 4×32×32) | **950 µs** | 598 ms | **630×** |
+
+**Why im2col is so slow:** Each slice operation in the im2col loop is a separate kernel launch. For a 8×64×64 output, that's 32,768 kernel launches vs 1 for CubeCL.
+
+**Conclusion:** CubeCL kernel is **orders of magnitude faster** - the im2col implementation should be replaced.
+
+Run benchmarks: `cargo bench -p burn-models-cubecl --features cuda --bench conv3d`
+
+### Architecture
+
+Our CubeCL Conv3d kernel:
+- Single kernel launch (fused im2col + accumulation)
+- Direct convolution pattern (no implicit GEMM)
+- NCTHW layout (matches Burn's tensor layout)
+- ~200 lines, adapted from burn-cubecl's conv_transpose3d
 
 ## Readiness Assessment
 
