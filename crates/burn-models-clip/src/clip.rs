@@ -262,9 +262,20 @@ impl<B: Backend> FeedForward<B> {
 
     /// Forward pass with QuickGELU activation
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
+        let [batch, seq, dim] = x.dims();
+        // Burn Linear weights are [in_features, out_features]
+        let out_dim = self.fc2.weight.dims()[1];
+
+        // Flatten to 2D for Linear
+        let x = x.reshape([batch * seq, dim]);
+
+        // Standard Linear forward
         let x = self.fc1.forward(x);
         let x = quick_gelu(x);
-        self.fc2.forward(x)
+        let x = self.fc2.forward(x);
+
+        // Reshape back to 3D
+        x.reshape([batch, seq, out_dim])
     }
 }
 

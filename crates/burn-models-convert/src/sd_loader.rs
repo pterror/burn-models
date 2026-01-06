@@ -389,7 +389,7 @@ fn load_linear<B: Backend>(
     let weight: Tensor<B, 2> = file.load_f32(weight_key, device)
         .map_err(|e| SdLoadError::MissingTensor(format!("{}: {}", weight_key, e)))?;
 
-    // Verify shape [out_features, in_features]
+    // Verify shape [out_features, in_features] (PyTorch convention)
     let [out_f, in_f] = weight.dims();
     if out_f != out_features || in_f != in_features {
         return Err(SdLoadError::ShapeMismatch {
@@ -404,7 +404,10 @@ fn load_linear<B: Backend>(
         .with_bias(has_bias)
         .init(device);
 
-    linear.weight = Param::from_tensor(weight);
+    // PyTorch stores Linear weights as [out_features, in_features]
+    // Burn expects [in_features, out_features] (Row layout default)
+    // Transpose to convert from PyTorch to Burn convention
+    linear.weight = Param::from_tensor(weight.transpose());
 
     if let Some(bias_k) = bias_key {
         if file.contains(bias_k) {
@@ -530,6 +533,86 @@ use burn_models_unet::{
     Downsample, Upsample,
 };
 
+/// Naming convention used in safetensors files
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum UNetNaming {
+    /// HuggingFace diffusers naming (down_blocks, mid_block, up_blocks)
+    HuggingFace,
+    /// CompVis/original SD naming (input_blocks, middle_block, output_blocks)
+    CompVis,
+}
+
+impl UNetNaming {
+    /// Detect naming convention from file
+    fn detect(file: &SafeTensorFile, prefix: &str) -> Self {
+        // Check for CompVis-style input_blocks
+        let compvis_test = format!("{}.input_blocks.0.0.weight", prefix);
+        if file.contains(&compvis_test) {
+            return Self::CompVis;
+        }
+        Self::HuggingFace
+    }
+}
+
+/// CompVis UNet block layout mapping
+///
+/// CompVis uses flat input_blocks indices while HF uses hierarchical down_blocks.
+/// This struct tracks the mapping for a standard SD 1.x UNet with channel_mult [1,2,4,4].
+///
+/// Layout:
+/// - input_blocks.0.0 = conv_in
+/// - input_blocks.{1,2} = level 0 (320ch), res+attn each
+/// - input_blocks.3.0.op = downsample
+/// - input_blocks.{4,5} = level 1 (640ch), res+attn each
+/// - input_blocks.6.0.op = downsample
+/// - input_blocks.{7,8} = level 2 (1280ch), res+attn each
+/// - input_blocks.9.0.op = downsample
+/// - input_blocks.{10,11} = level 3 (1280ch), res only
+struct CompVisBlockMap {
+    /// Maps (level, block_in_level) to input_blocks index
+    down_res_indices: Vec<Vec<usize>>,
+    /// Maps level to downsample input_blocks index (None for last level)
+    down_sample_indices: Vec<Option<usize>>,
+    /// output_blocks work similarly but in reverse
+    up_res_indices: Vec<Vec<usize>>,
+    /// Maps level to upsample output_blocks index
+    up_sample_indices: Vec<Option<usize>>,
+}
+
+impl CompVisBlockMap {
+    /// Create mapping for SD 1.x channel_mult [1,2,4,4]
+    fn sd1x() -> Self {
+        Self {
+            // Level 0: blocks 1,2; Level 1: blocks 4,5; Level 2: blocks 7,8; Level 3: blocks 10,11
+            down_res_indices: vec![
+                vec![1, 2],   // level 0
+                vec![4, 5],   // level 1
+                vec![7, 8],   // level 2
+                vec![10, 11], // level 3 (no attention)
+            ],
+            down_sample_indices: vec![
+                Some(3),  // level 0 -> 1
+                Some(6),  // level 1 -> 2
+                Some(9),  // level 2 -> 3
+                None,     // level 3 (no downsample)
+            ],
+            // output_blocks: 0-2 = level 3, 3-5 = level 2, 6-8 = level 1, 9-11 = level 0
+            up_res_indices: vec![
+                vec![9, 10, 11], // level 0 (with upsample at 11)
+                vec![6, 7, 8],   // level 1 (with upsample at 8)
+                vec![3, 4, 5],   // level 2 (with upsample at 5)
+                vec![0, 1, 2],   // level 3 (no upsample)
+            ],
+            up_sample_indices: vec![
+                Some(11), // level 0 upsample
+                Some(8),  // level 1 upsample
+                Some(5),  // level 2 upsample
+                None,     // level 3 (no upsample)
+            ],
+        }
+    }
+}
+
 /// Load UNet from a SafeTensorFile
 fn load_unet_from_file<B: Backend>(
     file: &SafeTensorFile,
@@ -538,23 +621,31 @@ fn load_unet_from_file<B: Backend>(
 ) -> Result<UNet<B>, SdLoadError> {
     // Detect prefix
     let prefix = detect_unet_prefix(file);
+
+    // Detect naming convention
+    let naming = UNetNaming::detect(file, &prefix);
+
+    match naming {
+        UNetNaming::CompVis => load_unet_compvis(file, &prefix, config, device),
+        UNetNaming::HuggingFace => load_unet_hf(file, &prefix, config, device),
+    }
+}
+
+/// Load UNet using HuggingFace diffusers naming
+fn load_unet_hf<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    config: &UNetConfig,
+    device: &B::Device,
+) -> Result<UNet<B>, SdLoadError> {
     let ch = config.model_channels;
     let time_embed_dim = ch * 4;
 
-    // Detect naming convention: HF diffusers uses "linear_1"/"linear_2", original uses "0"/"2"
-    let uses_hf_naming = file.contains(&format!("{}.time_embed.linear_1.weight", prefix));
-
-    // Time embedding MLP
-    let (te0_name, te2_name) = if uses_hf_naming {
-        ("linear_1", "linear_2")
-    } else {
-        ("0", "2")
-    };
-
+    // HF uses "linear_1"/"linear_2"
     let time_embed_0 = load_linear(
         file,
-        &format!("{}.time_embed.{}.weight", prefix, te0_name),
-        Some(&format!("{}.time_embed.{}.bias", prefix, te0_name)),
+        &format!("{}.time_embed.linear_1.weight", prefix),
+        Some(&format!("{}.time_embed.linear_1.bias", prefix)),
         ch,
         time_embed_dim,
         device,
@@ -562,8 +653,8 @@ fn load_unet_from_file<B: Backend>(
 
     let time_embed_2 = load_linear(
         file,
-        &format!("{}.time_embed.{}.weight", prefix, te2_name),
-        Some(&format!("{}.time_embed.{}.bias", prefix, te2_name)),
+        &format!("{}.time_embed.linear_2.weight", prefix),
+        Some(&format!("{}.time_embed.linear_2.bias", prefix)),
         time_embed_dim,
         time_embed_dim,
         device,
@@ -726,6 +817,187 @@ fn detect_unet_prefix(file: &SafeTensorFile) -> String {
     }
 
     "model.diffusion_model".to_string()
+}
+
+/// Load UNet using CompVis/original SD naming
+fn load_unet_compvis<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    config: &UNetConfig,
+    device: &B::Device,
+) -> Result<UNet<B>, SdLoadError> {
+    let ch = config.model_channels;
+    let time_embed_dim = ch * 4;
+    let block_map = CompVisBlockMap::sd1x();
+
+    // CompVis uses "time_embed.0"/"time_embed.2"
+    let time_embed_0 = load_linear(
+        file,
+        &format!("{}.time_embed.0.weight", prefix),
+        Some(&format!("{}.time_embed.0.bias", prefix)),
+        ch,
+        time_embed_dim,
+        device,
+    )?;
+
+    let time_embed_2 = load_linear(
+        file,
+        &format!("{}.time_embed.2.weight", prefix),
+        Some(&format!("{}.time_embed.2.bias", prefix)),
+        time_embed_dim,
+        time_embed_dim,
+        device,
+    )?;
+
+    // Input conv from input_blocks.0.0
+    let conv_in = load_conv2d(
+        file,
+        &format!("{}.input_blocks.0.0.weight", prefix),
+        Some(&format!("{}.input_blocks.0.0.bias", prefix)),
+        config.in_channels,
+        ch,
+        3,
+        1,
+        device,
+    )?;
+
+    // Build down blocks
+    let mut down_blocks = Vec::new();
+    let mut ch_in = ch;
+
+    for (level, &mult) in config.channel_mult.iter().enumerate() {
+        let ch_out = ch * mult;
+        let is_last = level == config.channel_mult.len() - 1;
+        let has_attn = level < 3; // Levels 0,1,2 have attention, level 3 doesn't
+
+        let block = load_down_block_compvis(
+            file,
+            prefix,
+            &block_map,
+            level,
+            ch_in,
+            ch_out,
+            time_embed_dim,
+            config.num_heads,
+            config.head_dim,
+            config.context_dim,
+            config.transformer_depth,
+            !is_last, // has_downsample
+            has_attn,
+            device,
+        )?;
+
+        down_blocks.push(block);
+        ch_in = ch_out;
+    }
+
+    // Mid block from middle_block.{0,1,2}
+    let mid_block = load_mid_block_compvis(
+        file,
+        prefix,
+        ch_in,
+        time_embed_dim,
+        config.num_heads,
+        config.head_dim,
+        config.context_dim,
+        config.transformer_depth,
+        device,
+    )?;
+
+    // Build up blocks
+    let mut up_blocks = Vec::new();
+    let mut channels: Vec<usize> = vec![ch];
+    for (level, &mult) in config.channel_mult.iter().enumerate() {
+        let ch_out = ch * mult;
+        let is_last = level == config.channel_mult.len() - 1;
+        channels.push(ch_out);
+        channels.push(ch_out);
+        if !is_last {
+            channels.push(ch_out);
+        }
+    }
+
+    let mut ch_in = ch * config.channel_mult[config.channel_mult.len() - 1];
+    let mut block_idx = 0;
+
+    for (level, &mult) in config.channel_mult.iter().rev().enumerate() {
+        let ch_out = ch * mult;
+        let is_last = level == config.channel_mult.len() - 1;
+        let has_attn = level > 0; // Reversed: level 0 = original level 3 (no attn)
+
+        // Get next level's channel count for transition (if not last level)
+        let next_ch = if !is_last {
+            ch * config.channel_mult[config.channel_mult.len() - 2 - level]
+        } else {
+            ch_out
+        };
+
+        for i in 0..3 {
+            let skip_ch = channels.pop().unwrap();
+            let block_in = ch_in + skip_ch;
+
+            // CompVis: ResBlocks maintain level channels, transition at first block of next level
+            // For block at i=2 with upsample, the block itself still outputs ch_out,
+            // but after upsampling we transition to next_ch at the start of next level
+            let block_out = ch_out;
+
+            let upsample = i == 2 && !is_last;
+
+            let block = load_up_block_compvis(
+                file,
+                prefix,
+                block_idx,
+                block_in,
+                block_out,
+                time_embed_dim,
+                config.num_heads,
+                config.head_dim,
+                config.context_dim,
+                config.transformer_depth,
+                upsample,
+                has_attn,
+                device,
+            )?;
+
+            up_blocks.push(block);
+
+            // After upsample, we transition to next level's channel count
+            ch_in = if upsample { next_ch } else { block_out };
+            block_idx += 1;
+        }
+    }
+
+    // Output from out.{0,2}
+    let norm_out = load_group_norm(
+        file,
+        &format!("{}.out.0.weight", prefix),
+        &format!("{}.out.0.bias", prefix),
+        32,
+        device,
+    )?;
+
+    let conv_out = load_conv2d(
+        file,
+        &format!("{}.out.2.weight", prefix),
+        Some(&format!("{}.out.2.bias", prefix)),
+        ch,
+        config.out_channels,
+        3,
+        1,
+        device,
+    )?;
+
+    Ok(UNet {
+        time_embed_0,
+        time_embed_2,
+        conv_in,
+        down_blocks,
+        mid_block,
+        up_blocks,
+        norm_out,
+        conv_out,
+        model_channels: ch,
+    })
 }
 
 /// Load a DownBlock
@@ -1176,6 +1448,513 @@ fn load_upsample<B: Backend>(
     )?;
 
     Ok(Upsample { conv })
+}
+
+// =============================================================================
+// CompVis-specific Block Loaders
+// =============================================================================
+
+/// Load a DownBlock using CompVis naming
+fn load_down_block_compvis<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    block_map: &CompVisBlockMap,
+    level: usize,
+    in_ch: usize,
+    out_ch: usize,
+    time_dim: usize,
+    num_heads: usize,
+    _head_dim: usize, // Not used - computed per-block
+    context_dim: usize,
+    transformer_depth: usize,
+    has_downsample: bool,
+    has_attn: bool,
+    device: &B::Device,
+) -> Result<DownBlock<B>, SdLoadError> {
+    let indices = &block_map.down_res_indices[level];
+
+    // CompVis SD 1.x: head_dim scales with channels (8 heads, head_dim = channels/8)
+    let out_head_dim = out_ch / num_heads;
+
+    // First ResBlock + optional Attention
+    let res1_prefix = format!("{}.input_blocks.{}.0", prefix, indices[0]);
+    let res1 = load_resblock_compvis(file, &res1_prefix, in_ch, out_ch, time_dim, device)?;
+
+    let attn1 = if has_attn {
+        let attn1_prefix = format!("{}.input_blocks.{}.1", prefix, indices[0]);
+        load_spatial_transformer_compvis(file, &attn1_prefix, out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)?
+    } else {
+        // Create a dummy/passthrough spatial transformer for blocks without attention
+        create_dummy_spatial_transformer(out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)
+    };
+
+    // Second ResBlock + optional Attention
+    let res2_prefix = format!("{}.input_blocks.{}.0", prefix, indices[1]);
+    let res2 = load_resblock_compvis(file, &res2_prefix, out_ch, out_ch, time_dim, device)?;
+
+    let attn2 = if has_attn {
+        let attn2_prefix = format!("{}.input_blocks.{}.1", prefix, indices[1]);
+        load_spatial_transformer_compvis(file, &attn2_prefix, out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)?
+    } else {
+        create_dummy_spatial_transformer(out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)
+    };
+
+    // Downsample if needed
+    let downsample = if has_downsample {
+        let ds_idx = block_map.down_sample_indices[level].unwrap();
+        let ds_prefix = format!("{}.input_blocks.{}.0.op", prefix, ds_idx);
+        Some(load_downsample_compvis(file, &ds_prefix, out_ch, device)?)
+    } else {
+        None
+    };
+
+    Ok(DownBlock {
+        res1,
+        attn1,
+        res2,
+        attn2,
+        downsample,
+    })
+}
+
+/// Load a MidBlock using CompVis naming
+fn load_mid_block_compvis<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    channels: usize,
+    time_dim: usize,
+    num_heads: usize,
+    _head_dim: usize, // Not used - computed from channels
+    context_dim: usize,
+    transformer_depth: usize,
+    device: &B::Device,
+) -> Result<MidBlock<B>, SdLoadError> {
+    // CompVis SD 1.x: head_dim scales with channels
+    let head_dim = channels / num_heads;
+
+    // middle_block.0 = ResBlock
+    let res1 = load_resblock_compvis(
+        file,
+        &format!("{}.middle_block.0", prefix),
+        channels,
+        channels,
+        time_dim,
+        device,
+    )?;
+
+    // middle_block.1 = SpatialTransformer
+    let attn = load_spatial_transformer_compvis(
+        file,
+        &format!("{}.middle_block.1", prefix),
+        channels,
+        num_heads,
+        head_dim,
+        context_dim,
+        transformer_depth,
+        device,
+    )?;
+
+    // middle_block.2 = ResBlock
+    let res2 = load_resblock_compvis(
+        file,
+        &format!("{}.middle_block.2", prefix),
+        channels,
+        channels,
+        time_dim,
+        device,
+    )?;
+
+    Ok(MidBlock { res1, attn, res2 })
+}
+
+/// Load an UpBlock using CompVis naming
+fn load_up_block_compvis<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    block_idx: usize,
+    in_ch: usize,
+    out_ch: usize,
+    time_dim: usize,
+    num_heads: usize,
+    _head_dim: usize, // Not used - computed from channels
+    context_dim: usize,
+    transformer_depth: usize,
+    has_upsample: bool,
+    has_attn: bool,
+    device: &B::Device,
+) -> Result<UpBlock<B>, SdLoadError> {
+    // CompVis SD 1.x: head_dim scales with channels
+    let out_head_dim = out_ch / num_heads;
+
+    // output_blocks.{block_idx}.0 = ResBlock
+    let res_prefix = format!("{}.output_blocks.{}.0", prefix, block_idx);
+    let res = load_resblock_compvis(file, &res_prefix, in_ch, out_ch, time_dim, device)?;
+
+    // output_blocks.{block_idx}.1 = SpatialTransformer (if has_attn) or Upsample (if has_upsample and no attn)
+    let attn = if has_attn {
+        let attn_prefix = format!("{}.output_blocks.{}.1", prefix, block_idx);
+        load_spatial_transformer_compvis(file, &attn_prefix, out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)?
+    } else {
+        create_dummy_spatial_transformer(out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)
+    };
+
+    // Upsample: could be at .1 (if no attn) or .2 (if attn present)
+    let upsample = if has_upsample {
+        let us_suffix = if has_attn { "2" } else { "1" };
+        let us_prefix = format!("{}.output_blocks.{}.{}.conv", prefix, block_idx, us_suffix);
+        Some(load_upsample_compvis(file, &us_prefix, out_ch, device)?)
+    } else {
+        None
+    };
+
+    Ok(UpBlock { res, attn, upsample })
+}
+
+/// Load a ResBlock using CompVis naming
+///
+/// CompVis uses:
+/// - in_layers.0 = GroupNorm (norm1)
+/// - in_layers.2 = Conv2d (conv1)
+/// - emb_layers.1 = Linear (time_emb_proj)
+/// - out_layers.0 = GroupNorm (norm2)
+/// - out_layers.3 = Conv2d (conv2)
+/// - skip_connection = Conv2d (skip_conv)
+fn load_resblock_compvis<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    in_ch: usize,
+    out_ch: usize,
+    time_dim: usize,
+    device: &B::Device,
+) -> Result<ResBlock<B>, SdLoadError> {
+    let norm1 = load_group_norm(
+        file,
+        &format!("{}.in_layers.0.weight", prefix),
+        &format!("{}.in_layers.0.bias", prefix),
+        32,
+        device,
+    )?;
+
+    let conv1 = load_conv2d(
+        file,
+        &format!("{}.in_layers.2.weight", prefix),
+        Some(&format!("{}.in_layers.2.bias", prefix)),
+        in_ch,
+        out_ch,
+        3,
+        1,
+        device,
+    )?;
+
+    let time_emb_proj = load_linear(
+        file,
+        &format!("{}.emb_layers.1.weight", prefix),
+        Some(&format!("{}.emb_layers.1.bias", prefix)),
+        time_dim,
+        out_ch,
+        device,
+    )?;
+
+    let norm2 = load_group_norm(
+        file,
+        &format!("{}.out_layers.0.weight", prefix),
+        &format!("{}.out_layers.0.bias", prefix),
+        32,
+        device,
+    )?;
+
+    let conv2 = load_conv2d(
+        file,
+        &format!("{}.out_layers.3.weight", prefix),
+        Some(&format!("{}.out_layers.3.bias", prefix)),
+        out_ch,
+        out_ch,
+        3,
+        1,
+        device,
+    )?;
+
+    let skip_conv = if in_ch != out_ch {
+        let conv_key = format!("{}.skip_connection.weight", prefix);
+        if file.contains(&conv_key) {
+            Some(load_conv2d(
+                file,
+                &conv_key,
+                Some(&format!("{}.skip_connection.bias", prefix)),
+                in_ch,
+                out_ch,
+                1,
+                0,
+                device,
+            )?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    Ok(ResBlock {
+        norm1,
+        conv1,
+        time_emb_proj,
+        norm2,
+        conv2,
+        skip_conv,
+    })
+}
+
+/// Load a SpatialTransformer using CompVis naming
+///
+/// Note: Some CompVis models store proj_in/proj_out as Conv2d, others as Linear.
+/// We detect which by checking tensor dimensionality.
+fn load_spatial_transformer_compvis<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    channels: usize,
+    num_heads: usize,
+    head_dim: usize,
+    context_dim: usize,
+    depth: usize,
+    device: &B::Device,
+) -> Result<SpatialTransformer<B>, SdLoadError> {
+    let inner_dim = num_heads * head_dim;
+
+    let norm = load_group_norm(
+        file,
+        &format!("{}.norm.weight", prefix),
+        &format!("{}.norm.bias", prefix),
+        32,
+        device,
+    )?;
+
+    // Check if proj_in is stored as Conv2d (4D) or Linear (2D)
+    let proj_in_key = format!("{}.proj_in.weight", prefix);
+    let proj_in_shape = file.shape(&proj_in_key)
+        .ok_or_else(|| SdLoadError::MissingTensor(proj_in_key.clone()))?;
+
+    let proj_in = if proj_in_shape.len() == 4 {
+        // Already Conv2d format
+        load_conv2d(
+            file,
+            &proj_in_key,
+            Some(&format!("{}.proj_in.bias", prefix)),
+            channels,
+            inner_dim,
+            1,
+            0,
+            device,
+        )?
+    } else {
+        // Linear format - need to reshape
+        load_linear_as_conv2d(
+            file,
+            &proj_in_key,
+            Some(&format!("{}.proj_in.bias", prefix)),
+            channels,
+            inner_dim,
+            device,
+        )?
+    };
+
+    let mut transformer_blocks = Vec::with_capacity(depth);
+    for i in 0..depth {
+        let block = load_transformer_block(
+            file,
+            &format!("{}.transformer_blocks.{}", prefix, i),
+            inner_dim,
+            num_heads,
+            head_dim,
+            context_dim,
+            device,
+        )?;
+        transformer_blocks.push(block);
+    }
+
+    let proj_out_key = format!("{}.proj_out.weight", prefix);
+    let proj_out_shape = file.shape(&proj_out_key)
+        .ok_or_else(|| SdLoadError::MissingTensor(proj_out_key.clone()))?;
+
+    let proj_out = if proj_out_shape.len() == 4 {
+        // Already Conv2d format
+        load_conv2d(
+            file,
+            &proj_out_key,
+            Some(&format!("{}.proj_out.bias", prefix)),
+            inner_dim,
+            channels,
+            1,
+            0,
+            device,
+        )?
+    } else {
+        // Linear format - need to reshape
+        load_linear_as_conv2d(
+            file,
+            &proj_out_key,
+            Some(&format!("{}.proj_out.bias", prefix)),
+            inner_dim,
+            channels,
+            device,
+        )?
+    };
+
+    Ok(SpatialTransformer {
+        norm,
+        proj_in,
+        transformer_blocks,
+        proj_out,
+    })
+}
+
+/// Load a Linear layer's weights as a Conv2d 1x1
+fn load_linear_as_conv2d<B: Backend>(
+    file: &SafeTensorFile,
+    weight_key: &str,
+    bias_key: Option<&str>,
+    in_features: usize,
+    out_features: usize,
+    device: &B::Device,
+) -> Result<burn::nn::conv::Conv2d<B>, SdLoadError> {
+    let weight: Tensor<B, 2> = file.load_f32(weight_key, device)
+        .map_err(|e| SdLoadError::MissingTensor(format!("{}: {}", weight_key, e)))?;
+
+    // Reshape [out, in] -> [out, in, 1, 1]
+    let weight = weight.reshape([out_features, in_features, 1, 1]);
+
+    let has_bias = bias_key.map(|k| file.contains(k)).unwrap_or(false);
+    let mut conv = Conv2dConfig::new([in_features, out_features], [1, 1])
+        .with_bias(has_bias)
+        .init(device);
+
+    conv.weight = Param::from_tensor(weight);
+
+    if let Some(bias_k) = bias_key {
+        if file.contains(bias_k) {
+            let bias: Tensor<B, 1> = file.load_f32(bias_k, device)?;
+            conv.bias = Some(Param::from_tensor(bias));
+        }
+    }
+
+    Ok(conv)
+}
+
+/// Load a Downsample using CompVis naming (weight directly at prefix)
+fn load_downsample_compvis<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    channels: usize,
+    device: &B::Device,
+) -> Result<Downsample<B>, SdLoadError> {
+    let conv = load_conv2d_strided(
+        file,
+        &format!("{}.weight", prefix),
+        Some(&format!("{}.bias", prefix)),
+        channels,
+        channels,
+        3,
+        2,
+        1,
+        device,
+    )?;
+
+    Ok(Downsample { conv })
+}
+
+/// Load an Upsample using CompVis naming (weight directly at prefix)
+fn load_upsample_compvis<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    channels: usize,
+    device: &B::Device,
+) -> Result<Upsample<B>, SdLoadError> {
+    let conv = load_conv2d(
+        file,
+        &format!("{}.weight", prefix),
+        Some(&format!("{}.bias", prefix)),
+        channels,
+        channels,
+        3,
+        1,
+        device,
+    )?;
+
+    Ok(Upsample { conv })
+}
+
+/// Create a dummy SpatialTransformer for blocks without attention
+///
+/// This is needed because SD 1.x level 3 doesn't have attention blocks,
+/// but our DownBlock/UpBlock structs always expect them.
+fn create_dummy_spatial_transformer<B: Backend>(
+    channels: usize,
+    num_heads: usize,
+    head_dim: usize,
+    context_dim: usize,
+    depth: usize,
+    device: &B::Device,
+) -> SpatialTransformer<B> {
+    let inner_dim = num_heads * head_dim;
+
+    // Create identity-like components
+    let norm = GroupNorm {
+        num_groups: 32,
+        weight: Tensor::ones([channels], device),
+        bias: Tensor::zeros([channels], device),
+        eps: 1e-6,
+    };
+
+    let proj_in = Conv2dConfig::new([channels, inner_dim], [1, 1])
+        .init(device);
+
+    let mut transformer_blocks = Vec::with_capacity(depth);
+    for _ in 0..depth {
+        // Create minimal transformer block
+        let ln = LayerNorm::from_weight_bias(
+            Tensor::ones([inner_dim], device),
+            Tensor::zeros([inner_dim], device),
+        );
+
+        let ca = CrossAttention {
+            to_q: LinearConfig::new(inner_dim, inner_dim).with_bias(false).init(device),
+            to_k: LinearConfig::new(context_dim, inner_dim).with_bias(false).init(device),
+            to_v: LinearConfig::new(context_dim, inner_dim).with_bias(false).init(device),
+            to_out: LinearConfig::new(inner_dim, inner_dim).init(device),
+            num_heads,
+            head_dim,
+        };
+
+        let ff = FeedForward {
+            net_0: LinearConfig::new(inner_dim, inner_dim * 4 * 2).init(device),
+            net_2: LinearConfig::new(inner_dim * 4, inner_dim).init(device),
+        };
+
+        transformer_blocks.push(TransformerBlock {
+            norm1: ln.clone(),
+            attn1: CrossAttention {
+                to_q: LinearConfig::new(inner_dim, inner_dim).with_bias(false).init(device),
+                to_k: LinearConfig::new(inner_dim, inner_dim).with_bias(false).init(device),
+                to_v: LinearConfig::new(inner_dim, inner_dim).with_bias(false).init(device),
+                to_out: LinearConfig::new(inner_dim, inner_dim).init(device),
+                num_heads,
+                head_dim,
+            },
+            norm2: ln.clone(),
+            attn2: ca,
+            norm3: ln,
+            ff,
+        });
+    }
+
+    let proj_out = Conv2dConfig::new([inner_dim, channels], [1, 1])
+        .init(device);
+
+    SpatialTransformer {
+        norm,
+        proj_in,
+        transformer_blocks,
+        proj_out,
+    }
 }
 
 // =============================================================================
