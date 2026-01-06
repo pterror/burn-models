@@ -1,4 +1,4 @@
-//! CUDA-based correctness tests for Conv3d
+//! CUDA-based correctness tests for Conv3d and Pool3d
 //!
 //! Run with: `cargo test -p burn-models-cubecl --features cuda --test correctness_cuda -- --ignored`
 
@@ -7,7 +7,12 @@
 use burn::prelude::*;
 use burn_cubecl::{tensor::CubeTensor, CubeBackend};
 use burn_cuda::CudaDevice;
-use burn_models_cubecl::{conv3d, Conv3dOptions, Layout};
+use burn_models_cubecl::{
+    conv3d, avg_pool3d, max_pool3d,
+    flash_attention, FlashAttentionOptions,
+    groupnorm, groupnorm_silu, GroupNormSiLuOptions,
+    Conv3dOptions, Pool3dOptions, Layout,
+};
 use cubecl::cuda::CudaRuntime;
 
 // Use CubeBackend directly to avoid FusionTensor wrapper
@@ -513,4 +518,577 @@ fn test_cuda_conv3d_nthwc_3x3x3_same_padding() {
     let ref_output = reference::conv3d_reference(input_ncthw, weight, Some(bias), [1, 1, 1], [1, 1, 1], [1, 1, 1]);
 
     assert_tensors_approx_eq(cubecl_output_ncthw, ref_output, 1e-4, "NTHWC 3x3x3 same padding (CUDA)");
+}
+
+// ============================================================================
+// Pool3d Tests
+// ============================================================================
+
+/// Reference implementation for Pool3d
+mod pool_reference {
+    use burn::prelude::*;
+
+    pub fn avg_pool3d_reference<B: Backend>(
+        input: Tensor<B, 5>,
+        kernel_size: [usize; 3],
+        stride: [usize; 3],
+        padding: [usize; 3],
+    ) -> Tensor<B, 5> {
+        let [batch, channels, in_t, in_h, in_w] = input.dims();
+        let device = input.device();
+
+        let out_t = (in_t + 2 * padding[0] - kernel_size[0]) / stride[0] + 1;
+        let out_h = (in_h + 2 * padding[1] - kernel_size[1]) / stride[1] + 1;
+        let out_w = (in_w + 2 * padding[2] - kernel_size[2]) / stride[2] + 1;
+
+        let mut output_data = vec![0.0f32; batch * channels * out_t * out_h * out_w];
+        let input_data: Vec<f32> = input.into_data().to_vec().unwrap();
+
+        for b in 0..batch {
+            for c in 0..channels {
+                for ot in 0..out_t {
+                    for oh in 0..out_h {
+                        for ow in 0..out_w {
+                            let mut sum = 0.0f32;
+                            let mut count = 0u32;
+
+                            for kt in 0..kernel_size[0] {
+                                for kh in 0..kernel_size[1] {
+                                    for kw in 0..kernel_size[2] {
+                                        let it = (ot * stride[0] + kt) as isize - padding[0] as isize;
+                                        let ih = (oh * stride[1] + kh) as isize - padding[1] as isize;
+                                        let iw = (ow * stride[2] + kw) as isize - padding[2] as isize;
+
+                                        if it >= 0 && (it as usize) < in_t &&
+                                           ih >= 0 && (ih as usize) < in_h &&
+                                           iw >= 0 && (iw as usize) < in_w {
+                                            let in_idx = b * channels * in_t * in_h * in_w
+                                                + c * in_t * in_h * in_w
+                                                + (it as usize) * in_h * in_w
+                                                + (ih as usize) * in_w
+                                                + (iw as usize);
+                                            sum += input_data[in_idx];
+                                            count += 1;
+                                        }
+                                    }
+                                }
+                            }
+
+                            let out_idx = b * channels * out_t * out_h * out_w
+                                + c * out_t * out_h * out_w
+                                + ot * out_h * out_w
+                                + oh * out_w
+                                + ow;
+                            output_data[out_idx] = sum / count as f32;
+                        }
+                    }
+                }
+            }
+        }
+
+        Tensor::from_data(
+            burn::tensor::TensorData::new(output_data, [batch, channels, out_t, out_h, out_w]),
+            &device,
+        )
+    }
+
+    pub fn max_pool3d_reference<B: Backend>(
+        input: Tensor<B, 5>,
+        kernel_size: [usize; 3],
+        stride: [usize; 3],
+        padding: [usize; 3],
+    ) -> Tensor<B, 5> {
+        let [batch, channels, in_t, in_h, in_w] = input.dims();
+        let device = input.device();
+
+        let out_t = (in_t + 2 * padding[0] - kernel_size[0]) / stride[0] + 1;
+        let out_h = (in_h + 2 * padding[1] - kernel_size[1]) / stride[1] + 1;
+        let out_w = (in_w + 2 * padding[2] - kernel_size[2]) / stride[2] + 1;
+
+        let mut output_data = vec![f32::NEG_INFINITY; batch * channels * out_t * out_h * out_w];
+        let input_data: Vec<f32> = input.into_data().to_vec().unwrap();
+
+        for b in 0..batch {
+            for c in 0..channels {
+                for ot in 0..out_t {
+                    for oh in 0..out_h {
+                        for ow in 0..out_w {
+                            let mut max_val = f32::NEG_INFINITY;
+
+                            for kt in 0..kernel_size[0] {
+                                for kh in 0..kernel_size[1] {
+                                    for kw in 0..kernel_size[2] {
+                                        let it = (ot * stride[0] + kt) as isize - padding[0] as isize;
+                                        let ih = (oh * stride[1] + kh) as isize - padding[1] as isize;
+                                        let iw = (ow * stride[2] + kw) as isize - padding[2] as isize;
+
+                                        if it >= 0 && (it as usize) < in_t &&
+                                           ih >= 0 && (ih as usize) < in_h &&
+                                           iw >= 0 && (iw as usize) < in_w {
+                                            let in_idx = b * channels * in_t * in_h * in_w
+                                                + c * in_t * in_h * in_w
+                                                + (it as usize) * in_h * in_w
+                                                + (ih as usize) * in_w
+                                                + (iw as usize);
+                                            if input_data[in_idx] > max_val {
+                                                max_val = input_data[in_idx];
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            let out_idx = b * channels * out_t * out_h * out_w
+                                + c * out_t * out_h * out_w
+                                + ot * out_h * out_w
+                                + oh * out_w
+                                + ow;
+                            output_data[out_idx] = max_val;
+                        }
+                    }
+                }
+            }
+        }
+
+        Tensor::from_data(
+            burn::tensor::TensorData::new(output_data, [batch, channels, out_t, out_h, out_w]),
+            &device,
+        )
+    }
+}
+
+fn run_cubecl_avg_pool3d(
+    input: Tensor<TestBackend, 5>,
+    options: Pool3dOptions,
+) -> Tensor<TestBackend, 5> {
+    let input_cube = to_cube_tensor(input);
+    let output_cube = avg_pool3d::<CudaRuntime>(input_cube, options);
+    from_cube_tensor(output_cube)
+}
+
+fn run_cubecl_max_pool3d(
+    input: Tensor<TestBackend, 5>,
+    options: Pool3dOptions,
+) -> Tensor<TestBackend, 5> {
+    let input_cube = to_cube_tensor(input);
+    let output_cube = max_pool3d::<CudaRuntime>(input_cube, options);
+    from_cube_tensor(output_cube)
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_avg_pool3d_2x2x2() {
+    let device = CudaDevice::default();
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [1, 2, 4, 4, 4],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let options = Pool3dOptions {
+        kernel_size: [2, 2, 2],
+        stride: [2, 2, 2],
+        padding: [0, 0, 0],
+    };
+
+    let cubecl_output = run_cubecl_avg_pool3d(input.clone(), options);
+    let ref_output = pool_reference::avg_pool3d_reference(input, [2, 2, 2], [2, 2, 2], [0, 0, 0]);
+
+    assert_eq!(cubecl_output.dims(), [1, 2, 2, 2, 2]);
+    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-5, "avg_pool3d 2x2x2 (CUDA)");
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_avg_pool3d_with_padding() {
+    let device = CudaDevice::default();
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [1, 3, 6, 6, 6],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let options = Pool3dOptions {
+        kernel_size: [3, 3, 3],
+        stride: [2, 2, 2],
+        padding: [1, 1, 1],
+    };
+
+    let cubecl_output = run_cubecl_avg_pool3d(input.clone(), options);
+    let ref_output = pool_reference::avg_pool3d_reference(input, [3, 3, 3], [2, 2, 2], [1, 1, 1]);
+
+    assert_eq!(cubecl_output.dims(), [1, 3, 3, 3, 3]);
+    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-5, "avg_pool3d with padding (CUDA)");
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_max_pool3d_2x2x2() {
+    let device = CudaDevice::default();
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [1, 2, 4, 4, 4],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let options = Pool3dOptions {
+        kernel_size: [2, 2, 2],
+        stride: [2, 2, 2],
+        padding: [0, 0, 0],
+    };
+
+    let cubecl_output = run_cubecl_max_pool3d(input.clone(), options);
+    let ref_output = pool_reference::max_pool3d_reference(input, [2, 2, 2], [2, 2, 2], [0, 0, 0]);
+
+    assert_eq!(cubecl_output.dims(), [1, 2, 2, 2, 2]);
+    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-5, "max_pool3d 2x2x2 (CUDA)");
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_max_pool3d_with_padding() {
+    let device = CudaDevice::default();
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [2, 4, 8, 8, 8],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let options = Pool3dOptions {
+        kernel_size: [3, 3, 3],
+        stride: [2, 2, 2],
+        padding: [1, 1, 1],
+    };
+
+    let cubecl_output = run_cubecl_max_pool3d(input.clone(), options);
+    let ref_output = pool_reference::max_pool3d_reference(input, [3, 3, 3], [2, 2, 2], [1, 1, 1]);
+
+    assert_eq!(cubecl_output.dims(), [2, 4, 4, 4, 4]);
+    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-5, "max_pool3d with padding (CUDA)");
+}
+
+// ============================================================================
+// Flash Attention Tests
+// ============================================================================
+
+/// Reference implementation for causal attention
+mod attention_reference {
+    use burn::prelude::*;
+
+    /// Standard causal attention: softmax(Q @ K^T / sqrt(d) + causal_mask) @ V
+    pub fn causal_attention_reference<B: Backend>(
+        q: Tensor<B, 4>,  // [batch, heads, seq_q, head_dim]
+        k: Tensor<B, 4>,  // [batch, heads, seq_k, head_dim]
+        v: Tensor<B, 4>,  // [batch, heads, seq_k, val_dim]
+    ) -> Tensor<B, 4> {
+        let [batch, heads, seq_q, head_dim] = q.dims();
+        let [_, _, seq_k, _] = k.dims();
+        let device = q.device();
+
+        let scale = (head_dim as f64).powf(-0.5);
+
+        // Q @ K^T -> [batch, heads, seq_q, seq_k]
+        let scores = q.matmul(k.transpose()) * scale;
+
+        // Create causal mask (lower triangular)
+        let mut mask_data = vec![0.0f32; seq_q * seq_k];
+        for i in 0..seq_q {
+            for j in 0..seq_k {
+                if j > i {
+                    mask_data[i * seq_k + j] = f32::NEG_INFINITY;
+                }
+            }
+        }
+        let mask = Tensor::<B, 2>::from_data(
+            burn::tensor::TensorData::new(mask_data, [seq_q, seq_k]),
+            &device,
+        );
+
+        let mask = mask.unsqueeze::<4>().expand([batch, heads, seq_q, seq_k]);
+        let scores = scores + mask;
+        let attn = burn::tensor::activation::softmax(scores, 3);
+        attn.matmul(v)
+    }
+}
+
+/// Helper to run flash attention (causal mode for comparison with reference)
+fn run_cuda_flash_attention(
+    q: Tensor<TestBackend, 4>,
+    k: Tensor<TestBackend, 4>,
+    v: Tensor<TestBackend, 4>,
+) -> Tensor<TestBackend, 4> {
+    let q_cube = q.into_primitive().tensor();
+    let k_cube = k.into_primitive().tensor();
+    let v_cube = v.into_primitive().tensor();
+
+    // Use causal mode to match reference implementation
+    let output = flash_attention(q_cube, k_cube, v_cube, FlashAttentionOptions::causal())
+        .expect("flash attention failed");
+
+    Tensor::from_primitive(burn::tensor::TensorPrimitive::Float(output))
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_flash_attention_basic() {
+    let device = CudaDevice::default();
+
+    let batch = 1;
+    let heads = 4;
+    let seq_len = 16;
+    let head_dim = 32;
+
+    let q = Tensor::<TestBackend, 4>::random(
+        [batch, heads, seq_len, head_dim],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &device,
+    );
+    let k = Tensor::<TestBackend, 4>::random(
+        [batch, heads, seq_len, head_dim],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &device,
+    );
+    let v = Tensor::<TestBackend, 4>::random(
+        [batch, heads, seq_len, head_dim],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &device,
+    );
+
+    let flash_output = run_cuda_flash_attention(q.clone(), k.clone(), v.clone());
+    let ref_output = attention_reference::causal_attention_reference(q, k, v);
+
+    assert_eq!(flash_output.dims(), ref_output.dims());
+    assert_tensors_approx_eq(flash_output, ref_output, 1e-3, "flash attention basic (CUDA)");
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_flash_attention_longer_sequence() {
+    let device = CudaDevice::default();
+
+    let batch = 2;
+    let heads = 8;
+    let seq_len = 64;
+    let head_dim = 64;
+
+    let q = Tensor::<TestBackend, 4>::random(
+        [batch, heads, seq_len, head_dim],
+        burn::tensor::Distribution::Uniform(-0.3, 0.3),
+        &device,
+    );
+    let k = Tensor::<TestBackend, 4>::random(
+        [batch, heads, seq_len, head_dim],
+        burn::tensor::Distribution::Uniform(-0.3, 0.3),
+        &device,
+    );
+    let v = Tensor::<TestBackend, 4>::random(
+        [batch, heads, seq_len, head_dim],
+        burn::tensor::Distribution::Uniform(-0.3, 0.3),
+        &device,
+    );
+
+    let flash_output = run_cuda_flash_attention(q.clone(), k.clone(), v.clone());
+    let ref_output = attention_reference::causal_attention_reference(q, k, v);
+
+    assert_eq!(flash_output.dims(), ref_output.dims());
+    assert_tensors_approx_eq(flash_output, ref_output, 5e-3, "flash attention longer seq (CUDA)");
+}
+
+// ============================================================================
+// GroupNorm + SiLU Tests
+// ============================================================================
+
+/// Reference implementation for GroupNorm + SiLU
+mod groupnorm_reference {
+    use burn::prelude::*;
+
+    fn silu<B: Backend, const D: usize>(x: Tensor<B, D>) -> Tensor<B, D> {
+        x.clone() * burn::tensor::activation::sigmoid(x)
+    }
+
+    /// GroupNorm: (x - mean) / sqrt(var + eps) * weight + bias
+    pub fn groupnorm_reference<B: Backend>(
+        input: Tensor<B, 4>,
+        weight: Tensor<B, 1>,
+        bias: Tensor<B, 1>,
+        num_groups: usize,
+        eps: f64,
+    ) -> Tensor<B, 4> {
+        let [batch, channels, height, width] = input.dims();
+        let group_size = channels / num_groups;
+
+        // Reshape to [batch, num_groups, group_size * height * width]
+        let x = input.reshape([batch, num_groups, group_size * height * width]);
+
+        // Compute mean and variance over the last dimension
+        let mean = x.clone().mean_dim(2);
+        let var = x.clone().var(2);
+
+        // Expand for broadcasting: [batch, num_groups, 1]
+        let mean = mean.unsqueeze::<3>();
+        let var = var.unsqueeze::<3>();
+
+        // Normalize
+        let x = (x - mean) / (var + eps).sqrt();
+
+        // Reshape back to [batch, channels, height, width]
+        let x = x.reshape([batch, channels, height, width]);
+
+        // Apply weight and bias
+        let weight = weight.reshape([1, channels, 1, 1]);
+        let bias = bias.reshape([1, channels, 1, 1]);
+
+        x * weight + bias
+    }
+
+    pub fn groupnorm_silu_reference<B: Backend>(
+        input: Tensor<B, 4>,
+        weight: Tensor<B, 1>,
+        bias: Tensor<B, 1>,
+        num_groups: usize,
+        eps: f64,
+    ) -> Tensor<B, 4> {
+        silu(groupnorm_reference(input, weight, bias, num_groups, eps))
+    }
+}
+
+fn run_cubecl_groupnorm(
+    input: Tensor<TestBackend, 4>,
+    weight: Tensor<TestBackend, 1>,
+    bias: Tensor<TestBackend, 1>,
+    options: GroupNormSiLuOptions,
+) -> Tensor<TestBackend, 4> {
+    let input_cube = to_cube_tensor(input);
+    let weight_cube = to_cube_tensor(weight);
+    let bias_cube = to_cube_tensor(bias);
+    let output_cube = groupnorm::<CudaRuntime>(input_cube, weight_cube, bias_cube, options);
+    from_cube_tensor(output_cube)
+}
+
+fn run_cubecl_groupnorm_silu(
+    input: Tensor<TestBackend, 4>,
+    weight: Tensor<TestBackend, 1>,
+    bias: Tensor<TestBackend, 1>,
+    options: GroupNormSiLuOptions,
+) -> Tensor<TestBackend, 4> {
+    let input_cube = to_cube_tensor(input);
+    let weight_cube = to_cube_tensor(weight);
+    let bias_cube = to_cube_tensor(bias);
+    let output_cube = groupnorm_silu::<CudaRuntime>(input_cube, weight_cube, bias_cube, options);
+    from_cube_tensor(output_cube)
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_groupnorm_basic() {
+    let device = CudaDevice::default();
+
+    let batch = 1;
+    let channels = 32;
+    let height = 8;
+    let width = 8;
+    let num_groups = 8;
+
+    let input = Tensor::<TestBackend, 4>::random(
+        [batch, channels, height, width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    let weight = Tensor::<TestBackend, 1>::random(
+        [channels],
+        burn::tensor::Distribution::Uniform(0.5, 1.5),
+        &device,
+    );
+    let bias = Tensor::<TestBackend, 1>::random(
+        [channels],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &device,
+    );
+
+    let options = GroupNormSiLuOptions::with_groups(num_groups);
+
+    let cubecl_output = run_cubecl_groupnorm(input.clone(), weight.clone(), bias.clone(), options);
+    let ref_output = groupnorm_reference::groupnorm_reference(input, weight, bias, num_groups, 1e-5);
+
+    assert_eq!(cubecl_output.dims(), ref_output.dims());
+    // Tolerance accounts for variance calculation differences (biased vs unbiased)
+    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-2, "groupnorm basic (CUDA)");
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_groupnorm_silu_basic() {
+    let device = CudaDevice::default();
+
+    let batch = 1;
+    let channels = 32;
+    let height = 8;
+    let width = 8;
+    let num_groups = 8;
+
+    let input = Tensor::<TestBackend, 4>::random(
+        [batch, channels, height, width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    let weight = Tensor::<TestBackend, 1>::random(
+        [channels],
+        burn::tensor::Distribution::Uniform(0.5, 1.5),
+        &device,
+    );
+    let bias = Tensor::<TestBackend, 1>::random(
+        [channels],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &device,
+    );
+
+    let options = GroupNormSiLuOptions::with_groups(num_groups);
+
+    let cubecl_output = run_cubecl_groupnorm_silu(input.clone(), weight.clone(), bias.clone(), options);
+    let ref_output = groupnorm_reference::groupnorm_silu_reference(input, weight, bias, num_groups, 1e-5);
+
+    assert_eq!(cubecl_output.dims(), ref_output.dims());
+    // Tolerance accounts for variance calculation differences (biased vs unbiased)
+    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-2, "groupnorm_silu basic (CUDA)");
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_groupnorm_silu_batch() {
+    let device = CudaDevice::default();
+
+    let batch = 4;
+    let channels = 64;
+    let height = 16;
+    let width = 16;
+    let num_groups = 32;
+
+    let input = Tensor::<TestBackend, 4>::random(
+        [batch, channels, height, width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    let weight = Tensor::<TestBackend, 1>::random(
+        [channels],
+        burn::tensor::Distribution::Uniform(0.5, 1.5),
+        &device,
+    );
+    let bias = Tensor::<TestBackend, 1>::random(
+        [channels],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &device,
+    );
+
+    let options = GroupNormSiLuOptions::with_groups(num_groups);
+
+    let cubecl_output = run_cubecl_groupnorm_silu(input.clone(), weight.clone(), bias.clone(), options);
+    let ref_output = groupnorm_reference::groupnorm_silu_reference(input, weight, bias, num_groups, 1e-5);
+
+    assert_eq!(cubecl_output.dims(), ref_output.dims());
+    // Tolerance accounts for variance calculation differences (biased vs unbiased)
+    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-2, "groupnorm_silu batch (CUDA)");
 }

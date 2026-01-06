@@ -863,6 +863,8 @@ name = "burn-models-core"
 version = "0.1.0"
 dependencies = [
  "burn",
+ "burn-cubecl",
+ "burn-models-cubecl",
  "burn-ndarray",
 ]
 
@@ -879,6 +881,7 @@ dependencies = [
  "burn-wgpu",
  "criterion",
  "cubecl",
+ "cubek",
 ]
 
 [[package]]
@@ -920,7 +923,9 @@ name = "burn-models-unet"
 version = "0.1.0"
 dependencies = [
  "burn",
+ "burn-cubecl",
  "burn-models-core",
+ "burn-models-cubecl",
  "burn-ndarray",
 ]
 

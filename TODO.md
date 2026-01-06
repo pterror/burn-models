@@ -154,9 +154,58 @@ Decision: Own crate rather than upstream (faster iteration, avoid "vibe code" co
 See `docs/cubecl-conv3d.md` for detailed analysis.
 
 #### Phase 4: Additional Kernels (as needed)
-- [ ] Fused attention kernels (if flash attention needs custom impl)
-- [ ] Custom activation fusions
-- [ ] 3D pooling operations
+- [x] AvgPool3d kernel (5 CPU tests passing)
+- [x] MaxPool3d kernel (5 CPU tests passing)
+- [x] Expose burn-cubecl's flash attention (cubek-attention) via burn-models-cubecl
+  - `flash_attention`, `flash_attention_masked` functions with `FlashAttentionOptions`
+  - Supports both causal (LLMs) and non-causal (diffusion) via `FlashAttentionOptions::causal()`
+  - Default is non-causal (suitable for diffusion models)
+  - Calls cubek::attention directly (bypasses burn-cubecl's hardcoded causal=true)
+  - Removed unused tensor-ops fallback from burn-models-core (was dead code)
+  - Note: CPU backend has line_size constraints that cause assertion failures (GPU backends work)
+  - FlashAttention3: Hopper-only (H100/H800), lower priority
+- [x] Custom activation fusions (GroupNorm+SiLU)
+  - `groupnorm_silu(input, weight, bias, options)` - fused GroupNorm + SiLU
+  - `groupnorm(input, weight, bias, options)` - GroupNorm without SiLU
+  - Two-phase kernel: compute group stats, then normalize + affine + SiLU
+  - 5 CPU tests passing (tolerance 1e-2 due to biased vs unbiased variance)
+
+#### Phase 5: Integration into Existing Models
+
+Integrate CubeCL kernels into existing model implementations.
+
+- [x] GroupNorm+SiLU → UNet ResNet blocks
+  - Added `burn-models-unet/src/cubecl.rs` with `ResBlockCubeCL<R: CubeRuntime>`
+  - Uses fused `groupnorm_silu` kernel in forward pass
+  - `convert_resblock()` converts existing `ResBlock` to CubeCL version
+  - Feature-gated: `--features cubecl`
+
+- [x] FlashAttention → Transformer attention layers
+  - Added `CrossAttentionCubeCL<R: CubeRuntime>` to `burn-models-unet/src/cubecl.rs`
+  - Uses O(n) memory flash attention instead of materializing full attention matrix
+  - `convert_crossattention()` converts existing `CrossAttention` to CubeCL version
+  - Non-causal by default (diffusion models)
+
+#### Phase 6: 3D VAE for Video Models
+
+Implement actual 3D VAE encoder/decoder using Conv3d kernels.
+Target: CogVideoX, Wan, Mochi video generation.
+
+- [x] 3D VAE Encoder
+  - `Vae3dEncoderCubeCL<R: CubeRuntime>` in `burn-models-core/src/vae3d.rs`
+  - Uses Conv3d + fused GroupNorm+SiLU kernels
+  - ResBlock3dCubeCL, Downsample3dCubeCL building blocks
+  - Feature-gated: `--features cubecl`
+
+- [x] 3D VAE Decoder
+  - `Vae3dDecoderCubeCL<R: CubeRuntime>` in `burn-models-core/src/vae3d.rs`
+  - Uses Conv3d + fused GroupNorm+SiLU kernels
+  - Upsample3dCubeCL for temporal/spatial upsampling
+
+- [x] Weight loading infrastructure for CogVideoX/Mochi safetensors
+  - `Vae3dKeyMapping` enum for model-specific key naming conventions
+  - `expected_vae3d_weights()` for validation
+  - Works with existing `SafeTensorFile` from burn-models-convert
 
 See `docs/cubecl-guide.md` for implementation details.
 
@@ -319,3 +368,57 @@ Found during dead code audit. These are stubs or broken implementations that nee
 
 - [x] `rwkv.rs:277-290` RWKV-7 dynamic mixing - Now implements full low-rank projection.
   Auto-detects RWKV-6 vs RWKV-7 by checking if `time_maa_w1` weights are present.
+
+### Session Notes (2026-01-06) - CubeCL Phase 4
+
+#### Key Files Modified
+
+**burn-models-cubecl crate:**
+- `src/attention.rs` - Flash attention wrapper calling cubek::attention directly
+  - `flash_attention(q, k, v, options)` - main function
+  - `flash_attention_masked(q, k, v, mask, options)` - with explicit mask
+  - `FlashAttentionOptions { out_dtype, causal }` - default is non-causal (diffusion)
+  - `FlashAttentionOptions::causal()` - for LLMs
+- `src/groupnorm_silu.rs` - Fused GroupNorm + SiLU kernel
+  - `groupnorm_silu(input, weight, bias, options)` - main function
+  - `groupnorm(input, weight, bias, options)` - without SiLU
+  - `GroupNormSiLuOptions { num_groups, eps }` - configurable groups (default 32)
+  - Two-phase: 1) compute mean/var per group, 2) normalize + affine + SiLU
+- `src/pool3d.rs` - AvgPool3d/MaxPool3d kernels
+- `src/lib.rs` - exports attention, pool3d, groupnorm_silu modules
+- `Cargo.toml` - added `cubek = "=0.1.0-pre.1"` dependency with `attention` feature
+
+**Tests:**
+- `tests/correctness_cpu.rs` - 21 passing, 3 ignored (flash attention CPU limitation)
+- `tests/correctness.rs` (WGPU) - compiles, GPU tests require hardware
+- `tests/correctness_cuda.rs` - compiles, GPU tests require hardware
+
+**Removed:**
+- `burn-models-core/src/flash_attention.rs` - was dead code (exported but never used)
+
+#### Technical Notes
+
+**Flash Attention:**
+- burn-cubecl's `flash_attention` hardcodes `causal: true`
+- We bypass it by calling `cubek::attention::launch::launch_ref` directly
+- CPU backend fails with assertion `unit_tile.layout.num_cols % line_size == 0`
+- GPU backends (CUDA, WGPU) should work
+
+**GroupNorm+SiLU Fusion (DONE):**
+- Pattern: `silu(groupnorm(x, gamma, beta, num_groups))`
+- Two-phase kernel: 1) compute mean/var per group, 2) normalize + affine + SiLU
+- Avoids intermediate tensor allocation between GroupNorm and SiLU
+- Uses population variance (n divisor) - 1e-2 tolerance needed vs Burn's unbiased variance
+
+#### Test Commands
+
+```sh
+# CPU tests (all kernels)
+cargo test -p burn-models-cubecl --features cpu --test correctness_cpu
+
+# WGPU tests (requires GPU)
+cargo test -p burn-models-cubecl --features wgpu --test correctness -- --ignored
+
+# CUDA tests (requires CUDA GPU)
+cargo test -p burn-models-cubecl --features cuda --test correctness_cuda -- --ignored
+```

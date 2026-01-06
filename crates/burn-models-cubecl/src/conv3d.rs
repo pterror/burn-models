@@ -315,6 +315,16 @@ pub struct Conv3dLayer<R: CubeRuntime> {
     pub options: Conv3dOptions,
 }
 
+impl<R: CubeRuntime> std::fmt::Debug for Conv3dLayer<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Conv3dLayer")
+            .field("weight_shape", &self.weight.shape.dims)
+            .field("bias", &self.bias.as_ref().map(|b| b.shape.dims.to_vec()))
+            .field("options", &self.options)
+            .finish()
+    }
+}
+
 impl<R: CubeRuntime> Conv3dLayer<R> {
     /// Create a new Conv3d layer
     pub fn new(

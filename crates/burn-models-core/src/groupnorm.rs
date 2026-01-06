@@ -23,10 +23,14 @@ use burn::prelude::*;
 /// "Group Normalization" - Wu & He, 2018
 #[derive(Module, Debug)]
 pub struct GroupNorm<B: Backend> {
-    num_groups: usize,
-    weight: Tensor<B, 1>,
-    bias: Tensor<B, 1>,
-    eps: f64,
+    /// Number of groups to divide channels into
+    pub num_groups: usize,
+    /// Scale parameter (gamma), shape [num_channels]
+    pub weight: Tensor<B, 1>,
+    /// Bias parameter (beta), shape [num_channels]
+    pub bias: Tensor<B, 1>,
+    /// Epsilon for numerical stability
+    pub eps: f64,
 }
 
 impl<B: Backend> GroupNorm<B> {

@@ -48,6 +48,9 @@ pub mod t2i_adapter;
 pub mod unet_sd;
 pub mod unet_sdxl;
 
+#[cfg(feature = "cubecl")]
+pub mod cubecl;
+
 pub use blocks::{
     timestep_embedding, CrossAttention, Downsample, FeedForward, ResBlock,
     SpatialTransformer, TransformerBlock, Upsample,

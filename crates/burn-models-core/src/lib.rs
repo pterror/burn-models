@@ -8,7 +8,6 @@
 //! ## Attention Mechanisms
 //!
 //! - [`attention`] - Multi-head attention with optional GQA (grouped-query attention)
-//! - [`flash_attention`] - Memory-efficient attention (tiled, sliced)
 //! - [`paged_attention`] - Block-based KV cache for efficient LLM serving
 //! - [`temporal_attention`] - Factorized spatial-temporal attention for video
 //!
@@ -64,7 +63,6 @@
 pub mod attention;
 pub mod continuous_batching;
 pub mod dit;
-pub mod flash_attention;
 pub mod frame_interpolation;
 pub mod glu;
 pub mod groupnorm;

@@ -40,12 +40,18 @@ pub fn timestep_embedding<B: Backend>(
 /// ResNet block with time embedding
 #[derive(Module, Debug)]
 pub struct ResBlock<B: Backend> {
-    norm1: GroupNorm<B>,
-    conv1: Conv2d<B>,
-    time_emb_proj: Linear<B>,
-    norm2: GroupNorm<B>,
-    conv2: Conv2d<B>,
-    skip_conv: Option<Conv2d<B>>,
+    /// First group normalization
+    pub norm1: GroupNorm<B>,
+    /// First convolution
+    pub conv1: Conv2d<B>,
+    /// Time embedding projection
+    pub time_emb_proj: Linear<B>,
+    /// Second group normalization
+    pub norm2: GroupNorm<B>,
+    /// Second convolution
+    pub conv2: Conv2d<B>,
+    /// Skip connection convolution (when in_channels != out_channels)
+    pub skip_conv: Option<Conv2d<B>>,
 }
 
 impl<B: Backend> ResBlock<B> {
@@ -270,12 +276,18 @@ impl<B: Backend> TransformerBlock<B> {
 /// Cross-attention (or self-attention if context is None)
 #[derive(Module, Debug)]
 pub struct CrossAttention<B: Backend> {
-    to_q: Linear<B>,
-    to_k: Linear<B>,
-    to_v: Linear<B>,
-    to_out: Linear<B>,
-    num_heads: usize,
-    head_dim: usize,
+    /// Query projection
+    pub to_q: Linear<B>,
+    /// Key projection
+    pub to_k: Linear<B>,
+    /// Value projection
+    pub to_v: Linear<B>,
+    /// Output projection
+    pub to_out: Linear<B>,
+    /// Number of attention heads
+    pub num_heads: usize,
+    /// Dimension per head
+    pub head_dim: usize,
 }
 
 impl<B: Backend> CrossAttention<B> {

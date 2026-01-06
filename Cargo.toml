@@ -33,6 +33,7 @@ burn-models-cubecl = { path = "crates/burn-models-cubecl" }
 
 # External dependencies
 burn = "0.20.0-pre.6"
+burn-cubecl = "0.20.0-pre.6"
 burn-ndarray = "0.20.0-pre.6"
 burn-tch = "0.20.0-pre.6"
 burn-wgpu = "0.20.0-pre.6"

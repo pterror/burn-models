@@ -83,11 +83,6 @@ pub use burn_models_convert::embedding_loader::{load_embedding, EmbeddingFormat,
 // Re-export precision types (configuration only - see precision module docs)
 pub use burn_models_core::precision::{PrecisionMode, PrecisionConfig};
 
-// Re-export flash attention types
-pub use burn_models_core::flash_attention::{
-    AttentionStrategy, AttentionConfig, compute_attention
-};
-
 pub mod backends;
 pub mod batch;
 pub mod memory;
