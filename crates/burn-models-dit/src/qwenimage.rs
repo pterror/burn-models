@@ -115,7 +115,7 @@ impl QwenImageConfig {
             linear2: LinearConfig::new(self.hidden_size, self.hidden_size)
                 .with_bias(true)
                 .init(device),
-            embed_dim: self.time_embed_dim,
+            freqs: qwenimage_timestep_freqs(self.time_embed_dim, device),
         };
 
         // MMDiT blocks
@@ -159,29 +159,30 @@ impl QwenImageConfig {
     }
 }
 
+/// Precompute sinusoidal timestep frequencies for Qwen-Image.
+#[rustfmt::skip]
+pub fn qwenimage_timestep_freqs<B: Backend>(embed_dim: usize, device: &B::Device) -> Tensor<B, 1> {
+    let half_dim = embed_dim / 2;
+    let emb_scale = -(10000.0_f32.ln()) / (half_dim as f32 - 1.0);
+    let freqs: Vec<f32> = (0..half_dim)
+        .map(|i| (emb_scale * i as f32).exp())
+        .collect();
+    Tensor::<B, 1>::from_floats(freqs.as_slice(), device)
+}
+
 /// Timestep embedding for Qwen-Image with pooled text conditioning
 #[derive(Module, Debug)]
 pub struct QwenImageTimestepEmbed<B: Backend> {
     pub linear1: Linear<B>,
     pub linear2: Linear<B>,
-    #[module(skip)]
-    pub embed_dim: usize,
+    /// Precomputed sinusoidal frequencies
+    pub freqs: Tensor<B, 1>,
 }
 
 impl<B: Backend> QwenImageTimestepEmbed<B> {
     pub fn forward(&self, t: Tensor<B, 1>, pooled: Tensor<B, 2>) -> Tensor<B, 2> {
-        let device = t.device();
-
-        let half_dim = self.embed_dim / 2;
-        let emb_scale = -(10000.0_f32.ln()) / (half_dim as f32 - 1.0);
-
-        let freqs: Vec<f32> = (0..half_dim)
-            .map(|i| (emb_scale * i as f32).exp())
-            .collect();
-        let freqs = Tensor::<B, 1>::from_floats(freqs.as_slice(), &device);
-
         let t_expanded = t.unsqueeze_dim::<2>(1);
-        let freqs_expanded = freqs.unsqueeze_dim::<2>(0);
+        let freqs_expanded = self.freqs.clone().unsqueeze_dim::<2>(0);
         let angles = t_expanded.matmul(freqs_expanded);
 
         let sin_emb = angles.clone().sin();
@@ -555,7 +556,7 @@ mod tests {
         let embed = QwenImageTimestepEmbed {
             linear1: LinearConfig::new(128, 256).with_bias(true).init(&device),  // 64 + 64
             linear2: LinearConfig::new(256, 256).with_bias(true).init(&device),
-            embed_dim: 64,
+            freqs: qwenimage_timestep_freqs(64, &device),
         };
 
         let t = Tensor::<TestBackend, 1>::from_floats([0.5], &device);

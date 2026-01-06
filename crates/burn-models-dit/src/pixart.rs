@@ -138,7 +138,7 @@ impl PixArtConfig {
             linear2: LinearConfig::new(self.hidden_size, self.hidden_size)
                 .with_bias(true)
                 .init(device),
-            embed_dim: self.time_embed_dim,
+            freqs: pixart_timestep_freqs(self.time_embed_dim, device),
         };
 
         // Position embedding (learned)
@@ -194,26 +194,25 @@ impl PixArtConfig {
 pub struct PixArtTimestepEmbed<B: Backend> {
     pub linear1: Linear<B>,
     pub linear2: Linear<B>,
-    #[module(skip)]
-    pub embed_dim: usize,
+    /// Precomputed sinusoidal frequencies
+    pub freqs: Tensor<B, 1>,
+}
+
+/// Precompute sinusoidal frequencies for PixArt timestep embedding
+pub fn pixart_timestep_freqs<B: Backend>(embed_dim: usize, device: &B::Device) -> Tensor<B, 1> {
+    let half_dim = embed_dim / 2;
+    let emb_scale = -(10000.0_f32.ln()) / (half_dim as f32 - 1.0);
+    let freqs: Vec<f32> = (0..half_dim)
+        .map(|i| (emb_scale * i as f32).exp())
+        .collect();
+    Tensor::<B, 1>::from_floats(freqs.as_slice(), device)
 }
 
 impl<B: Backend> PixArtTimestepEmbed<B> {
     pub fn forward(&self, t: Tensor<B, 1>) -> Tensor<B, 2> {
-        let device = t.device();
-
-        // Sinusoidal embedding
-        let half_dim = self.embed_dim / 2;
-        let emb_scale = -(10000.0_f32.ln()) / (half_dim as f32 - 1.0);
-
-        let freqs: Vec<f32> = (0..half_dim)
-            .map(|i| (emb_scale * i as f32).exp())
-            .collect();
-        let freqs = Tensor::<B, 1>::from_floats(freqs.as_slice(), &device);
-
         let [_batch] = t.dims();
         let t_expanded = t.unsqueeze_dim::<2>(1);
-        let freqs_expanded = freqs.unsqueeze_dim::<2>(0);
+        let freqs_expanded = self.freqs.clone().unsqueeze_dim::<2>(0);
         let angles = t_expanded.matmul(freqs_expanded);
 
         let sin_emb = angles.clone().sin();
@@ -543,7 +542,7 @@ mod tests {
         let embed = PixArtTimestepEmbed {
             linear1: LinearConfig::new(64, 256).with_bias(true).init(&device),
             linear2: LinearConfig::new(256, 256).with_bias(true).init(&device),
-            embed_dim: 64,
+            freqs: pixart_timestep_freqs(64, &device),
         };
 
         let t = Tensor::<TestBackend, 1>::from_floats([0.5], &device);

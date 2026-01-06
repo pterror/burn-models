@@ -161,7 +161,7 @@ fn load_timestep_embedding<B: Backend>(
     Ok(TimestepEmbedding {
         linear1,
         linear2,
-        embed_dim,
+        freqs: super::flux::timestep_freqs(embed_dim, device),
     })
 }
 

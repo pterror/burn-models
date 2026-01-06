@@ -200,6 +200,7 @@ impl Sd3Config {
         let runtime = Sd3Runtime {
             rope: RotaryEmbedding::new(self.head_dim(), self.max_seq_len, device),
             time_embed_dim: self.time_embed_dim,
+            time_freqs: timestep_freqs(self.time_embed_dim, device),
         };
 
         (model, runtime)
@@ -222,25 +223,39 @@ impl<B: Backend> Sd3TimestepEmbedding<B> {
     }
 }
 
-/// Get sinusoidal timestep embedding
-pub fn get_timestep_embedding<B: Backend>(
-    timestep: f32,
-    embed_dim: usize,
-    device: &B::Device,
-) -> Tensor<B, 2> {
+/// Precompute sinusoidal frequencies for timestep embedding
+pub fn timestep_freqs<B: Backend>(embed_dim: usize, device: &B::Device) -> Tensor<B, 1> {
     let half_dim = embed_dim / 2;
     let emb_scale = -(2.0_f32.ln()) / (half_dim as f32 - 1.0);
 
     let freqs: Vec<f32> = (0..half_dim)
         .map(|i| (emb_scale * i as f32).exp())
         .collect();
-    let freqs = Tensor::<B, 1>::from_floats(freqs.as_slice(), device);
+    Tensor::<B, 1>::from_floats(freqs.as_slice(), device)
+}
 
-    let angles = freqs * timestep;
+/// Get sinusoidal timestep embedding using precomputed frequencies (fast path)
+pub fn get_timestep_embedding_with_freqs<B: Backend>(
+    timestep: f32,
+    freqs: &Tensor<B, 1>,
+) -> Tensor<B, 2> {
+    let angles = freqs.clone() * timestep;
     let sin_emb = angles.clone().sin();
     let cos_emb = angles.cos();
 
     Tensor::cat(vec![sin_emb, cos_emb], 0).unsqueeze_dim(0)
+}
+
+/// Get sinusoidal timestep embedding (slow path - computes freqs each call)
+///
+/// Note: For hot paths, prefer `get_timestep_embedding_with_freqs` with precomputed freqs.
+pub fn get_timestep_embedding<B: Backend>(
+    timestep: f32,
+    embed_dim: usize,
+    device: &B::Device,
+) -> Tensor<B, 2> {
+    let freqs = timestep_freqs(embed_dim, device);
+    get_timestep_embedding_with_freqs(timestep, &freqs)
 }
 
 /// MMDiT Block Configuration
@@ -562,6 +577,8 @@ pub struct Sd3<B: Backend> {
 pub struct Sd3Runtime<B: Backend> {
     pub rope: RotaryEmbedding<B>,
     pub time_embed_dim: usize,
+    /// Precomputed timestep frequencies (avoids f32->tensor conversion in forward)
+    pub time_freqs: Tensor<B, 1>,
 }
 
 /// Output from SD3 model
@@ -589,7 +606,6 @@ impl<B: Backend> Sd3<B> {
         runtime: &Sd3Runtime<B>,
     ) -> Sd3Output<B> {
         let [_batch, _channels, height, width] = latents.dims();
-        let device = latents.device();
 
         // Patchify image
         let x = self.x_embed.forward(latents);
@@ -598,8 +614,8 @@ impl<B: Backend> Sd3<B> {
         // Project context
         let c = self.context_embed.forward(context);
 
-        // Get timestep embedding
-        let t_emb = get_timestep_embedding::<B>(timestep, runtime.time_embed_dim, &device);
+        // Get timestep embedding (using precomputed frequencies)
+        let t_emb = get_timestep_embedding_with_freqs(timestep, &runtime.time_freqs);
         let t_emb = self.t_embed.forward(t_emb);
 
         // Get pooled text embedding

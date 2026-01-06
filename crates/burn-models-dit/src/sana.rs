@@ -257,13 +257,23 @@ impl<B: Backend> SanaPatchEmbed<B> {
     }
 }
 
+/// Precompute sinusoidal timestep frequencies for SANA.
+#[rustfmt::skip]
+pub fn sana_timestep_freqs<B: Backend>(dim: usize, device: &B::Device) -> Tensor<B, 1> {
+    let half_dim = dim / 2;
+    let freqs: Vec<f32> = (0..half_dim)
+        .map(|i| (-(i as f32) / half_dim as f32 * std::f32::consts::LN_10 * 4.0).exp())
+        .collect();
+    Tensor::<B, 1>::from_floats(freqs.as_slice(), device)
+}
+
 /// Time step embedding
 #[derive(Module, Debug)]
 pub struct SanaTimeEmbed<B: Backend> {
     linear1: Linear<B>,
     linear2: Linear<B>,
-    #[module(skip)]
-    time_embed_dim: usize,
+    /// Precomputed sinusoidal frequencies
+    freqs: Tensor<B, 1>,
 }
 
 impl<B: Backend> SanaTimeEmbed<B> {
@@ -275,36 +285,15 @@ impl<B: Backend> SanaTimeEmbed<B> {
             linear2: LinearConfig::new(config.hidden_size, config.hidden_size)
                 .with_bias(true)
                 .init(device),
-            time_embed_dim: config.time_embed_dim,
+            freqs: sana_timestep_freqs(config.time_embed_dim, device),
         }
     }
 
     pub fn forward(&self, timesteps: Tensor<B, 1>) -> Tensor<B, 2> {
-        let device = timesteps.device();
-
-        // Sinusoidal embedding - produces time_embed_dim output
-        let emb = Self::sinusoidal_embedding::<B>(timesteps, self.time_embed_dim, &device);
-
-        // Project through MLP
-        let emb = self.linear1.forward(emb);
-        let emb = activation::silu(emb);
-        self.linear2.forward(emb)
-    }
-
-    fn sinusoidal_embedding<B2: Backend>(timesteps: Tensor<B2, 1>, dim: usize, device: &B2::Device) -> Tensor<B2, 2> {
-        let [_batch] = timesteps.dims();
-        let half_dim = dim / 2;
-
-        // Create frequency bands: [half_dim]
-        let freqs: Vec<f32> = (0..half_dim)
-            .map(|i| (-(i as f32) / half_dim as f32 * std::f32::consts::LN_10 * 4.0).exp())
-            .collect();
-        let freqs: Tensor<B2, 1> = Tensor::from_floats(&freqs[..], device);
-
         // Expand timesteps: [batch] -> [batch, 1]
         let timesteps = timesteps.unsqueeze_dim::<2>(1);
         // Expand freqs: [half_dim] -> [1, half_dim]
-        let freqs = freqs.unsqueeze_dim::<2>(0);
+        let freqs = self.freqs.clone().unsqueeze_dim::<2>(0);
 
         // Broadcast multiply: [batch, 1] * [1, half_dim] -> [batch, half_dim]
         let args = timesteps * freqs;
@@ -314,7 +303,12 @@ impl<B: Backend> SanaTimeEmbed<B> {
         let cos = args.cos();
 
         // Concatenate to [batch, dim]
-        Tensor::cat(vec![sin, cos], 1)
+        let emb = Tensor::cat(vec![sin, cos], 1);
+
+        // Project through MLP
+        let emb = self.linear1.forward(emb);
+        let emb = activation::silu(emb);
+        self.linear2.forward(emb)
     }
 }
 
