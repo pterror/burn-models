@@ -215,7 +215,9 @@ See `docs/cubecl-guide.md` for implementation details.
   - UNet: ResBlockCubeCL, CrossAttentionCubeCL shape tests
   - VAE: ResBlock3dCubeCL, Downsample3dCubeCL, Upsample3dCubeCL shape tests
   - VAE encoder/decoder tiny model integration tests
-- [ ] Benchmark CubeCL integrations (ResBlockCubeCL vs ResBlock, CrossAttentionCubeCL vs CrossAttention)
+- [x] Benchmark CubeCL integrations
+  - `benches/unet_blocks.rs`: ResBlock vs ResBlockCubeCL, CrossAttention vs CrossAttentionCubeCL
+  - Run: `cargo bench -p burn-models-cubecl --features cuda --bench unet_blocks`
 - [ ] MLX backend (Apple Silicon) - via [burn-mlx](https://lib.rs/crates/burn-mlx)
 - [ ] Wire up CLI `generate` command (currently outputs placeholder image)
 

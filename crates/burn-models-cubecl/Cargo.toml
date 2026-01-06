@@ -32,3 +32,7 @@ burn-ndarray = { workspace = true }
 [[bench]]
 name = "conv3d"
 harness = false
+
+[[bench]]
+name = "unet_blocks"
+harness = false
