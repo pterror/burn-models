@@ -119,8 +119,12 @@ Decision: Own crate rather than upstream (faster iteration, avoid "vibe code" co
 #### Phase 2: Conv3d Kernel
 - [x] Port conv_transpose3d pattern to conv3d (simple direct kernel, ~200 lines)
 - [ ] NHWC layout handling (permute in, permute out)
-- [ ] Test harness comparing CubeCL vs im2col output (correctness)
+- [x] Test harness comparing CubeCL vs im2col output (correctness)
+  - WGPU: `cargo test -p burn-models-cubecl --features wgpu --test correctness -- --ignored`
+  - CUDA: `cargo test -p burn-models-cubecl --features cuda --test correctness_cuda -- --ignored`
+  - Blocker: cudarc 0.18.2 incompatible with CUDA 13.x drivers (missing cuDevSmResourceSplit)
 - [ ] Benchmark against im2col implementation
+- [ ] Replace im2col with CubeCL kernel once correctness verified on GPU
 
 #### Phase 3: Conv3d Optimization (if benchmarks justify)
 - [ ] Add Line<E> vectorization
@@ -133,6 +137,10 @@ Decision: Own crate rather than upstream (faster iteration, avoid "vibe code" co
 - [ ] 3D pooling operations
 
 See `docs/cubecl-guide.md` for implementation details.
+
+### Backend Support
+
+- [ ] MLX backend (Apple Silicon) - via [burn-mlx](https://lib.rs/crates/burn-mlx)
 
 ### Future Architectures
 

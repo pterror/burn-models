@@ -1,6 +1,9 @@
 //! Utility functions for CubeCL kernels
 
 /// Check if tensor is contiguous in memory
+///
+/// TODO: Use for NHWC layout handling (Phase 3 optimization)
+#[allow(dead_code)]
 pub fn is_contiguous(shape: &[usize], strides: &[usize]) -> bool {
     if shape.is_empty() {
         return true;

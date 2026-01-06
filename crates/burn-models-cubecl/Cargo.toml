@@ -7,13 +7,18 @@ description = "CubeCL GPU kernels for burn-models"
 
 [features]
 default = []
-# Note: Backend selection (wgpu, cuda) is handled by the consuming crate
-# via burn-wgpu or burn-cuda. This crate just provides the kernels.
+# Backend selection (for tests and benchmarks)
+wgpu = ["burn-wgpu"]
+cuda = ["burn-cuda"]
 
 [dependencies]
 burn-cubecl = "0.20.0-pre.6"
 cubecl = { version = "=0.9.0-pre.6", default-features = false, features = ["stdlib"] }
 burn = { workspace = true }
+
+# Optional backends for testing (enabled via features)
+burn-wgpu = { workspace = true, optional = true }
+burn-cuda = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
