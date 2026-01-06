@@ -301,55 +301,118 @@ fn main() -> Result<()> {
             let _tokenizer = burn_models::clip::ClipTokenizer::from_file(&vocab)
                 .context("Failed to load vocabulary file")?;
 
-            pb.set_message("Loading model...");
+            pb.set_message("Validating weights path...");
             pb.set_position(20);
 
-            // Note: In a real implementation, we would load weights here
-            // For now, we show the structure of what would happen
-            println!("\nModel loading not yet implemented.");
-            println!("The pipeline would be created like this:\n");
-
-            match model {
-                ModelType::Sd1x => {
-                    println!("  let pipeline = StableDiffusion1x::new(tokenizer, &device);");
-                    println!("  let config = SampleConfig {{ width: {}, height: {}, steps: {}, guidance_scale: {}, .. }};", width, height, steps, guidance);
-                }
-                ModelType::Sdxl => {
-                    println!("  let pipeline = StableDiffusionXL::new(tokenizer, &device);");
-                    println!("  let config = SdxlSampleConfig {{ width: {}, height: {}, steps: {}, guidance_scale: {}, .. }};", width, height, steps, guidance);
-                }
-                ModelType::SdxlRefiner => {
-                    println!("  let pipeline = StableDiffusionXLWithRefiner::new(tokenizer, tokenizer2, &device);");
-                    println!("  let config = BaseRefinerConfig {{ width: {}, height: {}, steps: {}, .. }};", width, height, steps);
-                }
+            // Check if weights path exists and what format it is
+            if !weights.exists() {
+                anyhow::bail!(
+                    "Weights path does not exist: {}\n\n\
+                    Please provide a path to model weights.\n\
+                    Supported formats:\n\
+                    - Directory with .safetensors files (HuggingFace format)\n\
+                    - Single .safetensors file\n\
+                    - Burn .bin record file (pre-converted)",
+                    weights.display()
+                );
             }
 
-            // Show LoRA loading example
-            if !loras.is_empty() {
-                println!("\n  // Load LoRAs:");
-                for (i, lora_path) in loras.iter().enumerate() {
-                    let scale = lora_scales.get(i).copied().unwrap_or(1.0);
-                    println!("  let lora{} = burn_models::load_lora::<Backend>(\"{}\", {}, LoraFormat::Auto, &device)?;",
-                             i, lora_path.display(), scale);
+            // Determine weights format
+            let is_safetensors = weights.is_file()
+                && weights.extension().map_or(false, |e| e == "safetensors");
+            let is_burn_record = weights.is_file()
+                && weights.extension().map_or(false, |e| e == "bin" || e == "mpk");
+            let is_hf_dir = weights.is_dir();
+
+            pb.set_position(25);
+
+            if is_burn_record {
+                pb.set_message("Burn record format detected...");
+                // TODO: Implement Burn record loading
+                // Would use: model.load_file(path, &recorder, &device)
+                anyhow::bail!(
+                    "Burn record loading is not yet implemented.\n\n\
+                    The weights file appears to be a Burn record (.bin/.mpk).\n\
+                    This feature is planned but not yet available."
+                );
+            } else if is_safetensors || is_hf_dir {
+                pb.set_message("Safetensors format detected...");
+                // This is the expected format for most users
+                // But we need WeightLoader to actually load the weights
+                pb.finish_and_clear();
+
+                println!("\n⚠️  Weight loading is partially implemented.\n");
+                println!("Current status:");
+                println!("  ✓ CLIP text encoder loader - implemented");
+                println!("  ✗ UNet loader - not yet implemented");
+                println!("  ✗ VAE decoder loader - not yet implemented\n");
+
+                println!("The pipeline requires all three components to generate images.");
+                println!("CLIP is done, UNet and VAE loaders are needed next.\n");
+
+                println!("Current usage:");
+                println!("  let mut loader = SdWeightLoader::open(\"{}\");", weights.display());
+                match model {
+                    ModelType::Sd1x => {
+                        println!("  let mut pipeline = StableDiffusion1x::new(tokenizer, &device);");
+                        println!("  loader.load_text_encoder(&mut pipeline.text_encoder)?;");
+                        println!("  loader.load_unet(&mut pipeline.unet)?;");
+                        println!("  loader.load_vae(&mut pipeline.vae_decoder)?;");
+                        println!("\n  let config = SampleConfig {{ width: {}, height: {}, steps: {}, guidance_scale: {}, .. }};", width, height, steps, guidance);
+                    }
+                    ModelType::Sdxl => {
+                        println!("  let mut pipeline = StableDiffusionXL::new(tokenizer, &device);");
+                        println!("  loader.load_clip(&mut pipeline.clip_encoder)?;");
+                        println!("  loader.load_openclip(&mut pipeline.open_clip_encoder)?;");
+                        println!("  loader.load_unet(&mut pipeline.unet)?;");
+                        println!("  loader.load_vae(&mut pipeline.vae_decoder)?;");
+                        println!("\n  let config = SdxlSampleConfig {{ width: {}, height: {}, steps: {}, guidance_scale: {}, .. }};", width, height, steps, guidance);
+                    }
+                    ModelType::SdxlRefiner => {
+                        println!("  // SDXL + Refiner requires loading two models");
+                        println!("  let base_loader = WeightLoader::open(\"base/\")?;");
+                        println!("  let refiner_loader = WeightLoader::open(\"refiner/\")?;");
+                    }
                 }
+
+                // Show LoRA note
+                if !loras.is_empty() {
+                    println!("\n  // LoRA loading (this part IS implemented):");
+                    for (i, lora_path) in loras.iter().enumerate() {
+                        let scale = lora_scales.get(i).copied().unwrap_or(1.0);
+                        println!("  let _lora{} = burn_models::load_lora::<Backend>(\"{}\", {}, LoraFormat::Auto, &device)?;",
+                                 i, lora_path.display(), scale);
+                    }
+                }
+
+                println!("\n  let image = pipeline.generate(\"{}\", \"{}\", &config);", prompt, negative);
+
+                println!("\n📋 To complete this feature, implement UNet and VAE loaders in");
+                println!("   crates/burn-models-convert/src/sd_loader.rs");
+                println!("   (CLIP loader is already done)");
+
+                // Create a placeholder image so the command produces output
+                let img: ImageBuffer<Rgb<u8>, Vec<u8>> =
+                    ImageBuffer::from_fn(width as u32, height as u32, |x, y| {
+                        let r = (x as f32 / width as f32 * 255.0) as u8;
+                        let g = (y as f32 / height as f32 * 255.0) as u8;
+                        let b = 128;
+                        Rgb([r, g, b])
+                    });
+                img.save(&output)?;
+                println!("\n🖼️  Placeholder image saved to: {}", output.display());
+            } else {
+                anyhow::bail!(
+                    "Unknown weights format: {}\n\n\
+                    Expected one of:\n\
+                    - Directory with .safetensors files\n\
+                    - Single .safetensors file\n\
+                    - Burn record file (.bin or .mpk)",
+                    weights.display()
+                );
             }
 
-            println!("\n  let image = pipeline.generate(\"{}\", \"{}\", &config);", prompt, negative);
-            println!("  // Save to: {}", output.display());
-
-            pb.set_message("Done!");
-            pb.finish();
-
-            // Create a placeholder image to demonstrate output
-            let img: ImageBuffer<Rgb<u8>, Vec<u8>> =
-                ImageBuffer::from_fn(width as u32, height as u32, |x, y| {
-                    let r = (x as f32 / width as f32 * 255.0) as u8;
-                    let g = (y as f32 / height as f32 * 255.0) as u8;
-                    let b = 128;
-                    Rgb([r, g, b])
-                });
-            img.save(&output)?;
-            println!("\nPlaceholder image saved to: {}", output.display());
+            pb.finish_and_clear();
 
             Ok(())
         }

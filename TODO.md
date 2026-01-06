@@ -219,7 +219,15 @@ See `docs/cubecl-guide.md` for implementation details.
   - `benches/unet_blocks.rs`: ResBlock vs ResBlockCubeCL, CrossAttention vs CrossAttentionCubeCL
   - Run: `cargo bench -p burn-models-cubecl --features cuda --bench unet_blocks`
 - [ ] MLX backend (Apple Silicon) - via [burn-mlx](https://lib.rs/crates/burn-mlx)
-- [ ] Wire up CLI `generate` command (currently outputs placeholder image)
+  - Note: burn-mlx 0.1.2 requires burn ^0.16, we're on 0.20 - wait for update
+- [x] Wire up CLI `generate` command - now validates paths and shows helpful messages
+- [ ] WeightLoader for SD models - **blocks** actual image generation
+  - [x] CLIP text encoder loader (`SdWeightLoader::load_clip_text_encoder`)
+    - Detects prefix automatically (text_model, text_encoder.text_model, etc.)
+    - Loads embeddings, all transformer layers, final layer norm
+  - [ ] UNet loader - complex, many block types (ResBlock, CrossAttn, Downsample, Upsample)
+  - [ ] VAE decoder loader - similar pattern to UNet
+  - Reference: `burn-models-llm/src/llama_loader.rs` for the pattern
 
 ### Future Architectures
 
@@ -371,8 +379,8 @@ Found during dead code audit. These are stubs or broken implementations that nee
 
 #### Intentional Simplifications (not bugs)
 
-- [ ] `main.rs:343` CLI generate - Outputs gradient placeholder image.
-  Pipeline isn't wired up yet, this is just demo output. Fix when pipeline is complete.
+- [x] `main.rs:304-415` CLI generate - Now validates weights path and shows helpful messages.
+  Still outputs placeholder image until WeightLoader is implemented for SD models.
 
 - [x] `rwkv.rs:277-290` RWKV-7 dynamic mixing - Now implements full low-rank projection.
   Auto-detects RWKV-6 vs RWKV-7 by checking if `time_maa_w1` weights are present.

@@ -39,5 +39,5 @@ pub mod embedder;
 
 pub use tokenizer::{ClipTokenizer, TokenizerError, START_OF_TEXT, END_OF_TEXT};
 pub use attention::{create_causal_mask, scaled_dot_product_attention};
-pub use clip::{ClipConfig, ClipTextEncoder};
+pub use clip::{ClipConfig, ClipTextEncoder, TransformerBlock, MultiHeadSelfAttention, FeedForward};
 pub use open_clip::{OpenClipConfig, OpenClipTextEncoder};

@@ -39,11 +39,11 @@ impl ClipConfig {
 /// CLIP Text Encoder
 #[derive(Module, Debug)]
 pub struct ClipTextEncoder<B: Backend> {
-    token_embedding: Embedding<B>,
-    position_embedding: Param<Tensor<B, 2>>,
-    layers: Vec<TransformerBlock<B>>,
-    final_layer_norm: LayerNorm<B>,
-    context_length: usize,
+    pub token_embedding: Embedding<B>,
+    pub position_embedding: Param<Tensor<B, 2>>,
+    pub layers: Vec<TransformerBlock<B>>,
+    pub final_layer_norm: LayerNorm<B>,
+    pub context_length: usize,
 }
 
 impl<B: Backend> ClipTextEncoder<B> {
@@ -157,10 +157,10 @@ impl<B: Backend> ClipTextEncoder<B> {
 /// Transformer block with self-attention and feed-forward
 #[derive(Module, Debug)]
 pub struct TransformerBlock<B: Backend> {
-    attn_norm: LayerNorm<B>,
-    attn: MultiHeadSelfAttention<B>,
-    ffn_norm: LayerNorm<B>,
-    ffn: FeedForward<B>,
+    pub attn_norm: LayerNorm<B>,
+    pub attn: MultiHeadSelfAttention<B>,
+    pub ffn_norm: LayerNorm<B>,
+    pub ffn: FeedForward<B>,
 }
 
 impl<B: Backend> TransformerBlock<B> {
@@ -191,12 +191,12 @@ impl<B: Backend> TransformerBlock<B> {
 /// Multi-head self-attention
 #[derive(Module, Debug)]
 pub struct MultiHeadSelfAttention<B: Backend> {
-    q_proj: Linear<B>,
-    k_proj: Linear<B>,
-    v_proj: Linear<B>,
-    out_proj: Linear<B>,
-    num_heads: usize,
-    head_dim: usize,
+    pub q_proj: Linear<B>,
+    pub k_proj: Linear<B>,
+    pub v_proj: Linear<B>,
+    pub out_proj: Linear<B>,
+    pub num_heads: usize,
+    pub head_dim: usize,
 }
 
 impl<B: Backend> MultiHeadSelfAttention<B> {
@@ -247,8 +247,8 @@ impl<B: Backend> MultiHeadSelfAttention<B> {
 /// Feed-forward network with QuickGELU activation
 #[derive(Module, Debug)]
 pub struct FeedForward<B: Backend> {
-    fc1: Linear<B>,
-    fc2: Linear<B>,
+    pub fc1: Linear<B>,
+    pub fc2: Linear<B>,
 }
 
 impl<B: Backend> FeedForward<B> {

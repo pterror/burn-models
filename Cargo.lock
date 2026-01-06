@@ -850,6 +850,7 @@ name = "burn-models-convert"
 version = "0.1.0"
 dependencies = [
  "burn",
+ "burn-models-clip",
  "burn-models-core",
  "bytemuck",
  "half",
