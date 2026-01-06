@@ -11,7 +11,7 @@ mod cuda_bench {
     use burn::prelude::*;
     use burn_cubecl::{tensor::CubeTensor, CubeBackend};
     use burn_cuda::CudaDevice;
-    use burn_models_cubecl::{conv3d, Conv3dOptions};
+    use burn_models_cubecl::{conv3d, conv3d_nthwc, Conv3dOptions, Conv3dOptimizedOptions, Layout};
     use cubecl::cuda::CudaRuntime;
 
     type BenchBackend = CubeBackend<CudaRuntime, f32, i32, u8>;
@@ -181,9 +181,9 @@ mod cuda_bench {
                 &device,
             );
 
-            // Benchmark CubeCL kernel
+            // Benchmark CubeCL simple kernel (NCTHW)
             group.bench_with_input(
-                BenchmarkId::new("cubecl", name),
+                BenchmarkId::new("cubecl_simple", name),
                 &(&input, &weight, &bias),
                 |b, (input, weight, bias)| {
                     b.iter(|| {
@@ -196,10 +196,42 @@ mod cuda_bench {
                             padding: [p, p, p],
                             dilation: [1, 1, 1],
                             groups: 1,
+                            layout: Layout::NCTHW,
                         };
 
                         let output = conv3d::<CudaRuntime>(input_cube, weight_cube, bias_cube, options)
                             .expect("CubeCL conv3d failed");
+
+                        black_box(from_cube_tensor::<5>(output))
+                    })
+                },
+            );
+
+            // Prepare NTHWC tensors for optimized kernel
+            // Input: permute NCTHW -> NTHWC
+            let input_nthwc = input.clone().permute([0, 2, 3, 4, 1]);
+            // Weight: permute [out_ch, in_ch, k_t, k_h, k_w] -> [out_ch, k_t, k_h, k_w, in_ch]
+            let weight_nthwc = weight.clone().permute([0, 2, 3, 4, 1]);
+
+            // Benchmark CubeCL optimized kernel (NTHWC with vectorization)
+            group.bench_with_input(
+                BenchmarkId::new("cubecl_optimized", name),
+                &(&input_nthwc, &weight_nthwc, &bias),
+                |b, (input, weight, bias)| {
+                    b.iter(|| {
+                        let input_cube = to_cube_tensor((*input).clone());
+                        let weight_cube = to_cube_tensor((*weight).clone());
+                        let bias_cube = Some(to_cube_tensor((*bias).clone()));
+
+                        let options = Conv3dOptimizedOptions {
+                            stride: [s, s, s],
+                            padding: [p, p, p],
+                            dilation: [1, 1, 1],
+                            groups: 1,
+                        };
+
+                        let output = conv3d_nthwc::<CudaRuntime>(input_cube, weight_cube, bias_cube, options)
+                            .expect("CubeCL optimized conv3d failed");
 
                         black_box(from_cube_tensor::<5>(output))
                     })

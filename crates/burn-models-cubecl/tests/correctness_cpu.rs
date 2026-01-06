@@ -10,7 +10,7 @@
 use burn::prelude::*;
 use burn_cpu::{Cpu, CpuDevice};
 use burn_cubecl::tensor::CubeTensor;
-use burn_models_cubecl::{conv3d, Conv3dOptions, Layout};
+use burn_models_cubecl::{conv3d, conv3d_nthwc, Conv3dOptions, Conv3dOptimizedOptions, Layout};
 use burn_ndarray::NdArray;
 use cubecl::cpu::CpuRuntime;
 
@@ -563,4 +563,116 @@ fn test_cpu_conv3d_nthwc_stride_2() {
     let ref_output = reference::conv3d_reference(input_ref, weight_ref, None, [2, 2, 2], [1, 1, 1]);
 
     assert_tensors_approx_eq(cubecl_output_ncthw, ref_output, 1e-4, "NTHWC stride 2 (CPU)");
+}
+
+// ============================================================================
+// Optimized NTHWC Kernel Tests
+// ============================================================================
+
+fn run_optimized_conv3d(
+    input: Tensor<TestBackend, 5>,
+    weight: Tensor<TestBackend, 5>,
+    bias: Option<Tensor<TestBackend, 1>>,
+    options: Conv3dOptimizedOptions,
+) -> Tensor<TestBackend, 5> {
+    let input_cube = to_cube_tensor(input);
+    let weight_cube = to_cube_tensor(weight);
+    let bias_cube = bias.map(to_cube_tensor);
+
+    let output_cube = conv3d_nthwc::<CpuRuntime>(input_cube, weight_cube, bias_cube, options)
+        .expect("CubeCL optimized conv3d failed");
+
+    from_cube_tensor(output_cube)
+}
+
+/// Convert weight from NCTHW to optimized layout: [out_ch, kernel_t, kernel_h, kernel_w, in_ch]
+fn weight_to_optimized<B: Backend>(weight: Tensor<B, 5>) -> Tensor<B, 5> {
+    // From: [out_ch, in_ch, kernel_t, kernel_h, kernel_w]
+    // To:   [out_ch, kernel_t, kernel_h, kernel_w, in_ch]
+    weight.permute([0, 2, 3, 4, 1])
+}
+
+#[test]
+fn test_cpu_optimized_conv3d_3x3x3_same_padding() {
+    let cpu_device = CpuDevice;
+    let ref_device = Default::default();
+
+    // Create NCTHW input for reference, NTHWC for optimized kernel
+    let input_ncthw = Tensor::<TestBackend, 5>::random(
+        [1, 3, 8, 8, 8],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &cpu_device,
+    );
+    let weight_ncthw = Tensor::<TestBackend, 5>::random(
+        [8, 3, 3, 3, 3],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &cpu_device,
+    );
+    let bias = Tensor::<TestBackend, 1>::random(
+        [8],
+        burn::tensor::Distribution::Uniform(-0.1, 0.1),
+        &cpu_device,
+    );
+
+    // Reference computation
+    let input_ref = Tensor::<RefBackend, 5>::from_data(input_ncthw.to_data(), &ref_device);
+    let weight_ref = Tensor::<RefBackend, 5>::from_data(weight_ncthw.to_data(), &ref_device);
+    let bias_ref = Tensor::<RefBackend, 1>::from_data(bias.to_data(), &ref_device);
+    let ref_output = reference::conv3d_reference(input_ref, weight_ref, Some(bias_ref), [1, 1, 1], [1, 1, 1]);
+
+    // Optimized kernel: NTHWC layout
+    let input_nthwc = ncthw_to_nthwc(input_ncthw);
+    let weight_opt = weight_to_optimized(weight_ncthw);
+
+    let options = Conv3dOptimizedOptions {
+        stride: [1, 1, 1],
+        padding: [1, 1, 1],
+        dilation: [1, 1, 1],
+        groups: 1,
+    };
+
+    let opt_output_nthwc = run_optimized_conv3d(input_nthwc, weight_opt, Some(bias), options);
+
+    // Output is NTHWC, convert to NCTHW for comparison
+    let opt_output_ncthw = nthwc_to_ncthw(opt_output_nthwc);
+
+    assert_eq!(opt_output_ncthw.dims(), [1, 8, 8, 8, 8]);
+    assert_tensors_approx_eq(opt_output_ncthw, ref_output, 1e-4, "optimized 3x3x3 same padding (CPU)");
+}
+
+#[test]
+fn test_cpu_optimized_conv3d_no_bias() {
+    let cpu_device = CpuDevice;
+    let ref_device = Default::default();
+
+    let input_ncthw = Tensor::<TestBackend, 5>::random(
+        [1, 2, 6, 6, 6],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &cpu_device,
+    );
+    let weight_ncthw = Tensor::<TestBackend, 5>::random(
+        [4, 2, 3, 3, 3],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &cpu_device,
+    );
+
+    let input_ref = Tensor::<RefBackend, 5>::from_data(input_ncthw.to_data(), &ref_device);
+    let weight_ref = Tensor::<RefBackend, 5>::from_data(weight_ncthw.to_data(), &ref_device);
+    let ref_output = reference::conv3d_reference(input_ref, weight_ref, None, [1, 1, 1], [0, 0, 0]);
+
+    let input_nthwc = ncthw_to_nthwc(input_ncthw);
+    let weight_opt = weight_to_optimized(weight_ncthw);
+
+    let options = Conv3dOptimizedOptions {
+        stride: [1, 1, 1],
+        padding: [0, 0, 0],
+        dilation: [1, 1, 1],
+        groups: 1,
+    };
+
+    let opt_output_nthwc = run_optimized_conv3d(input_nthwc, weight_opt, None, options);
+    let opt_output_ncthw = nthwc_to_ncthw(opt_output_nthwc);
+
+    assert_eq!(opt_output_ncthw.dims(), [1, 4, 4, 4, 4]);
+    assert_tensors_approx_eq(opt_output_ncthw, ref_output, 1e-4, "optimized no bias (CPU)");
 }

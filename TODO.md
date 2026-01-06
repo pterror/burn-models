@@ -129,13 +129,16 @@ Decision: Own crate rather than upstream (faster iteration, avoid "vibe code" co
   - Helper functions `to_cube_tensor`/`from_cube_tensor` for type conversion
   - Comprehensive test suite: 9 CPU tests, 8 CUDA tests, 6 WGPU tests (includes NTHWC layout tests)
 
-#### Phase 3: Conv3d Optimization (deferred - current kernel already 630-40,900× faster)
-- [ ] Add Line<E> vectorization - requires channels-last internal layout
-- [ ] Recursive kernel_loop with comptime dimension unrolling
-- [ ] FastDivmod for efficient index calculation
-Note: burn-cubecl's direct_conv2d pattern could be adapted, but would require
-rewriting kernel for channels-last layout. Current simple kernel is already
-highly performant.
+#### Phase 3: Conv3d Optimization
+- [x] Add Line<E> vectorization with NTHWC kernel (`conv3d_nthwc`)
+- [x] Recursive kernel_loop with comptime dimension unrolling
+- [x] FastDivmod for efficient index calculation
+- [ ] Benchmark simple vs optimized kernel on CUDA
+  - Run: `cargo bench -p burn-models-cubecl --features cuda --bench conv3d`
+  - Compares: cubecl_simple (NCTHW) vs cubecl_optimized (NTHWC) vs im2col
+
+Note: Both kernels are retained - simple NCTHW for channels-first data,
+optimized NTHWC for channels-last data. Dispatch based on input layout.
 
 #### Phase 4: Additional Kernels (as needed)
 - [ ] Fused attention kernels (if flash attention needs custom impl)
