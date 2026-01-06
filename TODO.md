@@ -133,12 +133,25 @@ Decision: Own crate rather than upstream (faster iteration, avoid "vibe code" co
 - [x] Add Line<E> vectorization with NTHWC kernel (`conv3d_nthwc`)
 - [x] Recursive kernel_loop with comptime dimension unrolling
 - [x] FastDivmod for efficient index calculation
-- [ ] Benchmark simple vs optimized kernel on CUDA
-  - Run: `cargo bench -p burn-models-cubecl --features cuda --bench conv3d`
-  - Compares: cubecl_simple (NCTHW) vs cubecl_optimized (NTHWC) vs im2col
+- [x] Benchmark simple vs optimized kernel on CUDA
 
-Note: Both kernels are retained - simple NCTHW for channels-first data,
-optimized NTHWC for channels-last data. Dispatch based on input layout.
+**Benchmark Results** (RTX 3060):
+
+| Config | Simple (NCTHW) | Optimized (NTHWC) | Speedup | vs im2col |
+|--------|----------------|-------------------|---------|-----------|
+| tiny (1,2,4,4,8,8) | **12.5 µs** | 24.9 µs | 0.5× | 470× |
+| small (1,4,8,8,32,32) | 63.8 µs | **41.3 µs** | 1.5× | 39,800× |
+| medium (1,8,16,8,64,64) | 742 µs | **286 µs** | 2.6× | - |
+| strided (stride=2) | 107 µs | **97.9 µs** | 1.1× | - |
+| deep (1,32,64,4,32,32) | 1.04 ms | **866 µs** | 1.2× | - |
+
+**Findings:**
+- Simple kernel wins for tiny tensors (kernel launch overhead dominates)
+- Optimized kernel wins 1.1-2.6× for larger tensors
+- Permutation overhead is negligible BUT requires contiguous copy (memory allocation)
+- Both kernels retained: simple for NCTHW (no memory overhead), optimized for NTHWC
+
+See `docs/cubecl-conv3d.md` for detailed analysis.
 
 #### Phase 4: Additional Kernels (as needed)
 - [ ] Fused attention kernels (if flash attention needs custom impl)

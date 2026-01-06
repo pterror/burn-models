@@ -152,6 +152,8 @@ mod cuda_bench {
 
         // Test configurations: (batch, in_ch, out_ch, t, h, w, kernel, stride, padding, name)
         let configs = [
+            // Tiny - for im2col comparison (fast enough to run)
+            (1, 2, 4, 4, 8, 8, 3, 1, 1, "tiny_3x3x3"),
             // Small - typical video VAE layer
             (1, 4, 8, 8, 32, 32, 3, 1, 1, "small_3x3x3"),
             // Medium - larger spatial
@@ -214,6 +216,7 @@ mod cuda_bench {
             let weight_nthwc = weight.clone().permute([0, 2, 3, 4, 1]);
 
             // Benchmark CubeCL optimized kernel (NTHWC with vectorization)
+            // This assumes data is already in NTHWC format
             group.bench_with_input(
                 BenchmarkId::new("cubecl_optimized", name),
                 &(&input_nthwc, &weight_nthwc, &bias),
@@ -238,23 +241,59 @@ mod cuda_bench {
                 },
             );
 
-            // Benchmark im2col reference
+            // Fair comparison: NCTHW input -> permute -> optimized kernel -> permute back
+            // This is what you'd pay if your data starts in channels-first format
             group.bench_with_input(
-                BenchmarkId::new("im2col", name),
+                BenchmarkId::new("cubecl_opt_with_permute", name),
                 &(&input, &weight, &bias),
                 |b, (input, weight, bias)| {
                     b.iter(|| {
-                        let output = reference::conv3d_im2col(
-                            (*input).clone(),
-                            (*weight).clone(),
-                            Some((*bias).clone()),
-                            [s, s, s],
-                            [p, p, p],
-                        );
-                        black_box(output)
+                        // Permute NCTHW -> NTHWC
+                        let input_nthwc = (*input).clone().permute([0, 2, 3, 4, 1]);
+                        let weight_nthwc = (*weight).clone().permute([0, 2, 3, 4, 1]);
+
+                        let input_cube = to_cube_tensor(input_nthwc);
+                        let weight_cube = to_cube_tensor(weight_nthwc);
+                        let bias_cube = Some(to_cube_tensor((*bias).clone()));
+
+                        let options = Conv3dOptimizedOptions {
+                            stride: [s, s, s],
+                            padding: [p, p, p],
+                            dilation: [1, 1, 1],
+                            groups: 1,
+                        };
+
+                        let output = conv3d_nthwc::<CudaRuntime>(input_cube, weight_cube, bias_cube, options)
+                            .expect("CubeCL optimized conv3d failed");
+
+                        // Permute NTHWC -> NCTHW
+                        let output_ncthw: Tensor<BenchBackend, 5> = from_cube_tensor(output);
+                        let output_ncthw = output_ncthw.permute([0, 4, 1, 2, 3]);
+
+                        black_box(output_ncthw)
                     })
                 },
             );
+
+            // Benchmark im2col reference (only on tiny config - too slow for larger)
+            if name == "tiny_3x3x3" {
+                group.bench_with_input(
+                    BenchmarkId::new("im2col", name),
+                    &(&input, &weight, &bias),
+                    |b, (input, weight, bias)| {
+                        b.iter(|| {
+                            let output = reference::conv3d_im2col(
+                                (*input).clone(),
+                                (*weight).clone(),
+                                Some((*bias).clone()),
+                                [s, s, s],
+                                [p, p, p],
+                            );
+                            black_box(output)
+                        })
+                    },
+                );
+            }
         }
 
         group.finish();
