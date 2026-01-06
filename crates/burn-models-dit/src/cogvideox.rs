@@ -26,8 +26,8 @@
 //! - **CogVideoX-2B**: Base model
 //! - **CogVideoX-5B**: Larger capacity
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 use burn_models_core::glu::SwiGluFfn;
 use burn_models_core::layernorm::LayerNorm;
@@ -72,7 +72,7 @@ impl CogVideoXConfig {
             hidden_size: 1920,
             num_heads: 30,
             num_blocks: 30,
-            text_dim: 4096,  // T5-XXL
+            text_dim: 4096, // T5-XXL
             time_embed_dim: 512,
             max_spatial_len: 4096,
             max_temporal_len: 256,
@@ -164,7 +164,8 @@ impl CogVideoXConfig {
                     self.num_heads,
                     self.intermediate_size(),
                     self.factorized_attention,
-                ).init(device)
+                )
+                .init(device)
             })
             .collect();
 
@@ -272,9 +273,9 @@ pub struct VideoShape {
     pub time: usize,
     pub height: usize,
     pub width: usize,
-    pub nt: usize,  // Temporal patches
-    pub nh: usize,  // Height patches
-    pub nw: usize,  // Width patches
+    pub nt: usize, // Temporal patches
+    pub nh: usize, // Height patches
+    pub nw: usize, // Width patches
 }
 
 /// Unpatchify video (6D-safe implementation)
@@ -286,7 +287,16 @@ pub fn unpatchify_video<B: Backend>(
     temporal_patch_size: usize,
     shape: &VideoShape,
 ) -> Tensor<B, 5> {
-    let VideoShape { batch, channels, time, height, width, nt: _, nh, nw } = *shape;
+    let VideoShape {
+        batch,
+        channels,
+        time,
+        height,
+        width,
+        nt: _,
+        nh,
+        nw,
+    } = *shape;
     let ps = patch_size;
     let pt = temporal_patch_size;
 
@@ -365,8 +375,18 @@ struct CogVideoBlockConfig {
 }
 
 impl CogVideoBlockConfig {
-    fn new(hidden_size: usize, num_heads: usize, intermediate_size: usize, factorized: bool) -> Self {
-        Self { hidden_size, num_heads, intermediate_size, factorized }
+    fn new(
+        hidden_size: usize,
+        num_heads: usize,
+        intermediate_size: usize,
+        factorized: bool,
+    ) -> Self {
+        Self {
+            hidden_size,
+            num_heads,
+            intermediate_size,
+            factorized,
+        }
     }
 
     fn init<B: Backend>(&self, device: &B::Device) -> CogVideoBlock<B> {
@@ -420,22 +440,41 @@ pub struct CogVideoAttention<B: Backend> {
 }
 
 impl<B: Backend> CogVideoAttention<B> {
-    pub fn forward(
-        &self,
-        x: Tensor<B, 3>,
-        rope: &RotaryEmbedding<B>,
-    ) -> Tensor<B, 3> {
+    pub fn forward(&self, x: Tensor<B, 3>, rope: &RotaryEmbedding<B>) -> Tensor<B, 3> {
         let [batch, seq_len, _hidden] = x.dims();
 
         // QKV projection
         let qkv = self.to_qkv.forward(x);
         let qkv = qkv.reshape([batch, seq_len, 3, self.num_heads, self.head_dim]);
 
-        let q = qkv.clone().slice([0..batch, 0..seq_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let q = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim]);
-        let k = qkv.clone().slice([0..batch, 0..seq_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let k = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim]);
-        let v = qkv.slice([0..batch, 0..seq_len, 2..3, 0..self.num_heads, 0..self.head_dim])
+        let v = qkv
+            .slice([
+                0..batch,
+                0..seq_len,
+                2..3,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim]);
 
         // [batch, heads, seq, dim]
@@ -453,7 +492,9 @@ impl<B: Backend> CogVideoAttention<B> {
         let out = attn.matmul(v);
 
         // Reshape and project
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.to_out.forward(out)
     }
 }
@@ -501,12 +542,29 @@ impl<B: Backend> CogVideoBlock<B> {
         let mod_params = self.modulation.forward(cond);
         let mod_params = mod_params.reshape([batch, 6, hidden]);
 
-        let shift1 = mod_params.clone().slice([0..batch, 0..1, 0..hidden]).reshape([batch, 1, hidden]);
-        let scale1 = mod_params.clone().slice([0..batch, 1..2, 0..hidden]).reshape([batch, 1, hidden]);
-        let gate1 = mod_params.clone().slice([0..batch, 2..3, 0..hidden]).reshape([batch, 1, hidden]);
-        let shift2 = mod_params.clone().slice([0..batch, 3..4, 0..hidden]).reshape([batch, 1, hidden]);
-        let scale2 = mod_params.clone().slice([0..batch, 4..5, 0..hidden]).reshape([batch, 1, hidden]);
-        let gate2 = mod_params.slice([0..batch, 5..6, 0..hidden]).reshape([batch, 1, hidden]);
+        let shift1 = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let scale1 = mod_params
+            .clone()
+            .slice([0..batch, 1..2, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let gate1 = mod_params
+            .clone()
+            .slice([0..batch, 2..3, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let shift2 = mod_params
+            .clone()
+            .slice([0..batch, 3..4, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let scale2 = mod_params
+            .clone()
+            .slice([0..batch, 4..5, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let gate2 = mod_params
+            .slice([0..batch, 5..6, 0..hidden])
+            .reshape([batch, 1, hidden]);
 
         // Modulated norm for attention
         let x_norm = self.norm1.forward(x.clone());
@@ -519,7 +577,9 @@ impl<B: Backend> CogVideoBlock<B> {
             let temporal_len = nt;
 
             // Spatial attention: [B, T*H*W, D] → [B*T, H*W, D]
-            let x_spatial = x_norm.clone().reshape([batch * temporal_len, spatial_len, hidden]);
+            let x_spatial = x_norm
+                .clone()
+                .reshape([batch * temporal_len, spatial_len, hidden]);
             let spatial_out = self.spatial_attn.forward(x_spatial, spatial_rope);
             let spatial_out = spatial_out.reshape([batch, temporal_len, spatial_len, hidden]);
 
@@ -550,7 +610,9 @@ impl<B: Backend> CogVideoBlock<B> {
             let x_temporal = x_temporal.reshape([batch * spatial_len, temporal_len, hidden]);
             let temporal_out = self.temporal_attn.forward(x_temporal, temporal_rope);
             let temporal_out = temporal_out.reshape([batch, spatial_len, temporal_len, hidden]);
-            let video_out = temporal_out.permute([0, 2, 1, 3]).reshape([batch, video_len, hidden]);
+            let video_out = temporal_out
+                .permute([0, 2, 1, 3])
+                .reshape([batch, video_len, hidden]);
 
             // Text uses spatial attention only (full sequence attention)
             let text_out = self.spatial_attn.forward(text_x, spatial_rope);
@@ -673,16 +735,15 @@ impl<B: Backend> CogVideoX<B> {
         }
 
         // Remove text tokens and apply final layer
-        let video_tokens = x.slice([0..batch, text_len..(text_len + shape.nt * shape.nh * shape.nw), 0..self.hidden_size]);
+        let video_tokens = x.slice([
+            0..batch,
+            text_len..(text_len + shape.nt * shape.nh * shape.nw),
+            0..self.hidden_size,
+        ]);
         let out = self.final_layer.forward(video_tokens, cond);
 
         // Unpatchify
-        let velocity = unpatchify_video(
-            out,
-            self.patch_size,
-            self.temporal_patch_size,
-            &shape,
-        );
+        let velocity = unpatchify_video(out, self.patch_size, self.temporal_patch_size, &shape);
 
         CogVideoXOutput { velocity }
     }
@@ -709,7 +770,9 @@ mod tests {
     fn test_video_patch_embed() {
         let device = Default::default();
         let embed = VideoPatchEmbed {
-            proj: LinearConfig::new(4 * 2 * 2 * 1, 256).with_bias(true).init(&device),
+            proj: LinearConfig::new(4 * 2 * 2 * 1, 256)
+                .with_bias(true)
+                .init(&device),
             patch_size: 2,
             temporal_patch_size: 1,
             in_channels: 4,
@@ -756,7 +819,7 @@ mod tests {
 
         // [batch=1, channels=4, time=4, height=8, width=8]
         let video = Tensor::zeros([1, 4, 4, 8, 8], &device);
-        let text = Tensor::zeros([1, 4, 128], &device);  // 4 text tokens
+        let text = Tensor::zeros([1, 4, 128], &device); // 4 text tokens
 
         let output = model.forward(video, 0.5, text, &runtime);
 

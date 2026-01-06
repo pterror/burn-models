@@ -9,11 +9,11 @@
 use burn::module::Param;
 use burn::nn::{Embedding, EmbeddingConfig, Linear, LinearConfig};
 use burn::prelude::*;
-use burn::tensor::activation::gelu;
 use burn::tensor::Int;
+use burn::tensor::activation::gelu;
 
+use crate::attention::{precompute_causal_mask, scaled_dot_product_attention, slice_causal_mask};
 use burn_models_core::layernorm::LayerNorm;
-use crate::attention::{precompute_causal_mask, slice_causal_mask, scaled_dot_product_attention};
 
 /// OpenCLIP model configuration
 #[derive(Debug, Clone)]
@@ -93,12 +93,13 @@ impl<B: Backend> OpenClipTextEncoder<B> {
     /// * `config` - OpenCLIP model configuration
     /// * `device` - Device to create tensors on
     pub fn new(config: &OpenClipConfig, device: &B::Device) -> Self {
-        let token_embedding = EmbeddingConfig::new(config.vocab_size, config.embed_dim)
-            .init(device);
+        let token_embedding =
+            EmbeddingConfig::new(config.vocab_size, config.embed_dim).init(device);
 
-        let position_embedding = Param::from_tensor(
-            Tensor::zeros([config.context_length, config.embed_dim], device)
-        );
+        let position_embedding = Param::from_tensor(Tensor::zeros(
+            [config.context_length, config.embed_dim],
+            device,
+        ));
 
         let layers = (0..config.num_layers)
             .map(|_| OpenClipTransformerBlock::new(config, device))
@@ -136,7 +137,9 @@ impl<B: Backend> OpenClipTextEncoder<B> {
         let x = self.token_embedding.forward(token_ids);
 
         // Add position embeddings
-        let pos_emb = self.position_embedding.val()
+        let pos_emb = self
+            .position_embedding
+            .val()
             .slice([0..seq_len])
             .unsqueeze::<3>();
         let mut x = x + pos_emb;
@@ -169,8 +172,9 @@ impl<B: Backend> OpenClipTextEncoder<B> {
         // Extract embeddings at EOS positions
         let mut pooled_list = Vec::new();
         for (i, &pos) in eos_positions.iter().enumerate() {
-            let emb = hidden.clone()
-                .slice([i..i+1, pos..pos+1, 0..embed])
+            let emb = hidden
+                .clone()
+                .slice([i..i + 1, pos..pos + 1, 0..embed])
                 .reshape([1, embed]);
             pooled_list.push(emb);
         }
@@ -190,7 +194,9 @@ impl<B: Backend> OpenClipTextEncoder<B> {
         let [_batch, seq_len] = token_ids.dims();
 
         let x = self.token_embedding.forward(token_ids);
-        let pos_emb = self.position_embedding.val()
+        let pos_emb = self
+            .position_embedding
+            .val()
             .slice([0..seq_len])
             .unsqueeze::<3>();
         let mut x = x + pos_emb;
@@ -284,18 +290,22 @@ impl<B: Backend> OpenClipMultiHeadSelfAttention<B> {
         let v = self.v_proj.forward(x);
 
         // Reshape to [batch, num_heads, seq_len, head_dim]
-        let q = q.reshape([batch, seq_len, self.num_heads, self.head_dim])
+        let q = q
+            .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let k = k.reshape([batch, seq_len, self.num_heads, self.head_dim])
+        let k = k
+            .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = v.reshape([batch, seq_len, self.num_heads, self.head_dim])
+        let v = v
+            .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
         // Scaled dot-product attention
         let out = scaled_dot_product_attention(q, k, v, mask, self.head_dim);
 
         // Reshape back
-        let out = out.swap_dims(1, 2)
+        let out = out
+            .swap_dims(1, 2)
             .reshape([batch, seq_len, self.num_heads * self.head_dim]);
 
         self.out_proj.forward(out)

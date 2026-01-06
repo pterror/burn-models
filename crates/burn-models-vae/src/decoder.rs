@@ -3,8 +3,8 @@
 //! Decodes 4-channel latent representations to 3-channel RGB images.
 
 use burn::nn::{
-    conv::{Conv2d, Conv2dConfig},
     PaddingConfig2d,
+    conv::{Conv2d, Conv2dConfig},
 };
 use burn::prelude::*;
 
@@ -268,10 +268,7 @@ impl<B: Backend> ResnetBlock<B> {
             .init(device);
 
         let skip_conv = if in_channels != out_channels {
-            Some(
-                Conv2dConfig::new([in_channels, out_channels], [1, 1])
-                    .init(device),
-            )
+            Some(Conv2dConfig::new([in_channels, out_channels], [1, 1]).init(device))
         } else {
             None
         };
@@ -327,9 +324,7 @@ impl<B: Backend> Upsample<B> {
         // Nearest neighbor upsampling 2x
         // Reshape and repeat: [b, c, h, w] -> [b, c, h, 1, w, 1] -> [b, c, h, 2, w, 2] -> [b, c, h*2, w*2]
         let x = x.reshape([b, c, h, 1, w, 1]);
-        let x = x
-            .repeat_dim(3, 2)
-            .repeat_dim(5, 2);
+        let x = x.repeat_dim(3, 2).repeat_dim(5, 2);
         let x = x.reshape([b, c, h * 2, w * 2]);
 
         self.conv.forward(x)

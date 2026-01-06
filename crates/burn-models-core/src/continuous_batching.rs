@@ -318,28 +318,26 @@ impl ContinuousBatchingScheduler {
     fn select_next_waiting(&self) -> Option<usize> {
         match self.config.policy {
             SchedulingPolicy::Fcfs => self.waiting_queue.front().copied(),
-            SchedulingPolicy::ShortestFirst => {
-                self.waiting_queue
-                    .iter()
-                    .min_by_key(|&&id| {
-                        self.sequences
-                            .get(&id)
-                            .map(|s| s.max_new_tokens - s.generated_len)
-                            .unwrap_or(usize::MAX)
-                    })
-                    .copied()
-            }
-            SchedulingPolicy::LongestFirst => {
-                self.waiting_queue
-                    .iter()
-                    .max_by_key(|&&id| {
-                        self.sequences
-                            .get(&id)
-                            .map(|s| s.max_new_tokens - s.generated_len)
-                            .unwrap_or(0)
-                    })
-                    .copied()
-            }
+            SchedulingPolicy::ShortestFirst => self
+                .waiting_queue
+                .iter()
+                .min_by_key(|&&id| {
+                    self.sequences
+                        .get(&id)
+                        .map(|s| s.max_new_tokens - s.generated_len)
+                        .unwrap_or(usize::MAX)
+                })
+                .copied(),
+            SchedulingPolicy::LongestFirst => self
+                .waiting_queue
+                .iter()
+                .max_by_key(|&&id| {
+                    self.sequences
+                        .get(&id)
+                        .map(|s| s.max_new_tokens - s.generated_len)
+                        .unwrap_or(0)
+                })
+                .copied(),
         }
     }
 
@@ -347,9 +345,7 @@ impl ContinuousBatchingScheduler {
     fn select_for_preemption(&self) -> Option<usize> {
         self.running
             .iter()
-            .max_by_key(|&&id| {
-                self.sequences.get(&id).map(|s| s.num_blocks).unwrap_or(0)
-            })
+            .max_by_key(|&&id| self.sequences.get(&id).map(|s| s.num_blocks).unwrap_or(0))
             .copied()
     }
 
@@ -396,7 +392,8 @@ impl ContinuousBatchingScheduler {
 
     /// Get throughput statistics
     pub fn stats(&self) -> BatchingStats {
-        let total_running_tokens: usize = self.running
+        let total_running_tokens: usize = self
+            .running
             .iter()
             .filter_map(|&id| self.sequences.get(&id))
             .map(|s| s.total_len())

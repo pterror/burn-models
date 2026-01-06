@@ -17,8 +17,8 @@
 //! Reference: "SANA: Efficient High-Resolution Image Synthesis with Linear Diffusion Transformer"
 //! https://arxiv.org/abs/2410.10629
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 use burn::tensor::activation;
 
 use burn_models_core::dit::unpatchify;
@@ -51,15 +51,15 @@ impl SanaConfig {
     /// SANA-0.6B configuration
     pub fn sana_0_6b() -> Self {
         Self {
-            in_channels: 32,    // DC-AE uses 32 channels
-            patch_size: 1,      // Already heavily compressed by DC-AE
+            in_channels: 32, // DC-AE uses 32 channels
+            patch_size: 1,   // Already heavily compressed by DC-AE
             hidden_size: 1152,
             num_heads: 16,
             num_blocks: 28,
-            text_dim: 2048,     // Gemma embedding dimension
+            text_dim: 2048, // Gemma embedding dimension
             time_embed_dim: 256,
-            mlp_ratio: 2.5,     // SANA uses 2.5x for efficiency
-            max_seq_len: 1024,  // 32x32 latent for 1024px
+            mlp_ratio: 2.5,    // SANA uses 2.5x for efficiency
+            max_seq_len: 1024, // 32x32 latent for 1024px
         }
     }
 
@@ -74,7 +74,7 @@ impl SanaConfig {
             text_dim: 2048,
             time_embed_dim: 256,
             mlp_ratio: 2.5,
-            max_seq_len: 4096,  // 64x64 latent for 2048px
+            max_seq_len: 4096, // 64x64 latent for 2048px
         }
     }
 
@@ -163,9 +163,12 @@ impl<B: Backend> Sana<B> {
                 .init(device),
             blocks,
             ln_out: LayerNorm::new(config.hidden_size, device),
-            out_proj: LinearConfig::new(config.hidden_size, config.in_channels * config.patch_size * config.patch_size)
-                .with_bias(true)
-                .init(device),
+            out_proj: LinearConfig::new(
+                config.hidden_size,
+                config.in_channels * config.patch_size * config.patch_size,
+            )
+            .with_bias(true)
+            .init(device),
             in_channels: config.in_channels,
             patch_size: config.patch_size,
         }
@@ -251,7 +254,9 @@ impl<B: Backend> SanaPatchEmbed<B> {
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 3> {
         let [batch, channels, height, width] = x.dims();
         // Flatten spatial dimensions: [B, C, H, W] -> [B, H*W, C]
-        let x = x.swap_dims(1, 2).swap_dims(2, 3)
+        let x = x
+            .swap_dims(1, 2)
+            .swap_dims(2, 3)
             .reshape([batch, height * width, channels]);
         self.proj.forward(x)
     }
@@ -353,13 +358,23 @@ impl<B: Backend> SanaBlock<B> {
 
         // AdaLN modulation
         let mods = self.ada_ln_modulation.forward(activation::silu(t_emb));
-        let mods = mods.unsqueeze_dim::<3>(1).expand([batch, seq_len, hidden * 6]);
+        let mods = mods
+            .unsqueeze_dim::<3>(1)
+            .expand([batch, seq_len, hidden * 6]);
 
         let shift1 = mods.clone().slice([0..batch, 0..seq_len, 0..hidden]);
-        let scale1 = mods.clone().slice([0..batch, 0..seq_len, hidden..hidden * 2]);
-        let gate1 = mods.clone().slice([0..batch, 0..seq_len, hidden * 2..hidden * 3]);
-        let shift2 = mods.clone().slice([0..batch, 0..seq_len, hidden * 3..hidden * 4]);
-        let scale2 = mods.clone().slice([0..batch, 0..seq_len, hidden * 4..hidden * 5]);
+        let scale1 = mods
+            .clone()
+            .slice([0..batch, 0..seq_len, hidden..hidden * 2]);
+        let gate1 = mods
+            .clone()
+            .slice([0..batch, 0..seq_len, hidden * 2..hidden * 3]);
+        let shift2 = mods
+            .clone()
+            .slice([0..batch, 0..seq_len, hidden * 3..hidden * 4]);
+        let scale2 = mods
+            .clone()
+            .slice([0..batch, 0..seq_len, hidden * 4..hidden * 5]);
         let gate2 = mods.slice([0..batch, 0..seq_len, hidden * 5..hidden * 6]);
 
         // Self attention with AdaLN
@@ -420,19 +435,25 @@ impl<B: Backend> SanaLinearAttention<B> {
         let [batch, seq_len, _] = x.dims();
 
         // Project
-        let q = self.q_proj.forward(x.clone())
+        let q = self
+            .q_proj
+            .forward(x.clone())
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let k = self.k_proj.forward(x.clone())
+        let k = self
+            .k_proj
+            .forward(x.clone())
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = self.v_proj.forward(x)
+        let v = self
+            .v_proj
+            .forward(x)
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
         // Linear attention with ELU-like feature map
         // φ(x) = elu(x) + 1, ensures non-negativity
-        let q = activation::relu(q) + 1e-6;  // Small epsilon instead of 1.0 for stability
+        let q = activation::relu(q) + 1e-6; // Small epsilon instead of 1.0 for stability
         let k = activation::relu(k) + 1e-6;
 
         // Standard attention for simplicity (can optimize to linear later)
@@ -443,7 +464,8 @@ impl<B: Backend> SanaLinearAttention<B> {
         let out = attn.matmul(v);
 
         // Reshape back
-        let out = out.swap_dims(1, 2)
+        let out = out
+            .swap_dims(1, 2)
             .reshape([batch, seq_len, self.num_heads * self.head_dim]);
 
         self.out_proj.forward(out)
@@ -493,13 +515,19 @@ impl<B: Backend> SanaCrossAttention<B> {
         let x = self.ln.forward(x);
 
         // Q from image, K/V from text
-        let q = self.q_proj.forward(x)
+        let q = self
+            .q_proj
+            .forward(x)
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let k = self.k_proj.forward(text.clone())
+        let k = self
+            .k_proj
+            .forward(text.clone())
             .reshape([batch, text_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = self.v_proj.forward(text)
+        let v = self
+            .v_proj
+            .forward(text)
             .reshape([batch, text_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
@@ -508,9 +536,11 @@ impl<B: Backend> SanaCrossAttention<B> {
         let attn = q.matmul(k.swap_dims(2, 3)) / scale;
         let attn = activation::softmax(attn, 3);
 
-        let out = attn.matmul(v)
-            .swap_dims(1, 2)
-            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = attn.matmul(v).swap_dims(1, 2).reshape([
+            batch,
+            seq_len,
+            self.num_heads * self.head_dim,
+        ]);
 
         self.out_proj.forward(out)
     }

@@ -3,8 +3,8 @@
 //! Encodes RGB images to 4-channel latent representations.
 
 use burn::nn::{
-    conv::{Conv2d, Conv2dConfig},
     PaddingConfig2d,
+    conv::{Conv2d, Conv2dConfig},
 };
 use burn::prelude::*;
 

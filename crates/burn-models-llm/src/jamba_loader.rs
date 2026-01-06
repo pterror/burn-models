@@ -5,16 +5,16 @@
 
 use std::path::Path;
 
-use burn::prelude::*;
 use burn::module::Param;
-use burn::nn::{EmbeddingConfig, LinearConfig, LayerNormConfig};
 use burn::nn::conv::Conv1dConfig;
+use burn::nn::{EmbeddingConfig, LayerNormConfig, LinearConfig};
+use burn::prelude::*;
 use burn_models_convert::loader::SafeTensorFile;
 use thiserror::Error;
 
 use crate::jamba::{
-    Jamba, JambaConfig, JambaRuntime, JambaBlock, JambaCore, JambaFFN,
-    JambaMambaMixer, JambaAttention, JambaDenseFFN, JambaMoEFFN, JambaExpert,
+    Jamba, JambaAttention, JambaBlock, JambaConfig, JambaCore, JambaDenseFFN, JambaExpert,
+    JambaFFN, JambaMambaMixer, JambaMoEFFN, JambaRuntime,
 };
 
 #[derive(Error, Debug)]
@@ -47,7 +47,13 @@ pub fn load_jamba<B: Backend, P: AsRef<Path>>(
     let file = SafeTensorFile::open(path)?;
 
     // Load embeddings
-    let embed_tokens = load_embedding(&file, "model.embed_tokens.weight", config.vocab_size, config.d_model, device)?;
+    let embed_tokens = load_embedding(
+        &file,
+        "model.embed_tokens.weight",
+        config.vocab_size,
+        config.d_model,
+        device,
+    )?;
 
     // Load Jamba layers
     let mut layers = Vec::with_capacity(config.n_layer);
@@ -57,10 +63,23 @@ pub fn load_jamba<B: Backend, P: AsRef<Path>>(
     }
 
     // Load final layer norm
-    let ln_f = load_layer_norm(&file, "model.final_layernorm", config.d_model, config.layer_norm_eps, device)?;
+    let ln_f = load_layer_norm(
+        &file,
+        "model.final_layernorm",
+        config.d_model,
+        config.layer_norm_eps,
+        device,
+    )?;
 
     // Load LM head
-    let lm_head = load_linear(&file, "lm_head.weight", None, config.d_model, config.vocab_size, device)?;
+    let lm_head = load_linear(
+        &file,
+        "lm_head.weight",
+        None,
+        config.d_model,
+        config.vocab_size,
+        device,
+    )?;
 
     let model = Jamba {
         embed_tokens,
@@ -175,7 +194,13 @@ fn load_jamba_block<B: Backend>(
     let is_attention = (layer_idx + 1) % config.attn_layer_period == 0;
     let is_moe = (layer_idx + 1) % config.moe_layer_period == 0;
 
-    let ln = load_layer_norm(file, &format!("{}.input_layernorm", prefix), config.d_model, config.layer_norm_eps, device)?;
+    let ln = load_layer_norm(
+        file,
+        &format!("{}.input_layernorm", prefix),
+        config.d_model,
+        config.layer_norm_eps,
+        device,
+    )?;
 
     let core = if is_attention {
         JambaCore::Attention(load_jamba_attention(file, &prefix, config, device)?)

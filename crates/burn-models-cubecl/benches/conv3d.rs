@@ -3,15 +3,15 @@
 //! Run with:
 //!   CUDA_PATH=/path/to/cuda cargo bench -p burn-models-cubecl --features cuda --bench conv3d
 
-use criterion::{black_box, BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
 #[cfg(feature = "cuda")]
 mod cuda_bench {
     use super::*;
     use burn::prelude::*;
-    use burn_cubecl::{tensor::CubeTensor, CubeBackend};
+    use burn_cubecl::{CubeBackend, tensor::CubeTensor};
     use burn_cuda::CudaDevice;
-    use burn_models_cubecl::{conv3d, conv3d_nthwc, Conv3dOptions, Conv3dOptimizedOptions, Layout};
+    use burn_models_cubecl::{Conv3dOptimizedOptions, Conv3dOptions, Layout, conv3d, conv3d_nthwc};
     use cubecl::cuda::CudaRuntime;
 
     type BenchBackend = CubeBackend<CudaRuntime, f32, i32, u8>;
@@ -116,9 +116,11 @@ mod cuda_bench {
 
             let cols = im2col_3d(x_padded, [k_t, k_h, k_w], stride, [out_t, out_h, out_w]);
 
-            let weight_expanded = weight_2d
-                .unsqueeze_dim::<3>(0)
-                .expand([batch, out_ch, in_ch_per_group * kernel_elements]);
+            let weight_expanded = weight_2d.unsqueeze_dim::<3>(0).expand([
+                batch,
+                out_ch,
+                in_ch_per_group * kernel_elements,
+            ]);
 
             let out = weight_expanded.matmul(cols);
 
@@ -140,7 +142,9 @@ mod cuda_bench {
         }
     }
 
-    fn from_cube_tensor<const D: usize>(tensor: CubeTensor<CudaRuntime>) -> Tensor<BenchBackend, D> {
+    fn from_cube_tensor<const D: usize>(
+        tensor: CubeTensor<CudaRuntime>,
+    ) -> Tensor<BenchBackend, D> {
         Tensor::from_primitive(burn::tensor::TensorPrimitive::Float(tensor))
     }
 
@@ -201,8 +205,9 @@ mod cuda_bench {
                             layout: Layout::NCTHW,
                         };
 
-                        let output = conv3d::<CudaRuntime>(input_cube, weight_cube, bias_cube, options)
-                            .expect("CubeCL conv3d failed");
+                        let output =
+                            conv3d::<CudaRuntime>(input_cube, weight_cube, bias_cube, options)
+                                .expect("CubeCL conv3d failed");
 
                         black_box(from_cube_tensor::<5>(output))
                     })
@@ -233,8 +238,13 @@ mod cuda_bench {
                             groups: 1,
                         };
 
-                        let output = conv3d_nthwc::<CudaRuntime>(input_cube, weight_cube, bias_cube, options)
-                            .expect("CubeCL optimized conv3d failed");
+                        let output = conv3d_nthwc::<CudaRuntime>(
+                            input_cube,
+                            weight_cube,
+                            bias_cube,
+                            options,
+                        )
+                        .expect("CubeCL optimized conv3d failed");
 
                         black_box(from_cube_tensor::<5>(output))
                     })
@@ -263,8 +273,13 @@ mod cuda_bench {
                             groups: 1,
                         };
 
-                        let output = conv3d_nthwc::<CudaRuntime>(input_cube, weight_cube, bias_cube, options)
-                            .expect("CubeCL optimized conv3d failed");
+                        let output = conv3d_nthwc::<CudaRuntime>(
+                            input_cube,
+                            weight_cube,
+                            bias_cube,
+                            options,
+                        )
+                        .expect("CubeCL optimized conv3d failed");
 
                         // Permute NTHWC -> NCTHW
                         let output_ncthw: Tensor<BenchBackend, 5> = from_cube_tensor(output);
@@ -308,7 +323,9 @@ fn conv3d_benchmarks(c: &mut Criterion) {
 #[cfg(not(feature = "cuda"))]
 fn conv3d_benchmarks(_c: &mut Criterion) {
     eprintln!("Conv3d benchmarks require --features cuda");
-    eprintln!("Run: CUDA_PATH=/path/to/cuda cargo bench -p burn-models-cubecl --features cuda --bench conv3d");
+    eprintln!(
+        "Run: CUDA_PATH=/path/to/cuda cargo bench -p burn-models-cubecl --features cuda --bench conv3d"
+    );
 }
 
 criterion_group!(benches, conv3d_benchmarks);

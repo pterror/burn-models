@@ -18,14 +18,14 @@
 //! - DeepSeek V2.5
 //! - DeepSeek V3 (671B) with MLA + MoE
 
-use burn::prelude::*;
 use burn::nn::{Embedding, EmbeddingConfig, Linear, LinearConfig};
+use burn::prelude::*;
 
+use burn_models_core::glu::{SwiGluFfn, SwiGluFfnConfig};
 use burn_models_core::kv_cache::ModelKvCache;
 use burn_models_core::rmsnorm::RmsNorm;
 use burn_models_core::rope::RotaryEmbedding;
 use burn_models_core::transformer::causal_mask;
-use burn_models_core::glu::{SwiGluFfn, SwiGluFfnConfig};
 
 /// DeepSeek Model Configuration
 #[derive(Debug, Clone)]
@@ -256,27 +256,44 @@ impl DeepSeekConfig {
             q_proj: LinearConfig::new(self.hidden_size, self.hidden_size)
                 .with_bias(false)
                 .init(device), // Placeholder, not used with MLA
-            k_proj: LinearConfig::new(self.hidden_size, self.hidden_size / self.num_heads * self.num_kv_heads)
-                .with_bias(false)
-                .init(device), // Placeholder
-            v_proj: LinearConfig::new(self.hidden_size, self.hidden_size / self.num_heads * self.num_kv_heads)
-                .with_bias(false)
-                .init(device), // Placeholder
+            k_proj: LinearConfig::new(
+                self.hidden_size,
+                self.hidden_size / self.num_heads * self.num_kv_heads,
+            )
+            .with_bias(false)
+            .init(device), // Placeholder
+            v_proj: LinearConfig::new(
+                self.hidden_size,
+                self.hidden_size / self.num_heads * self.num_kv_heads,
+            )
+            .with_bias(false)
+            .init(device), // Placeholder
             o_proj: LinearConfig::new(self.num_heads * v_head_dim, self.hidden_size)
                 .with_bias(false)
                 .init(device),
-            q_a_proj: Some(LinearConfig::new(self.hidden_size, self.q_lora_rank)
+            q_a_proj: Some(
+                LinearConfig::new(self.hidden_size, self.q_lora_rank)
+                    .with_bias(false)
+                    .init(device),
+            ),
+            q_b_proj: Some(
+                LinearConfig::new(self.q_lora_rank, self.num_heads * q_head_dim)
+                    .with_bias(false)
+                    .init(device),
+            ),
+            kv_a_proj_with_mqa: Some(
+                LinearConfig::new(self.hidden_size, self.kv_lora_rank + self.qk_rope_head_dim)
+                    .with_bias(false)
+                    .init(device),
+            ),
+            kv_b_proj: Some(
+                LinearConfig::new(
+                    self.kv_lora_rank,
+                    self.num_heads * (self.qk_nope_head_dim + v_head_dim),
+                )
                 .with_bias(false)
-                .init(device)),
-            q_b_proj: Some(LinearConfig::new(self.q_lora_rank, self.num_heads * q_head_dim)
-                .with_bias(false)
-                .init(device)),
-            kv_a_proj_with_mqa: Some(LinearConfig::new(self.hidden_size, self.kv_lora_rank + self.qk_rope_head_dim)
-                .with_bias(false)
-                .init(device)),
-            kv_b_proj: Some(LinearConfig::new(self.kv_lora_rank, self.num_heads * (self.qk_nope_head_dim + v_head_dim))
-                .with_bias(false)
-                .init(device)),
+                .init(device),
+            ),
             num_heads: self.num_heads,
             num_kv_heads: self.num_kv_heads,
             head_dim,
@@ -341,9 +358,15 @@ impl<B: Backend> DeepSeekAttention<B> {
         let k = self.k_proj.forward(x.clone());
         let v = self.v_proj.forward(x);
 
-        let q = q.reshape([batch, seq_len, self.num_heads, self.head_dim]).swap_dims(1, 2);
-        let k = k.reshape([batch, seq_len, self.num_kv_heads, self.head_dim]).swap_dims(1, 2);
-        let v = v.reshape([batch, seq_len, self.num_kv_heads, self.head_dim]).swap_dims(1, 2);
+        let q = q
+            .reshape([batch, seq_len, self.num_heads, self.head_dim])
+            .swap_dims(1, 2);
+        let k = k
+            .reshape([batch, seq_len, self.num_kv_heads, self.head_dim])
+            .swap_dims(1, 2);
+        let v = v
+            .reshape([batch, seq_len, self.num_kv_heads, self.head_dim])
+            .swap_dims(1, 2);
 
         let (q, k) = rope.forward(q, k, start_pos);
 
@@ -361,7 +384,9 @@ impl<B: Backend> DeepSeekAttention<B> {
         let attn = burn::tensor::activation::softmax(attn, 3);
         let out = attn.matmul(v);
 
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.o_proj.forward(out)
     }
 
@@ -386,8 +411,14 @@ impl<B: Backend> DeepSeekAttention<B> {
         let kv_compressed = kv_a.forward(x);
 
         // Split compressed KV into latent part and rope keys
-        let latent = kv_compressed.clone().slice([0..batch, 0..seq_len, 0..self.kv_lora_rank]);
-        let k_rope = kv_compressed.slice([0..batch, 0..seq_len, self.kv_lora_rank..self.kv_lora_rank + self.qk_rope_head_dim]);
+        let latent = kv_compressed
+            .clone()
+            .slice([0..batch, 0..seq_len, 0..self.kv_lora_rank]);
+        let k_rope = kv_compressed.slice([
+            0..batch,
+            0..seq_len,
+            self.kv_lora_rank..self.kv_lora_rank + self.qk_rope_head_dim,
+        ]);
 
         // Expand latent to get K (nope) and V
         let kv_expanded = kv_b.forward(latent);
@@ -395,20 +426,43 @@ impl<B: Backend> DeepSeekAttention<B> {
         // Split Q into nope and rope parts
         let q_head_dim = self.qk_nope_head_dim + self.qk_rope_head_dim;
         let q = q.reshape([batch, seq_len, self.num_heads, q_head_dim]);
-        let q_nope = q.clone().slice([0..batch, 0..seq_len, 0..self.num_heads, 0..self.qk_nope_head_dim]);
-        let q_rope = q.slice([0..batch, 0..seq_len, 0..self.num_heads, self.qk_nope_head_dim..q_head_dim]);
+        let q_nope = q.clone().slice([
+            0..batch,
+            0..seq_len,
+            0..self.num_heads,
+            0..self.qk_nope_head_dim,
+        ]);
+        let q_rope = q.slice([
+            0..batch,
+            0..seq_len,
+            0..self.num_heads,
+            self.qk_nope_head_dim..q_head_dim,
+        ]);
 
         // Split expanded KV
         let v_head_dim = self.qk_nope_head_dim;
         let kv_per_head = self.qk_nope_head_dim + v_head_dim;
         let kv_expanded = kv_expanded.reshape([batch, seq_len, self.num_heads, kv_per_head]);
-        let k_nope = kv_expanded.clone().slice([0..batch, 0..seq_len, 0..self.num_heads, 0..self.qk_nope_head_dim]);
-        let v = kv_expanded.slice([0..batch, 0..seq_len, 0..self.num_heads, self.qk_nope_head_dim..kv_per_head]);
+        let k_nope = kv_expanded.clone().slice([
+            0..batch,
+            0..seq_len,
+            0..self.num_heads,
+            0..self.qk_nope_head_dim,
+        ]);
+        let v = kv_expanded.slice([
+            0..batch,
+            0..seq_len,
+            0..self.num_heads,
+            self.qk_nope_head_dim..kv_per_head,
+        ]);
 
         // Apply RoPE to rope parts
         // Reshape for RoPE: [batch, seq, heads, dim] -> [batch, heads, seq, dim]
         let q_rope = q_rope.swap_dims(1, 2);
-        let k_rope = k_rope.unsqueeze_dim::<4>(2).repeat_dim(2, self.num_heads).swap_dims(1, 2);
+        let k_rope = k_rope
+            .unsqueeze_dim::<4>(2)
+            .repeat_dim(2, self.num_heads)
+            .swap_dims(1, 2);
 
         let (q_rope, k_rope) = rope.forward(q_rope, k_rope, start_pos);
 
@@ -435,7 +489,9 @@ impl<B: Backend> DeepSeekAttention<B> {
         let attn = burn::tensor::activation::softmax(attn, 3);
         let out = attn.matmul(v);
 
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * v_head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * v_head_dim]);
         self.o_proj.forward(out)
     }
 
@@ -447,9 +503,12 @@ impl<B: Backend> DeepSeekAttention<B> {
         let [batch, kv_heads, seq_len, head_dim] = x.dims();
         let n_rep = self.num_heads / self.num_kv_heads;
 
-        x.unsqueeze_dim::<5>(2)
-            .repeat_dim(2, n_rep)
-            .reshape([batch, kv_heads * n_rep, seq_len, head_dim])
+        x.unsqueeze_dim::<5>(2).repeat_dim(2, n_rep).reshape([
+            batch,
+            kv_heads * n_rep,
+            seq_len,
+            head_dim,
+        ])
     }
 }
 
@@ -550,7 +609,11 @@ impl<B: Backend> DeepSeek<B> {
             let output = self.forward(all_tokens.clone(), runtime, None);
 
             let seq_len = all_tokens.dims()[1];
-            let last_logits = output.logits.slice([0..batch, (seq_len - 1)..seq_len, 0..runtime.config.vocab_size]);
+            let last_logits = output.logits.slice([
+                0..batch,
+                (seq_len - 1)..seq_len,
+                0..runtime.config.vocab_size,
+            ]);
             let last_logits = last_logits.reshape([batch, runtime.config.vocab_size]);
 
             let scaled_logits = if (temperature - 1.0).abs() > 1e-6 {

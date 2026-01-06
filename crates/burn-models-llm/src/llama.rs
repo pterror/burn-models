@@ -17,8 +17,8 @@
 //! - LLaMA 3 8B, 70B
 //! - Code LLaMA
 
-use burn::prelude::*;
 use burn::nn::{Embedding, EmbeddingConfig};
+use burn::prelude::*;
 
 use burn_models_core::kv_cache::ModelKvCache;
 use burn_models_core::rmsnorm::RmsNorm;
@@ -242,7 +242,8 @@ impl<B: Backend> Llama<B> {
             // For now, just pass through without caching
             let _ = cache.as_mut().map(|c| c.layer(layer_idx));
 
-            hidden_states = layer.forward(hidden_states, Some(&runtime.rope), start_pos, mask.clone());
+            hidden_states =
+                layer.forward(hidden_states, Some(&runtime.rope), start_pos, mask.clone());
         }
 
         // Final norm
@@ -285,7 +286,11 @@ impl<B: Backend> Llama<B> {
 
             // Get logits for last position: [batch, 1, vocab_size]
             let seq_len = all_tokens.dims()[1];
-            let last_logits = output.logits.slice([0..batch, (seq_len - 1)..seq_len, 0..runtime.config.vocab_size]);
+            let last_logits = output.logits.slice([
+                0..batch,
+                (seq_len - 1)..seq_len,
+                0..runtime.config.vocab_size,
+            ]);
             // Reshape to [batch, vocab_size]
             let last_logits = last_logits.reshape([batch, runtime.config.vocab_size]);
 
@@ -358,10 +363,7 @@ mod tests {
         let config = LlamaConfig::tiny();
         let (model, runtime) = config.init::<TestBackend>(&device);
 
-        let input_ids = Tensor::<TestBackend, 2, Int>::from_ints(
-            [[1, 2, 3], [4, 5, 6]],
-            &device
-        );
+        let input_ids = Tensor::<TestBackend, 2, Int>::from_ints([[1, 2, 3], [4, 5, 6]], &device);
         let output = model.forward(input_ids, &runtime, None);
 
         assert_eq!(output.logits.dims(), [2, 3, 1000]);

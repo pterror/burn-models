@@ -21,8 +21,8 @@
 //! - **Apache 2.0**: Permissive license
 //! - **Flow matching**: Rectified flow objective
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 use burn_models_core::glu::SwiGluFfn;
 use burn_models_core::layernorm::LayerNorm;
@@ -57,13 +57,13 @@ impl QwenImageConfig {
     /// Qwen-Image 20B base configuration
     pub fn base() -> Self {
         Self {
-            in_channels: 16,  // From VAE
+            in_channels: 16, // From VAE
             patch_size: 2,
             hidden_size: 4096,
             num_heads: 32,
             num_blocks: 48,
-            text_dim: 4096,    // Qwen2.5-VL hidden size
-            pooled_dim: 2048,  // Pooled embedding
+            text_dim: 4096,   // Qwen2.5-VL hidden size
+            pooled_dim: 2048, // Pooled embedding
             time_embed_dim: 256,
             mlp_ratio: 4.0,
             max_seq_len: 4096,
@@ -125,7 +125,8 @@ impl QwenImageConfig {
                     self.hidden_size,
                     self.num_heads,
                     self.intermediate_size(),
-                ).init(device)
+                )
+                .init(device)
             })
             .collect();
 
@@ -222,7 +223,11 @@ struct QwenImageBlockConfig {
 
 impl QwenImageBlockConfig {
     fn new(hidden_size: usize, num_heads: usize, intermediate_size: usize) -> Self {
-        Self { hidden_size, num_heads, intermediate_size }
+        Self {
+            hidden_size,
+            num_heads,
+            intermediate_size,
+        }
     }
 
     fn init<B: Backend>(&self, device: &B::Device) -> QwenImageBlock<B> {
@@ -301,23 +306,69 @@ impl<B: Backend> QwenImageJointAttention<B> {
         let txt_qkv = txt_qkv.reshape([batch, txt_len, 3, self.num_heads, self.head_dim]);
 
         // Extract Q, K, V
-        let img_q = img_qkv.clone().slice([0..batch, 0..img_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let img_q = img_qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..img_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, img_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let img_k = img_qkv.clone().slice([0..batch, 0..img_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let img_k = img_qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..img_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, img_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let img_v = img_qkv.slice([0..batch, 0..img_len, 2..3, 0..self.num_heads, 0..self.head_dim])
+        let img_v = img_qkv
+            .slice([
+                0..batch,
+                0..img_len,
+                2..3,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, img_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
-        let txt_q = txt_qkv.clone().slice([0..batch, 0..txt_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let txt_q = txt_qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..txt_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, txt_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let txt_k = txt_qkv.clone().slice([0..batch, 0..txt_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let txt_k = txt_qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..txt_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, txt_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let txt_v = txt_qkv.slice([0..batch, 0..txt_len, 2..3, 0..self.num_heads, 0..self.head_dim])
+        let txt_v = txt_qkv
+            .slice([
+                0..batch,
+                0..txt_len,
+                2..3,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, txt_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
@@ -325,7 +376,7 @@ impl<B: Backend> QwenImageJointAttention<B> {
         let (img_q, img_k) = rope.forward(img_q, img_k, 0);
 
         // Concatenate for joint attention
-        let q = Tensor::cat(vec![img_q, txt_q], 2);  // [B, heads, img+txt, head_dim]
+        let q = Tensor::cat(vec![img_q, txt_q], 2); // [B, heads, img+txt, head_dim]
         let k = Tensor::cat(vec![img_k, txt_k], 2);
         let v = Tensor::cat(vec![img_v, txt_v], 2);
 
@@ -336,10 +387,18 @@ impl<B: Backend> QwenImageJointAttention<B> {
         let out = attn.matmul(v);
 
         // Split back to image and text
-        let out = out.swap_dims(1, 2);  // [B, total, heads, head_dim]
-        let img_out = out.clone().slice([0..batch, 0..img_len, 0..self.num_heads, 0..self.head_dim])
+        let out = out.swap_dims(1, 2); // [B, total, heads, head_dim]
+        let img_out = out
+            .clone()
+            .slice([0..batch, 0..img_len, 0..self.num_heads, 0..self.head_dim])
             .reshape([batch, img_len, self.num_heads * self.head_dim]);
-        let txt_out = out.slice([0..batch, img_len..total_len, 0..self.num_heads, 0..self.head_dim])
+        let txt_out = out
+            .slice([
+                0..batch,
+                img_len..total_len,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, txt_len, self.num_heads * self.head_dim]);
 
         let img_out = self.img_to_out.forward(img_out);
@@ -387,16 +446,38 @@ impl<B: Backend> QwenImageBlock<B> {
         let txt_mod = txt_mod.reshape([batch, 4, hidden]);
 
         // Image modulation
-        let img_shift1 = img_mod.clone().slice([0..batch, 0..1, 0..hidden]).reshape([batch, 1, hidden]);
-        let img_scale1 = img_mod.clone().slice([0..batch, 1..2, 0..hidden]).reshape([batch, 1, hidden]);
-        let img_shift2 = img_mod.clone().slice([0..batch, 2..3, 0..hidden]).reshape([batch, 1, hidden]);
-        let img_scale2 = img_mod.slice([0..batch, 3..4, 0..hidden]).reshape([batch, 1, hidden]);
+        let img_shift1 = img_mod
+            .clone()
+            .slice([0..batch, 0..1, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let img_scale1 = img_mod
+            .clone()
+            .slice([0..batch, 1..2, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let img_shift2 = img_mod
+            .clone()
+            .slice([0..batch, 2..3, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let img_scale2 = img_mod
+            .slice([0..batch, 3..4, 0..hidden])
+            .reshape([batch, 1, hidden]);
 
         // Text modulation
-        let txt_shift1 = txt_mod.clone().slice([0..batch, 0..1, 0..hidden]).reshape([batch, 1, hidden]);
-        let txt_scale1 = txt_mod.clone().slice([0..batch, 1..2, 0..hidden]).reshape([batch, 1, hidden]);
-        let txt_shift2 = txt_mod.clone().slice([0..batch, 2..3, 0..hidden]).reshape([batch, 1, hidden]);
-        let txt_scale2 = txt_mod.slice([0..batch, 3..4, 0..hidden]).reshape([batch, 1, hidden]);
+        let txt_shift1 = txt_mod
+            .clone()
+            .slice([0..batch, 0..1, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let txt_scale1 = txt_mod
+            .clone()
+            .slice([0..batch, 1..2, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let txt_shift2 = txt_mod
+            .clone()
+            .slice([0..batch, 2..3, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let txt_scale2 = txt_mod
+            .slice([0..batch, 3..4, 0..hidden])
+            .reshape([batch, 1, hidden]);
 
         // Pre-attention norm with modulation
         let img_normed = self.img_norm1.forward(img.clone());
@@ -566,7 +647,7 @@ mod tests {
     fn test_qwenimage_timestep_embed() {
         let device = Default::default();
         let embed = QwenImageTimestepEmbed {
-            linear1: LinearConfig::new(128, 256).with_bias(true).init(&device),  // 64 + 64
+            linear1: LinearConfig::new(128, 256).with_bias(true).init(&device), // 64 + 64
             linear2: LinearConfig::new(256, 256).with_bias(true).init(&device),
             freqs: qwenimage_timestep_freqs(64, &device),
         };

@@ -19,8 +19,8 @@
 //! - **Joint attention**: Text and image attend to each other (like SD3)
 //! - **Open source**: Fully open weights and training
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 use burn_models_core::dit::{PatchEmbed, PatchEmbedConfig, unpatchify};
 use burn_models_core::glu::SwiGluFfn;
@@ -59,7 +59,7 @@ impl AuraFlowConfig {
             hidden_size: 3072,
             num_heads: 24,
             num_blocks: 24,
-            text_dim: 4096,  // T5-XXL
+            text_dim: 4096, // T5-XXL
             time_embed_dim: 256,
             mlp_ratio: 4.0,
             max_seq_len: 4096,
@@ -92,8 +92,8 @@ impl AuraFlowConfig {
     /// Initialize the model
     pub fn init<B: Backend>(&self, device: &B::Device) -> (AuraFlow<B>, AuraFlowRuntime<B>) {
         // Patch embedding
-        let patch_embed = PatchEmbedConfig::new(self.patch_size, self.in_channels, self.hidden_size)
-            .init(device);
+        let patch_embed =
+            PatchEmbedConfig::new(self.patch_size, self.in_channels, self.hidden_size).init(device);
 
         // Text projection
         let text_embed = LinearConfig::new(self.text_dim, self.hidden_size)
@@ -114,11 +114,8 @@ impl AuraFlowConfig {
         // MMDiT blocks with joint attention
         let blocks: Vec<AuraFlowBlock<B>> = (0..self.num_blocks)
             .map(|_| {
-                AuraFlowBlockConfig::new(
-                    self.hidden_size,
-                    self.num_heads,
-                    self.intermediate_size(),
-                ).init(device)
+                AuraFlowBlockConfig::new(self.hidden_size, self.num_heads, self.intermediate_size())
+                    .init(device)
             })
             .collect();
 
@@ -211,7 +208,11 @@ struct AuraFlowBlockConfig {
 
 impl AuraFlowBlockConfig {
     fn new(hidden_size: usize, num_heads: usize, intermediate_size: usize) -> Self {
-        Self { hidden_size, num_heads, intermediate_size }
+        Self {
+            hidden_size,
+            num_heads,
+            intermediate_size,
+        }
     }
 
     fn init<B: Backend>(&self, device: &B::Device) -> AuraFlowBlock<B> {
@@ -278,13 +279,36 @@ impl<B: Backend> AuraFlowAttention<B> {
         let qkv = self.to_qkv.forward(x);
         let qkv = qkv.reshape([batch, seq_len, 3, self.num_heads, self.head_dim]);
 
-        let q = qkv.clone().slice([0..batch, 0..seq_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let q = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
-            .swap_dims(1, 2);  // [B, H, S, D]
-        let k = qkv.clone().slice([0..batch, 0..seq_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+            .swap_dims(1, 2); // [B, H, S, D]
+        let k = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = qkv.slice([0..batch, 0..seq_len, 2..3, 0..self.num_heads, 0..self.head_dim])
+        let v = qkv
+            .slice([
+                0..batch,
+                0..seq_len,
+                2..3,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
@@ -294,7 +318,9 @@ impl<B: Backend> AuraFlowAttention<B> {
     /// Output projection
     pub fn out(&self, x: Tensor<B, 4>) -> Tensor<B, 3> {
         let [batch, _heads, seq_len, _dim] = x.dims();
-        let x = x.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let x = x
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.to_out.forward(x)
     }
 }
@@ -326,9 +352,9 @@ impl<B: Backend> AuraFlowBlock<B> {
     /// Forward pass with joint attention between image and text
     pub fn forward(
         &self,
-        x: Tensor<B, 3>,  // Image tokens
-        c: Tensor<B, 3>,  // Text tokens
-        cond: Tensor<B, 2>,  // Timestep conditioning
+        x: Tensor<B, 3>,    // Image tokens
+        c: Tensor<B, 3>,    // Text tokens
+        cond: Tensor<B, 2>, // Timestep conditioning
         rope: &RotaryEmbedding<B>,
     ) -> (Tensor<B, 3>, Tensor<B, 3>) {
         let [batch, _x_len, hidden] = x.dims();
@@ -339,19 +365,54 @@ impl<B: Backend> AuraFlowBlock<B> {
         let mod_params = mod_params.reshape([batch, 12, hidden]);
 
         // X modulation
-        let x_shift1 = mod_params.clone().slice([0..batch, 0..1, 0..hidden]).reshape([batch, 1, hidden]);
-        let x_scale1 = mod_params.clone().slice([0..batch, 1..2, 0..hidden]).reshape([batch, 1, hidden]);
-        let x_gate1 = mod_params.clone().slice([0..batch, 2..3, 0..hidden]).reshape([batch, 1, hidden]);
-        let x_shift2 = mod_params.clone().slice([0..batch, 3..4, 0..hidden]).reshape([batch, 1, hidden]);
-        let x_scale2 = mod_params.clone().slice([0..batch, 4..5, 0..hidden]).reshape([batch, 1, hidden]);
-        let x_gate2 = mod_params.clone().slice([0..batch, 5..6, 0..hidden]).reshape([batch, 1, hidden]);
+        let x_shift1 = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let x_scale1 = mod_params
+            .clone()
+            .slice([0..batch, 1..2, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let x_gate1 = mod_params
+            .clone()
+            .slice([0..batch, 2..3, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let x_shift2 = mod_params
+            .clone()
+            .slice([0..batch, 3..4, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let x_scale2 = mod_params
+            .clone()
+            .slice([0..batch, 4..5, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let x_gate2 = mod_params
+            .clone()
+            .slice([0..batch, 5..6, 0..hidden])
+            .reshape([batch, 1, hidden]);
         // C modulation
-        let c_shift1 = mod_params.clone().slice([0..batch, 6..7, 0..hidden]).reshape([batch, 1, hidden]);
-        let c_scale1 = mod_params.clone().slice([0..batch, 7..8, 0..hidden]).reshape([batch, 1, hidden]);
-        let c_gate1 = mod_params.clone().slice([0..batch, 8..9, 0..hidden]).reshape([batch, 1, hidden]);
-        let c_shift2 = mod_params.clone().slice([0..batch, 9..10, 0..hidden]).reshape([batch, 1, hidden]);
-        let c_scale2 = mod_params.clone().slice([0..batch, 10..11, 0..hidden]).reshape([batch, 1, hidden]);
-        let c_gate2 = mod_params.slice([0..batch, 11..12, 0..hidden]).reshape([batch, 1, hidden]);
+        let c_shift1 = mod_params
+            .clone()
+            .slice([0..batch, 6..7, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let c_scale1 = mod_params
+            .clone()
+            .slice([0..batch, 7..8, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let c_gate1 = mod_params
+            .clone()
+            .slice([0..batch, 8..9, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let c_shift2 = mod_params
+            .clone()
+            .slice([0..batch, 9..10, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let c_scale2 = mod_params
+            .clone()
+            .slice([0..batch, 10..11, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let c_gate2 = mod_params
+            .slice([0..batch, 11..12, 0..hidden])
+            .reshape([batch, 1, hidden]);
 
         // Modulated norms
         let x_norm = self.x_norm1.forward(x.clone());
@@ -368,7 +429,7 @@ impl<B: Backend> AuraFlowBlock<B> {
         let (x_q, x_k) = rope.forward(x_q, x_k, 0);
 
         // Joint attention: concatenate K, V from both streams
-        let k = Tensor::cat(vec![c_k, x_k], 2);  // [B, H, c_len + x_len, D]
+        let k = Tensor::cat(vec![c_k, x_k], 2); // [B, H, c_len + x_len, D]
         let v = Tensor::cat(vec![c_v, x_v], 2);
 
         // Compute attention for both streams
@@ -495,13 +556,7 @@ impl<B: Backend> AuraFlow<B> {
         let out = self.final_layer.forward(x, cond);
 
         // Unpatchify
-        let velocity = unpatchify(
-            out,
-            self.patch_size,
-            height,
-            width,
-            self.in_channels,
-        );
+        let velocity = unpatchify(out, self.patch_size, height, width, self.in_channels);
 
         AuraFlowOutput { velocity }
     }
@@ -575,7 +630,7 @@ mod tests {
 
         // [batch=1, channels=4, height=8, width=8]
         let latents = Tensor::zeros([1, 4, 8, 8], &device);
-        let text = Tensor::zeros([1, 4, 128], &device);  // T5 embeddings
+        let text = Tensor::zeros([1, 4, 128], &device); // T5 embeddings
 
         let output = model.forward(latents, 0.5, text, &runtime);
 

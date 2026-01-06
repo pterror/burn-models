@@ -441,10 +441,7 @@ mod tests {
 
     #[test]
     fn test_llama_format() {
-        let messages = vec![
-            ChatMessage::system("Be concise."),
-            ChatMessage::user("Hi"),
-        ];
+        let messages = vec![ChatMessage::system("Be concise."), ChatMessage::user("Hi")];
 
         let prompt = format_llama(&messages);
         assert!(prompt.contains("<<SYS>>"));

@@ -23,11 +23,11 @@
 use std::sync::Arc;
 
 use axum::{
+    Json, Router,
     extract::State,
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
 };
 use burn::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -229,9 +229,7 @@ async fn health_check() -> &'static str {
 }
 
 /// List available models
-async fn list_models<B: Backend>(
-    State(state): State<Arc<ServerState<B>>>,
-) -> Json<ModelsResponse> {
+async fn list_models<B: Backend>(State(state): State<Arc<ServerState<B>>>) -> Json<ModelsResponse> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()

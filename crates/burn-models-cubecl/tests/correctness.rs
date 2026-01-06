@@ -15,13 +15,11 @@
 
 use burn::prelude::*;
 use burn_cubecl::CubeBackend;
-use burn_wgpu::{WgpuDevice, WgpuRuntime};
 use burn_models_cubecl::{
-    conv3d, avg_pool3d, max_pool3d,
-    flash_attention, FlashAttentionOptions,
-    groupnorm, groupnorm_silu, GroupNormSiLuOptions,
-    Conv3dOptions, Layout, Pool3dOptions,
+    Conv3dOptions, FlashAttentionOptions, GroupNormSiLuOptions, Layout, Pool3dOptions, avg_pool3d,
+    conv3d, flash_attention, groupnorm, groupnorm_silu, max_pool3d,
 };
+use burn_wgpu::{WgpuDevice, WgpuRuntime};
 
 // Use CubeBackend directly to avoid FusionTensor wrapper
 // The 4th generic is BoolElement (u32 for wgpu)
@@ -160,9 +158,11 @@ mod reference {
         // Matrix multiply: weight @ cols
         // weight_2d is [out_ch, in_ch*k]
         // cols is [batch, in_ch*k, out_positions]
-        let weight_expanded = weight_2d
-            .unsqueeze_dim::<3>(0)
-            .expand([batch, out_ch, in_ch_per_group * kernel_elements]);
+        let weight_expanded = weight_2d.unsqueeze_dim::<3>(0).expand([
+            batch,
+            out_ch,
+            in_ch_per_group * kernel_elements,
+        ]);
 
         // Batched matmul: [batch, out_ch, in_ch*k] @ [batch, in_ch*k, out_positions] = [batch, out_ch, out_positions]
         let out = weight_expanded.matmul(cols);
@@ -294,21 +294,11 @@ fn test_conv3d_1x1x1_kernel() {
         layout: Layout::NCTHW,
     };
 
-    let cubecl_output = run_cubecl_conv3d(
-        input.clone(),
-        weight.clone(),
-        Some(bias.clone()),
-        options,
-    );
+    let cubecl_output =
+        run_cubecl_conv3d(input.clone(), weight.clone(), Some(bias.clone()), options);
 
-    let reference_output = reference::conv3d_reference(
-        input,
-        weight,
-        Some(bias),
-        [1, 1, 1],
-        [0, 0, 0],
-        [1, 1, 1],
-    );
+    let reference_output =
+        reference::conv3d_reference(input, weight, Some(bias), [1, 1, 1], [0, 0, 0], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), reference_output.dims());
     assert_tensors_approx_eq(cubecl_output, reference_output, 1e-5, "1x1x1 kernel");
@@ -347,21 +337,10 @@ fn test_conv3d_3x3x3_kernel_no_padding() {
         layout: Layout::NCTHW,
     };
 
-    let cubecl_output = run_cubecl_conv3d(
-        input.clone(),
-        weight.clone(),
-        None,
-        options,
-    );
+    let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
 
-    let reference_output = reference::conv3d_reference(
-        input,
-        weight,
-        None,
-        [1, 1, 1],
-        [0, 0, 0],
-        [1, 1, 1],
-    );
+    let reference_output =
+        reference::conv3d_reference(input, weight, None, [1, 1, 1], [0, 0, 0], [1, 1, 1]);
 
     // Expected output: (6-3)/1 + 1 = 4 in each spatial dimension
     assert_eq!(cubecl_output.dims(), [1, 4, 4, 4, 4]);
@@ -408,21 +387,11 @@ fn test_conv3d_3x3x3_kernel_same_padding() {
         layout: Layout::NCTHW,
     };
 
-    let cubecl_output = run_cubecl_conv3d(
-        input.clone(),
-        weight.clone(),
-        Some(bias.clone()),
-        options,
-    );
+    let cubecl_output =
+        run_cubecl_conv3d(input.clone(), weight.clone(), Some(bias.clone()), options);
 
-    let reference_output = reference::conv3d_reference(
-        input,
-        weight,
-        Some(bias),
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 1],
-    );
+    let reference_output =
+        reference::conv3d_reference(input, weight, Some(bias), [1, 1, 1], [1, 1, 1], [1, 1, 1]);
 
     // With same padding, output shape equals input shape
     assert_eq!(cubecl_output.dims(), [1, 8, 8, 8, 8]);
@@ -463,21 +432,10 @@ fn test_conv3d_stride_2() {
         layout: Layout::NCTHW,
     };
 
-    let cubecl_output = run_cubecl_conv3d(
-        input.clone(),
-        weight.clone(),
-        None,
-        options,
-    );
+    let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
 
-    let reference_output = reference::conv3d_reference(
-        input,
-        weight,
-        None,
-        [2, 2, 2],
-        [1, 1, 1],
-        [1, 1, 1],
-    );
+    let reference_output =
+        reference::conv3d_reference(input, weight, None, [2, 2, 2], [1, 1, 1], [1, 1, 1]);
 
     // Expected output: (8 + 2*1 - 3) / 2 + 1 = 4 in each dimension
     assert_eq!(cubecl_output.dims(), [1, 4, 4, 4, 4]);
@@ -524,21 +482,11 @@ fn test_conv3d_batch_size_2() {
         layout: Layout::NCTHW,
     };
 
-    let cubecl_output = run_cubecl_conv3d(
-        input.clone(),
-        weight.clone(),
-        Some(bias.clone()),
-        options,
-    );
+    let cubecl_output =
+        run_cubecl_conv3d(input.clone(), weight.clone(), Some(bias.clone()), options);
 
-    let reference_output = reference::conv3d_reference(
-        input,
-        weight,
-        Some(bias),
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 1],
-    );
+    let reference_output =
+        reference::conv3d_reference(input, weight, Some(bias), [1, 1, 1], [1, 1, 1], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [2, 3, 4, 4, 4]);
     assert_eq!(reference_output.dims(), [2, 3, 4, 4, 4]);
@@ -554,7 +502,7 @@ fn test_conv3d_asymmetric() {
     let batch = 1;
     let in_ch = 3;
     let out_ch = 4;
-    let t = 4;  // Time dimension smaller
+    let t = 4; // Time dimension smaller
     let h = 8;
     let w = 6;
 
@@ -566,7 +514,7 @@ fn test_conv3d_asymmetric() {
 
     // Asymmetric kernel
     let weight = Tensor::<TestBackend, 5>::random(
-        [out_ch, in_ch, 1, 3, 3],  // 1x3x3 kernel (no temporal extent)
+        [out_ch, in_ch, 1, 3, 3], // 1x3x3 kernel (no temporal extent)
         burn::tensor::Distribution::Uniform(-0.5, 0.5),
         &device,
     );
@@ -579,21 +527,10 @@ fn test_conv3d_asymmetric() {
         layout: Layout::NCTHW,
     };
 
-    let cubecl_output = run_cubecl_conv3d(
-        input.clone(),
-        weight.clone(),
-        None,
-        options,
-    );
+    let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
 
-    let reference_output = reference::conv3d_reference(
-        input,
-        weight,
-        None,
-        [1, 1, 1],
-        [0, 1, 1],
-        [1, 1, 1],
-    );
+    let reference_output =
+        reference::conv3d_reference(input, weight, None, [1, 1, 1], [0, 1, 1], [1, 1, 1]);
 
     // Expected: T stays 4, H and W stay 8 and 6 with same padding
     assert_eq!(cubecl_output.dims(), [1, 4, 4, 8, 6]);
@@ -636,13 +573,20 @@ mod pool_reference {
                             for kt in 0..kernel_size[0] {
                                 for kh in 0..kernel_size[1] {
                                     for kw in 0..kernel_size[2] {
-                                        let it = (ot * stride[0] + kt) as isize - padding[0] as isize;
-                                        let ih = (oh * stride[1] + kh) as isize - padding[1] as isize;
-                                        let iw = (ow * stride[2] + kw) as isize - padding[2] as isize;
+                                        let it =
+                                            (ot * stride[0] + kt) as isize - padding[0] as isize;
+                                        let ih =
+                                            (oh * stride[1] + kh) as isize - padding[1] as isize;
+                                        let iw =
+                                            (ow * stride[2] + kw) as isize - padding[2] as isize;
 
-                                        if it >= 0 && (it as usize) < in_t &&
-                                           ih >= 0 && (ih as usize) < in_h &&
-                                           iw >= 0 && (iw as usize) < in_w {
+                                        if it >= 0
+                                            && (it as usize) < in_t
+                                            && ih >= 0
+                                            && (ih as usize) < in_h
+                                            && iw >= 0
+                                            && (iw as usize) < in_w
+                                        {
                                             let in_idx = b * channels * in_t * in_h * in_w
                                                 + c * in_t * in_h * in_w
                                                 + (it as usize) * in_h * in_w
@@ -699,13 +643,20 @@ mod pool_reference {
                             for kt in 0..kernel_size[0] {
                                 for kh in 0..kernel_size[1] {
                                     for kw in 0..kernel_size[2] {
-                                        let it = (ot * stride[0] + kt) as isize - padding[0] as isize;
-                                        let ih = (oh * stride[1] + kh) as isize - padding[1] as isize;
-                                        let iw = (ow * stride[2] + kw) as isize - padding[2] as isize;
+                                        let it =
+                                            (ot * stride[0] + kt) as isize - padding[0] as isize;
+                                        let ih =
+                                            (oh * stride[1] + kh) as isize - padding[1] as isize;
+                                        let iw =
+                                            (ow * stride[2] + kw) as isize - padding[2] as isize;
 
-                                        if it >= 0 && (it as usize) < in_t &&
-                                           ih >= 0 && (ih as usize) < in_h &&
-                                           iw >= 0 && (iw as usize) < in_w {
+                                        if it >= 0
+                                            && (it as usize) < in_t
+                                            && ih >= 0
+                                            && (ih as usize) < in_h
+                                            && iw >= 0
+                                            && (iw as usize) < in_w
+                                        {
                                             let in_idx = b * channels * in_t * in_h * in_w
                                                 + c * in_t * in_h * in_w
                                                 + (it as usize) * in_h * in_w
@@ -801,7 +752,12 @@ fn test_wgpu_avg_pool3d_with_padding() {
     let ref_output = pool_reference::avg_pool3d_reference(input, [3, 3, 3], [2, 2, 2], [1, 1, 1]);
 
     assert_eq!(wgpu_output.dims(), [1, 3, 3, 3, 3]);
-    assert_tensors_approx_eq(wgpu_output, ref_output, 1e-5, "avg_pool3d with padding (WGPU)");
+    assert_tensors_approx_eq(
+        wgpu_output,
+        ref_output,
+        1e-5,
+        "avg_pool3d with padding (WGPU)",
+    );
 }
 
 #[test]
@@ -849,7 +805,12 @@ fn test_wgpu_max_pool3d_with_padding() {
     let ref_output = pool_reference::max_pool3d_reference(input, [3, 3, 3], [2, 2, 2], [1, 1, 1]);
 
     assert_eq!(wgpu_output.dims(), [2, 4, 4, 4, 4]);
-    assert_tensors_approx_eq(wgpu_output, ref_output, 1e-5, "max_pool3d with padding (WGPU)");
+    assert_tensors_approx_eq(
+        wgpu_output,
+        ref_output,
+        1e-5,
+        "max_pool3d with padding (WGPU)",
+    );
 }
 
 // ============================================================================
@@ -862,9 +823,9 @@ mod attention_reference {
 
     /// Standard causal attention: softmax(Q @ K^T / sqrt(d) + causal_mask) @ V
     pub fn causal_attention_reference<B: Backend>(
-        q: Tensor<B, 4>,  // [batch, heads, seq_q, head_dim]
-        k: Tensor<B, 4>,  // [batch, heads, seq_k, head_dim]
-        v: Tensor<B, 4>,  // [batch, heads, seq_k, val_dim]
+        q: Tensor<B, 4>, // [batch, heads, seq_q, head_dim]
+        k: Tensor<B, 4>, // [batch, heads, seq_k, head_dim]
+        v: Tensor<B, 4>, // [batch, heads, seq_k, val_dim]
     ) -> Tensor<B, 4> {
         let [batch, heads, seq_q, head_dim] = q.dims();
         let [_, _, seq_k, _] = k.dims();
@@ -951,7 +912,12 @@ fn test_wgpu_flash_attention_basic() {
     let ref_output = attention_reference::causal_attention_reference(q, k, v);
 
     assert_eq!(flash_output.dims(), ref_output.dims());
-    assert_tensors_approx_eq(flash_output, ref_output, 1e-3, "flash attention basic (WGPU)");
+    assert_tensors_approx_eq(
+        flash_output,
+        ref_output,
+        1e-3,
+        "flash attention basic (WGPU)",
+    );
 }
 
 #[test]
@@ -985,7 +951,12 @@ fn test_wgpu_flash_attention_longer_sequence() {
 
     assert_eq!(flash_output.dims(), ref_output.dims());
     // Longer sequences may accumulate more numerical error
-    assert_tensors_approx_eq(flash_output, ref_output, 5e-3, "flash attention longer seq (WGPU)");
+    assert_tensors_approx_eq(
+        flash_output,
+        ref_output,
+        5e-3,
+        "flash attention longer seq (WGPU)",
+    );
 }
 
 // ============================================================================
@@ -1102,7 +1073,8 @@ fn test_wgpu_groupnorm_basic() {
     let options = GroupNormSiLuOptions::with_groups(num_groups);
 
     let cubecl_output = run_wgpu_groupnorm(input.clone(), weight.clone(), bias.clone(), options);
-    let ref_output = groupnorm_reference::groupnorm_reference(input, weight, bias, num_groups, 1e-5);
+    let ref_output =
+        groupnorm_reference::groupnorm_reference(input, weight, bias, num_groups, 1e-5);
 
     assert_eq!(cubecl_output.dims(), ref_output.dims());
     // Tolerance accounts for variance calculation differences (biased vs unbiased)
@@ -1138,12 +1110,19 @@ fn test_wgpu_groupnorm_silu_basic() {
 
     let options = GroupNormSiLuOptions::with_groups(num_groups);
 
-    let cubecl_output = run_wgpu_groupnorm_silu(input.clone(), weight.clone(), bias.clone(), options);
-    let ref_output = groupnorm_reference::groupnorm_silu_reference(input, weight, bias, num_groups, 1e-5);
+    let cubecl_output =
+        run_wgpu_groupnorm_silu(input.clone(), weight.clone(), bias.clone(), options);
+    let ref_output =
+        groupnorm_reference::groupnorm_silu_reference(input, weight, bias, num_groups, 1e-5);
 
     assert_eq!(cubecl_output.dims(), ref_output.dims());
     // Tolerance accounts for variance calculation differences (biased vs unbiased)
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-2, "groupnorm_silu basic (WGPU)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-2,
+        "groupnorm_silu basic (WGPU)",
+    );
 }
 
 #[test]
@@ -1175,12 +1154,19 @@ fn test_wgpu_groupnorm_silu_batch() {
 
     let options = GroupNormSiLuOptions::with_groups(num_groups);
 
-    let cubecl_output = run_wgpu_groupnorm_silu(input.clone(), weight.clone(), bias.clone(), options);
-    let ref_output = groupnorm_reference::groupnorm_silu_reference(input, weight, bias, num_groups, 1e-5);
+    let cubecl_output =
+        run_wgpu_groupnorm_silu(input.clone(), weight.clone(), bias.clone(), options);
+    let ref_output =
+        groupnorm_reference::groupnorm_silu_reference(input, weight, bias, num_groups, 1e-5);
 
     assert_eq!(cubecl_output.dims(), ref_output.dims());
     // Tolerance accounts for variance calculation differences (biased vs unbiased)
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-2, "groupnorm_silu batch (WGPU)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-2,
+        "groupnorm_silu batch (WGPU)",
+    );
 }
 
 // =============================================================================
@@ -1198,7 +1184,8 @@ fn test_wgpu_resblock_cubecl_shape() {
     let out_channels = 512;
     let time_emb_dim = 1024;
 
-    let block = ResBlockCubeCL::<WgpuRuntime>::new(in_channels, out_channels, time_emb_dim, &device);
+    let block =
+        ResBlockCubeCL::<WgpuRuntime>::new(in_channels, out_channels, time_emb_dim, &device);
 
     let batch = 2;
     let height = 32;
@@ -1252,7 +1239,10 @@ fn test_wgpu_resblock_cubecl_same_channels() {
     let output = block.forward(input, time_emb);
 
     assert_eq!(output.dims(), [batch, channels, height, width]);
-    println!("ResBlockCubeCL same channels output shape: {:?}", output.dims());
+    println!(
+        "ResBlockCubeCL same channels output shape: {:?}",
+        output.dims()
+    );
 }
 
 #[test]
@@ -1281,7 +1271,10 @@ fn test_wgpu_crossattention_cubecl_self_attention() {
     let output = attn.forward(input.clone(), None);
 
     assert_eq!(output.dims(), [batch, seq_len, dim]);
-    println!("CrossAttentionCubeCL self-attn output shape: {:?}", output.dims());
+    println!(
+        "CrossAttentionCubeCL self-attn output shape: {:?}",
+        output.dims()
+    );
 }
 
 #[test]
@@ -1292,17 +1285,21 @@ fn test_wgpu_crossattention_cubecl_cross_attention() {
     let device = WgpuDevice::default();
 
     let query_dim = 320;
-    let context_dim = 768;  // CLIP text embedding dim
+    let context_dim = 768; // CLIP text embedding dim
     let num_heads = 8;
     let head_dim = 40;
 
     let attn = CrossAttentionCubeCL::<WgpuRuntime>::new(
-        query_dim, num_heads, head_dim, Some(context_dim), &device
+        query_dim,
+        num_heads,
+        head_dim,
+        Some(context_dim),
+        &device,
     );
 
     let batch = 2;
-    let seq_len = 64;    // image tokens
-    let ctx_len = 77;    // text tokens
+    let seq_len = 64; // image tokens
+    let ctx_len = 77; // text tokens
 
     let query = Tensor::<TestBackend, 3>::random(
         [batch, seq_len, query_dim],
@@ -1318,7 +1315,10 @@ fn test_wgpu_crossattention_cubecl_cross_attention() {
     let output = attn.forward(query, Some(context));
 
     assert_eq!(output.dims(), [batch, seq_len, query_dim]);
-    println!("CrossAttentionCubeCL cross-attn output shape: {:?}", output.dims());
+    println!(
+        "CrossAttentionCubeCL cross-attn output shape: {:?}",
+        output.dims()
+    );
 }
 
 // =============================================================================
@@ -1367,9 +1367,8 @@ fn test_wgpu_vae3d_downsample() {
     let temporal_stride = 2;
     let spatial_stride = 2;
 
-    let down = Downsample3dCubeCL::<WgpuRuntime>::new(
-        channels, temporal_stride, spatial_stride, &device
-    );
+    let down =
+        Downsample3dCubeCL::<WgpuRuntime>::new(channels, temporal_stride, spatial_stride, &device);
 
     let batch = 1;
     let time = 8;
@@ -1391,7 +1390,16 @@ fn test_wgpu_vae3d_downsample() {
     let expected_height = height / spatial_stride;
     let expected_width = width / spatial_stride;
 
-    assert_eq!(output.dims(), [batch, channels, expected_time, expected_height, expected_width]);
+    assert_eq!(
+        output.dims(),
+        [
+            batch,
+            channels,
+            expected_time,
+            expected_height,
+            expected_width
+        ]
+    );
     println!("Downsample3dCubeCL output shape: {:?}", output.dims());
 }
 
@@ -1406,9 +1414,8 @@ fn test_wgpu_vae3d_upsample() {
     let temporal_factor = 2;
     let spatial_factor = 2;
 
-    let up = Upsample3dCubeCL::<WgpuRuntime>::new(
-        channels, temporal_factor, spatial_factor, &device
-    );
+    let up =
+        Upsample3dCubeCL::<WgpuRuntime>::new(channels, temporal_factor, spatial_factor, &device);
 
     let batch = 1;
     let time = 4;
@@ -1430,7 +1437,16 @@ fn test_wgpu_vae3d_upsample() {
     let expected_height = height * spatial_factor;
     let expected_width = width * spatial_factor;
 
-    assert_eq!(output.dims(), [batch, channels, expected_time, expected_height, expected_width]);
+    assert_eq!(
+        output.dims(),
+        [
+            batch,
+            channels,
+            expected_time,
+            expected_height,
+            expected_width
+        ]
+    );
     println!("Upsample3dCubeCL output shape: {:?}", output.dims());
 }
 
@@ -1445,8 +1461,8 @@ fn test_wgpu_vae3d_encoder_tiny() {
     let config = Vae3dConfig {
         in_channels: 3,
         latent_channels: 4,
-        base_channels: 32,  // Small for testing
-        channel_mults: vec![1, 2],  // Only 2 levels
+        base_channels: 32,         // Small for testing
+        channel_mults: vec![1, 2], // Only 2 levels
         temporal_compression: 2,
         spatial_compression: 4,
         num_res_blocks: 1,
@@ -1469,7 +1485,10 @@ fn test_wgpu_vae3d_encoder_tiny() {
 
     // Output should be latent_channels * 2 (mean + logvar)
     println!("Vae3dEncoderCubeCL mean shape: {:?}", output.mean.dims());
-    println!("Vae3dEncoderCubeCL logvar shape: {:?}", output.logvar.dims());
+    println!(
+        "Vae3dEncoderCubeCL logvar shape: {:?}",
+        output.logvar.dims()
+    );
 
     assert_eq!(output.mean.dims()[0], batch);
     assert_eq!(output.mean.dims()[1], config.latent_channels);
@@ -1501,7 +1520,13 @@ fn test_wgpu_vae3d_decoder_tiny() {
     let lat_width = 8;
 
     let latent = Tensor::<TestBackend, 5>::random(
-        [batch, config.latent_channels, lat_time, lat_height, lat_width],
+        [
+            batch,
+            config.latent_channels,
+            lat_time,
+            lat_height,
+            lat_width,
+        ],
         burn::tensor::Distribution::Uniform(-1.0, 1.0),
         &device,
     );

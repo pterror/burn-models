@@ -24,8 +24,8 @@
 //! This module re-exports common recorder types for convenience.
 
 pub use burn::record::{
-    BinBytesRecorder, BinFileRecorder, FullPrecisionSettings, HalfPrecisionSettings,
-    Recorder, RecorderError,
+    BinBytesRecorder, BinFileRecorder, FullPrecisionSettings, HalfPrecisionSettings, Recorder,
+    RecorderError,
 };
 
 /// Error type for serialization operations

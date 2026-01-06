@@ -283,7 +283,15 @@ fn run_llm_command_with_backend<B: burn::prelude::Backend>(
             max_tokens,
             temperature,
             top_p,
-        } => llm::run_generate::<B>(model, weights, prompt, max_tokens, temperature, top_p, device),
+        } => llm::run_generate::<B>(
+            model,
+            weights,
+            prompt,
+            max_tokens,
+            temperature,
+            top_p,
+            device,
+        ),
 
         llm::LlmCommands::Chat {
             model,
@@ -313,7 +321,8 @@ fn cuda_available() -> bool {
     // CudaDevice::default() will panic if CUDA is not available
     panic::catch_unwind(|| {
         let _ = burn_cuda::CudaDevice::default();
-    }).is_ok()
+    })
+    .is_ok()
 }
 
 /// Try to initialize WGPU and return true if successful
@@ -323,7 +332,8 @@ fn wgpu_available() -> bool {
     // WgpuDevice::default() may panic if no GPU is available
     panic::catch_unwind(|| {
         let _ = burn_wgpu::WgpuDevice::default();
-    }).is_ok()
+    })
+    .is_ok()
 }
 
 /// Resolve Auto device to a concrete device
@@ -386,15 +396,33 @@ fn run_sd1x_generate(
                     use half::f16;
                     type Backend = Cuda<f16>;
                     run_sd1x_generate_impl::<Backend>(
-                        prompt, negative, output, vocab, weights,
-                        width, height, steps, guidance, &cuda_device, debug,
+                        prompt,
+                        negative,
+                        output,
+                        vocab,
+                        weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &cuda_device,
+                        debug,
                     )
                 }
                 Precision::F32 => {
                     type Backend = Cuda<f32>;
                     run_sd1x_generate_impl::<Backend>(
-                        prompt, negative, output, vocab, weights,
-                        width, height, steps, guidance, &cuda_device, debug,
+                        prompt,
+                        negative,
+                        output,
+                        vocab,
+                        weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &cuda_device,
+                        debug,
                     )
                 }
             }
@@ -410,15 +438,33 @@ fn run_sd1x_generate(
                     use half::f16;
                     type Backend = Wgpu<f16>;
                     run_sd1x_generate_impl::<Backend>(
-                        prompt, negative, output, vocab, weights,
-                        width, height, steps, guidance, &wgpu_device, debug,
+                        prompt,
+                        negative,
+                        output,
+                        vocab,
+                        weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &wgpu_device,
+                        debug,
                     )
                 }
                 Precision::F32 => {
                     type Backend = Wgpu<f32>;
                     run_sd1x_generate_impl::<Backend>(
-                        prompt, negative, output, vocab, weights,
-                        width, height, steps, guidance, &wgpu_device, debug,
+                        prompt,
+                        negative,
+                        output,
+                        vocab,
+                        weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &wgpu_device,
+                        debug,
                     )
                 }
             }
@@ -434,15 +480,33 @@ fn run_sd1x_generate(
                     use half::f16;
                     type Backend = Cpu<f16>;
                     run_sd1x_generate_impl::<Backend>(
-                        prompt, negative, output, vocab, weights,
-                        width, height, steps, guidance, &cpu_device, debug,
+                        prompt,
+                        negative,
+                        output,
+                        vocab,
+                        weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &cpu_device,
+                        debug,
                     )
                 }
                 Precision::F32 => {
                     type Backend = Cpu<f32>;
                     run_sd1x_generate_impl::<Backend>(
-                        prompt, negative, output, vocab, weights,
-                        width, height, steps, guidance, &cpu_device, debug,
+                        prompt,
+                        negative,
+                        output,
+                        vocab,
+                        weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &cpu_device,
+                        debug,
                     )
                 }
             }
@@ -499,8 +563,7 @@ fn run_sd1x_generate_impl<B: Backend>(
     pb.set_position(5);
     let start = Instant::now();
     let tokenizer = match vocab {
-        Some(path) => ClipTokenizer::from_file(path)
-            .context("Failed to load vocabulary file")?,
+        Some(path) => ClipTokenizer::from_file(path).context("Failed to load vocabulary file")?,
         None => ClipTokenizer::new(), // Use embedded CLIP vocabulary
     };
     if debug_flags.timing {
@@ -511,8 +574,7 @@ fn run_sd1x_generate_impl<B: Backend>(
     pb.set_message("Opening weights...");
     pb.set_position(10);
     let start = Instant::now();
-    let mut loader = SdWeightLoader::open(weights)
-        .context("Failed to open weights")?;
+    let mut loader = SdWeightLoader::open(weights).context("Failed to open weights")?;
     if debug_flags.timing {
         eprintln!("[timing] open weights: {:?}", start.elapsed());
     }
@@ -522,7 +584,8 @@ fn run_sd1x_generate_impl<B: Backend>(
     pb.set_position(15);
     let start = Instant::now();
     let clip_config = ClipConfig::sd1x();
-    let text_encoder = loader.load_clip_text_encoder::<B>(&clip_config, device)
+    let text_encoder = loader
+        .load_clip_text_encoder::<B>(&clip_config, device)
         .context("Failed to load CLIP text encoder")?;
     if debug_flags.timing {
         eprintln!("[timing] load CLIP: {:?}", start.elapsed());
@@ -533,7 +596,8 @@ fn run_sd1x_generate_impl<B: Backend>(
     pb.set_position(30);
     let start = Instant::now();
     let unet_config = UNetConfig::sd1x();
-    let unet = loader.load_unet::<B>(&unet_config, device)
+    let unet = loader
+        .load_unet::<B>(&unet_config, device)
         .context("Failed to load UNet")?;
     if debug_flags.timing {
         eprintln!("[timing] load UNet: {:?}", start.elapsed());
@@ -544,7 +608,8 @@ fn run_sd1x_generate_impl<B: Backend>(
     pb.set_position(50);
     let start = Instant::now();
     let vae_config = DecoderConfig::sd();
-    let vae_decoder = loader.load_vae_decoder::<B>(&vae_config, device)
+    let vae_decoder = loader
+        .load_vae_decoder::<B>(&vae_config, device)
         .context("Failed to load VAE decoder")?;
     if debug_flags.timing {
         eprintln!("[timing] load VAE: {:?}", start.elapsed());
@@ -594,7 +659,11 @@ fn run_sd1x_generate_impl<B: Backend>(
     );
 
     if debug_flags.timing {
-        eprintln!("[timing] inference ({} steps): {:?}", steps, start.elapsed());
+        eprintln!(
+            "[timing] inference ({} steps): {:?}",
+            steps,
+            start.elapsed()
+        );
     }
 
     // Step 8: Convert to image and save
@@ -604,16 +673,17 @@ fn run_sd1x_generate_impl<B: Backend>(
     let rgb_data = burn_models::tensor_to_rgb(image_tensor.clone());
     let [_, _, h, w] = image_tensor.dims();
 
-    let img: ImageBuffer<Rgb<u8>, Vec<u8>> =
-        ImageBuffer::from_raw(w as u32, h as u32, rgb_data)
-            .context("Failed to create image buffer")?;
+    let img: ImageBuffer<Rgb<u8>, Vec<u8>> = ImageBuffer::from_raw(w as u32, h as u32, rgb_data)
+        .context("Failed to create image buffer")?;
     img.save(output)?;
     if debug_flags.timing {
         eprintln!("[timing] save image: {:?}", start.elapsed());
     }
 
     pb.finish_and_clear();
-    let output_path = output.canonicalize().unwrap_or_else(|_| output.to_path_buf());
+    let output_path = output
+        .canonicalize()
+        .unwrap_or_else(|_| output.to_path_buf());
     println!("\nSaved to: {}", output_path.display());
 
     if debug_flags.timing {
@@ -661,7 +731,13 @@ fn main() -> Result<()> {
             println!("  Guidance: {}", guidance);
             println!("  Precision: {:?}", precision);
             println!("  Device:   {:?}", device);
-            println!("  Vocab:    {}", vocab.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "(embedded)".to_string()));
+            println!(
+                "  Vocab:    {}",
+                vocab
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "(embedded)".to_string())
+            );
             println!("  Weights:  {}", weights.display());
             if !loras.is_empty() {
                 println!("  LoRAs:");
@@ -688,9 +764,20 @@ fn main() -> Result<()> {
             match model {
                 ModelType::Sd1x => {
                     run_sd1x_generate(
-                        &prompt, &negative, &output, vocab.as_ref(), &weights,
-                        width, height, steps, guidance,
-                        &loras, &lora_scales, precision, device, &debug,
+                        &prompt,
+                        &negative,
+                        &output,
+                        vocab.as_ref(),
+                        &weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &loras,
+                        &lora_scales,
+                        precision,
+                        device,
+                        &debug,
                     )?;
                 }
                 ModelType::Sdxl | ModelType::SdxlRefiner => {

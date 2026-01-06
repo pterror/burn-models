@@ -22,11 +22,11 @@
 //! - Qwen 2.5 Coder variants
 //! - Qwen 2.5 Math variants
 
-use burn::prelude::*;
 use burn::nn::{Embedding, EmbeddingConfig, Linear, LinearConfig};
+use burn::prelude::*;
 
-use burn_models_core::kv_cache::ModelKvCache;
 use burn_models_core::glu::{SwiGluFfn, SwiGluFfnConfig};
+use burn_models_core::kv_cache::ModelKvCache;
 use burn_models_core::rmsnorm::RmsNorm;
 use burn_models_core::rope::RotaryEmbedding;
 use burn_models_core::transformer::causal_mask;
@@ -158,13 +158,16 @@ impl QwenConfig {
         let head_dim = self.hidden_size / self.num_heads;
 
         let layers: Vec<QwenLayer<B>> = (0..self.num_layers)
-            .map(|_| QwenLayerConfig {
-                hidden_size: self.hidden_size,
-                intermediate_size: self.intermediate_size,
-                num_heads: self.num_heads,
-                num_kv_heads: self.num_kv_heads,
-                norm_eps: self.norm_eps,
-            }.init(device))
+            .map(|_| {
+                QwenLayerConfig {
+                    hidden_size: self.hidden_size,
+                    intermediate_size: self.intermediate_size,
+                    num_heads: self.num_heads,
+                    num_kv_heads: self.num_kv_heads,
+                    norm_eps: self.norm_eps,
+                }
+                .init(device)
+            })
             .collect();
 
         let embed_tokens = EmbeddingConfig::new(self.vocab_size, self.hidden_size).init(device);
@@ -173,9 +176,11 @@ impl QwenConfig {
         let lm_head = if self.tie_embeddings {
             None
         } else {
-            Some(LinearConfig::new(self.hidden_size, self.vocab_size)
-                .with_bias(false)
-                .init(device))
+            Some(
+                LinearConfig::new(self.hidden_size, self.vocab_size)
+                    .with_bias(false)
+                    .init(device),
+            )
         };
 
         let model = Qwen {
@@ -259,9 +264,15 @@ impl<B: Backend> QwenAttention<B> {
         let k = self.k_proj.forward(x.clone());
         let v = self.v_proj.forward(x);
 
-        let q = q.reshape([batch, seq_len, self.num_heads, self.head_dim]).swap_dims(1, 2);
-        let k = k.reshape([batch, seq_len, self.num_kv_heads, self.head_dim]).swap_dims(1, 2);
-        let v = v.reshape([batch, seq_len, self.num_kv_heads, self.head_dim]).swap_dims(1, 2);
+        let q = q
+            .reshape([batch, seq_len, self.num_heads, self.head_dim])
+            .swap_dims(1, 2);
+        let k = k
+            .reshape([batch, seq_len, self.num_kv_heads, self.head_dim])
+            .swap_dims(1, 2);
+        let v = v
+            .reshape([batch, seq_len, self.num_kv_heads, self.head_dim])
+            .swap_dims(1, 2);
 
         let (q, k) = rope.forward(q, k, start_pos);
 
@@ -280,7 +291,9 @@ impl<B: Backend> QwenAttention<B> {
         let attn = burn::tensor::activation::softmax(attn, 3);
         let out = attn.matmul(v);
 
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.o_proj.forward(out)
     }
 
@@ -292,9 +305,12 @@ impl<B: Backend> QwenAttention<B> {
         let [batch, kv_heads, seq_len, head_dim] = x.dims();
         let n_rep = self.num_heads / self.num_kv_heads;
 
-        x.unsqueeze_dim::<5>(2)
-            .repeat_dim(2, n_rep)
-            .reshape([batch, kv_heads * n_rep, seq_len, head_dim])
+        x.unsqueeze_dim::<5>(2).repeat_dim(2, n_rep).reshape([
+            batch,
+            kv_heads * n_rep,
+            seq_len,
+            head_dim,
+        ])
     }
 }
 
@@ -315,7 +331,10 @@ impl<B: Backend> QwenLayer<B> {
         start_pos: usize,
         mask: Option<Tensor<B, 2>>,
     ) -> Tensor<B, 3> {
-        let h = x.clone() + self.attention.forward(self.input_norm.forward(x), rope, start_pos, mask);
+        let h = x.clone()
+            + self
+                .attention
+                .forward(self.input_norm.forward(x), rope, start_pos, mask);
         h.clone() + self.ffn.forward(self.post_attention_norm.forward(h))
     }
 }
@@ -379,7 +398,9 @@ impl<B: Backend> Qwen<B> {
                 let [batch, seq_len, hidden_size] = hidden_states.dims();
                 let weight = self.embed_tokens.weight.val().transpose();
                 // Reshape for batch matmul: [batch * seq_len, hidden_size] @ [hidden_size, vocab_size]
-                let flat_hidden = hidden_states.clone().reshape([batch * seq_len, hidden_size]);
+                let flat_hidden = hidden_states
+                    .clone()
+                    .reshape([batch * seq_len, hidden_size]);
                 let flat_logits = flat_hidden.matmul(weight);
                 flat_logits.reshape([batch, seq_len, runtime.config.vocab_size])
             }
@@ -405,7 +426,11 @@ impl<B: Backend> Qwen<B> {
             let output = self.forward(all_tokens.clone(), runtime, None);
 
             let seq_len = all_tokens.dims()[1];
-            let last_logits = output.logits.slice([0..batch, (seq_len - 1)..seq_len, 0..runtime.config.vocab_size]);
+            let last_logits = output.logits.slice([
+                0..batch,
+                (seq_len - 1)..seq_len,
+                0..runtime.config.vocab_size,
+            ]);
             let last_logits = last_logits.reshape([batch, runtime.config.vocab_size]);
 
             let scaled_logits = if (temperature - 1.0).abs() > 1e-6 {

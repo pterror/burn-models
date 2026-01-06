@@ -4,7 +4,7 @@ use burn::prelude::*;
 use burn::tensor::Int;
 
 use burn_models_clip::{ClipConfig, ClipTextEncoder, ClipTokenizer, END_OF_TEXT};
-use burn_models_samplers::{apply_guidance, DdimConfig, DdimSampler, NoiseSchedule};
+use burn_models_samplers::{DdimConfig, DdimSampler, NoiseSchedule, apply_guidance};
 use burn_models_unet::{UNet, UNetConfig};
 use burn_models_vae::{Decoder, DecoderConfig, Encoder, EncoderConfig};
 
@@ -584,10 +584,7 @@ pub fn latent_to_preview<B: Backend>(latent: Tensor<B, 4>, format: LatentFormat)
     let (coefs_vec, bias) = effective_format.rgb_coefs();
     let channels = effective_format.channels();
 
-    let coefs: Tensor<B, 2> = Tensor::from_data(
-        TensorData::new(coefs_vec, [channels, 3]),
-        &device,
-    );
+    let coefs: Tensor<B, 2> = Tensor::from_data(TensorData::new(coefs_vec, [channels, 3]), &device);
 
     // einsum "cxy,cr -> rxy": project latent channels to 3 RGB channels
     let flat = latent.reshape([b, channels, h * w]); // [B, C, H*W]
@@ -611,7 +608,11 @@ pub trait DiffusionPipeline<B: Backend> {
     fn encode_prompt(&self, prompt: &str, negative_prompt: &str) -> Self::Conditioning;
 
     /// Sample latent from conditioning
-    fn sample_latent(&self, conditioning: &Self::Conditioning, config: &SampleConfig) -> Tensor<B, 4>;
+    fn sample_latent(
+        &self,
+        conditioning: &Self::Conditioning,
+        config: &SampleConfig,
+    ) -> Tensor<B, 4>;
 
     /// Decode latent to image
     fn decode(&self, latent: Tensor<B, 4>) -> Tensor<B, 4>;
@@ -692,7 +693,10 @@ impl<B: Backend> StableDiffusion1x<B> {
     /// Find the position of the end-of-sequence token in the token list
     #[allow(dead_code)]
     fn find_eos_position(tokens: &[u32]) -> usize {
-        tokens.iter().position(|&t| t == END_OF_TEXT).unwrap_or(tokens.len() - 1)
+        tokens
+            .iter()
+            .position(|&t| t == END_OF_TEXT)
+            .unwrap_or(tokens.len() - 1)
     }
 }
 
@@ -701,12 +705,20 @@ impl<B: Backend> DiffusionPipeline<B> for StableDiffusion1x<B> {
 
     fn encode_prompt(&self, prompt: &str, negative_prompt: &str) -> Self::Conditioning {
         let cond = self.encode_text(prompt);
-        let uncond = self.encode_text(if negative_prompt.is_empty() { "" } else { negative_prompt });
+        let uncond = self.encode_text(if negative_prompt.is_empty() {
+            ""
+        } else {
+            negative_prompt
+        });
 
         Sd1xConditioning { cond, uncond }
     }
 
-    fn sample_latent(&self, conditioning: &Self::Conditioning, config: &SampleConfig) -> Tensor<B, 4> {
+    fn sample_latent(
+        &self,
+        conditioning: &Self::Conditioning,
+        config: &SampleConfig,
+    ) -> Tensor<B, 4> {
         let latent_height = config.height / 8;
         let latent_width = config.width / 8;
 
@@ -715,10 +727,7 @@ impl<B: Backend> DiffusionPipeline<B> for StableDiffusion1x<B> {
             num_inference_steps: config.steps,
             eta: 0.0,
         };
-        let sampler = DdimSampler::new(
-            NoiseSchedule::sd1x(&self.device),
-            ddim_config,
-        );
+        let sampler = DdimSampler::new(NoiseSchedule::sd1x(&self.device), ddim_config);
 
         // Initialize with random noise
         let mut latent = sampler.init_latent(1, 4, latent_height, latent_width, &self.device);
@@ -727,12 +736,7 @@ impl<B: Backend> DiffusionPipeline<B> for StableDiffusion1x<B> {
         let timestep_tensors: Vec<Tensor<B, 1>> = sampler
             .timesteps()
             .iter()
-            .map(|&t| {
-                Tensor::<B, 1>::from_data(
-                    TensorData::new(vec![t as f32], [1]),
-                    &self.device,
-                )
-            })
+            .map(|&t| Tensor::<B, 1>::from_data(TensorData::new(vec![t as f32], [1]), &self.device))
             .collect();
 
         // Sampling loop
@@ -740,18 +744,14 @@ impl<B: Backend> DiffusionPipeline<B> for StableDiffusion1x<B> {
             let t = timestep_tensors[step_idx].clone();
 
             // Predict noise for unconditional
-            let noise_uncond = self.unet.forward(
-                latent.clone(),
-                t.clone(),
-                conditioning.uncond.clone(),
-            );
+            let noise_uncond =
+                self.unet
+                    .forward(latent.clone(), t.clone(), conditioning.uncond.clone());
 
             // Predict noise for conditional
-            let noise_cond = self.unet.forward(
-                latent.clone(),
-                t,
-                conditioning.cond.clone(),
-            );
+            let noise_cond = self
+                .unet
+                .forward(latent.clone(), t, conditioning.cond.clone());
 
             // Apply classifier-free guidance
             let noise_pred = apply_guidance(noise_uncond, noise_cond, config.guidance_scale);
@@ -792,10 +792,7 @@ impl<B: Backend> StableDiffusion1x<B> {
             num_inference_steps: config.steps,
             eta: 0.0,
         };
-        let sampler = DdimSampler::new(
-            NoiseSchedule::sd1x(&self.device),
-            ddim_config,
-        );
+        let sampler = DdimSampler::new(NoiseSchedule::sd1x(&self.device), ddim_config);
 
         // Initialize with random noise
         let mut latent = sampler.init_latent(1, 4, latent_height, latent_width, &self.device);
@@ -804,12 +801,7 @@ impl<B: Backend> StableDiffusion1x<B> {
         let timestep_tensors: Vec<Tensor<B, 1>> = sampler
             .timesteps()
             .iter()
-            .map(|&t| {
-                Tensor::<B, 1>::from_data(
-                    TensorData::new(vec![t as f32], [1]),
-                    &self.device,
-                )
-            })
+            .map(|&t| Tensor::<B, 1>::from_data(TensorData::new(vec![t as f32], [1]), &self.device))
             .collect();
 
         let timesteps = sampler.timesteps();
@@ -820,18 +812,14 @@ impl<B: Backend> StableDiffusion1x<B> {
             let t = timestep_tensors[step_idx].clone();
 
             // Predict noise for unconditional
-            let noise_uncond = self.unet.forward(
-                latent.clone(),
-                t.clone(),
-                conditioning.uncond.clone(),
-            );
+            let noise_uncond =
+                self.unet
+                    .forward(latent.clone(), t.clone(), conditioning.uncond.clone());
 
             // Predict noise for conditional
-            let noise_cond = self.unet.forward(
-                latent.clone(),
-                t,
-                conditioning.cond.clone(),
-            );
+            let noise_cond = self
+                .unet
+                .forward(latent.clone(), t, conditioning.cond.clone());
 
             // Apply classifier-free guidance
             let noise_pred = apply_guidance(noise_uncond, noise_cond, config.guidance_scale);
@@ -843,7 +831,9 @@ impl<B: Backend> StableDiffusion1x<B> {
             let output = match step_output {
                 StepOutput::None => None,
                 StepOutput::Latent => Some(latent.clone()),
-                StepOutput::LatentPreview => Some(latent_to_preview(latent.clone(), LatentFormat::SD15)),
+                StepOutput::LatentPreview => {
+                    Some(latent_to_preview(latent.clone(), LatentFormat::SD15))
+                }
                 StepOutput::Decoded => Some(self.vae_decoder.decode_to_image(latent.clone())),
             };
 
@@ -871,7 +861,8 @@ impl<B: Backend> StableDiffusion1x<B> {
     where
         F: FnMut(StepInfo<B>),
     {
-        let conditioning = <Self as DiffusionPipeline<B>>::encode_prompt(self, prompt, negative_prompt);
+        let conditioning =
+            <Self as DiffusionPipeline<B>>::encode_prompt(self, prompt, negative_prompt);
         let latent = self.sample_latent_with_callback(&conditioning, config, step_output, callback);
         self.vae_decoder.decode_to_image(latent)
     }
@@ -955,7 +946,11 @@ impl<B: Backend> StableDiffusion1xImg2Img<B> {
     ) -> Tensor<B, 4> {
         // Encode prompts
         let cond = self.encode_text(prompt);
-        let uncond = self.encode_text(if negative_prompt.is_empty() { "" } else { negative_prompt });
+        let uncond = self.encode_text(if negative_prompt.is_empty() {
+            ""
+        } else {
+            negative_prompt
+        });
 
         // Encode image to latent
         let init_latent = self.vae_encoder.encode_deterministic(image);
@@ -989,18 +984,14 @@ impl<B: Backend> StableDiffusion1xImg2Img<B> {
         let sqrt_alpha = alpha_t.clone().sqrt();
         let sqrt_one_minus_alpha = (alpha_t.neg() + 1.0).sqrt();
 
-        let mut latent = init_latent * sqrt_alpha.unsqueeze() + noise * sqrt_one_minus_alpha.unsqueeze();
+        let mut latent =
+            init_latent * sqrt_alpha.unsqueeze() + noise * sqrt_one_minus_alpha.unsqueeze();
 
         // Precompute timestep tensors
         let timestep_tensors: Vec<Tensor<B, 1>> = sampler
             .timesteps()
             .iter()
-            .map(|&t| {
-                Tensor::<B, 1>::from_data(
-                    TensorData::new(vec![t as f32], [1]),
-                    &self.device,
-                )
-            })
+            .map(|&t| Tensor::<B, 1>::from_data(TensorData::new(vec![t as f32], [1]), &self.device))
             .collect();
 
         // Denoising loop from start_step
@@ -1105,7 +1096,11 @@ impl<B: Backend> StableDiffusion1xInpaint<B> {
 
         // Encode prompts
         let cond = self.encode_text(prompt);
-        let uncond = self.encode_text(if negative_prompt.is_empty() { "" } else { negative_prompt });
+        let uncond = self.encode_text(if negative_prompt.is_empty() {
+            ""
+        } else {
+            negative_prompt
+        });
 
         // Encode image to latent
         let init_latent = self.vae_encoder.encode_deterministic(image);
@@ -1129,12 +1124,7 @@ impl<B: Backend> StableDiffusion1xInpaint<B> {
         let timestep_tensors: Vec<Tensor<B, 1>> = sampler
             .timesteps()
             .iter()
-            .map(|&t| {
-                Tensor::<B, 1>::from_data(
-                    TensorData::new(vec![t as f32], [1]),
-                    &self.device,
-                )
-            })
+            .map(|&t| Tensor::<B, 1>::from_data(TensorData::new(vec![t as f32], [1]), &self.device))
             .collect();
 
         // Inpainting loop
@@ -1160,10 +1150,12 @@ impl<B: Backend> StableDiffusion1xInpaint<B> {
                 burn::tensor::Distribution::Normal(0.0, 1.0),
                 &self.device,
             );
-            let noised_original = init_latent.clone() * sqrt_alpha.unsqueeze() + noise * sqrt_one_minus_alpha.unsqueeze();
+            let noised_original = init_latent.clone() * sqrt_alpha.unsqueeze()
+                + noise * sqrt_one_minus_alpha.unsqueeze();
 
             // mask = 1 means regenerate (use latent), mask = 0 means preserve (use noised_original)
-            latent = latent.clone() * latent_mask.clone() + noised_original * (latent_mask.clone().neg() + 1.0);
+            latent = latent.clone() * latent_mask.clone()
+                + noised_original * (latent_mask.clone().neg() + 1.0);
         }
 
         // Final blend in latent space (without noise)
@@ -1174,7 +1166,12 @@ impl<B: Backend> StableDiffusion1xInpaint<B> {
     }
 
     /// Downsample mask from image space to latent space using nearest-neighbor sampling
-    fn downsample_mask(&self, mask: Tensor<B, 4>, target_h: usize, target_w: usize) -> Tensor<B, 4> {
+    fn downsample_mask(
+        &self,
+        mask: Tensor<B, 4>,
+        target_h: usize,
+        target_w: usize,
+    ) -> Tensor<B, 4> {
         let [b, c, h, w] = mask.dims();
 
         // Simple nearest-neighbor downsampling via slicing
@@ -1313,10 +1310,9 @@ impl<B: Backend> StableDiffusionXL<B> {
 
         // OpenCLIP encoder outputs [1, 77, 1280] and pooled [1, 1280]
         let eos_pos = tokens.iter().position(|&t| t == END_OF_TEXT).unwrap_or(76);
-        let (open_clip_hidden, pooled) = self.open_clip_encoder.forward_with_pooled(
-            token_tensor,
-            &[eos_pos],
-        );
+        let (open_clip_hidden, pooled) = self
+            .open_clip_encoder
+            .forward_with_pooled(token_tensor, &[eos_pos]);
 
         // Concatenate CLIP and OpenCLIP hidden states [1, 77, 768 + 1280 = 2048]
         let context = Tensor::cat(vec![clip_hidden, open_clip_hidden], 2);
@@ -1349,15 +1345,18 @@ impl<B: Backend> StableDiffusionXL<B> {
         let target_w_emb = self.size_embedding(target_size.1);
 
         // Concatenate: pooled (1280) + size embeddings (6 * 256 = 1536) = 2816
-        Tensor::cat(vec![
-            pooled,
-            orig_h_emb.unsqueeze::<2>(),
-            orig_w_emb.unsqueeze::<2>(),
-            crop_t_emb.unsqueeze::<2>(),
-            crop_l_emb.unsqueeze::<2>(),
-            target_h_emb.unsqueeze::<2>(),
-            target_w_emb.unsqueeze::<2>(),
-        ], 1)
+        Tensor::cat(
+            vec![
+                pooled,
+                orig_h_emb.unsqueeze::<2>(),
+                orig_w_emb.unsqueeze::<2>(),
+                crop_t_emb.unsqueeze::<2>(),
+                crop_l_emb.unsqueeze::<2>(),
+                target_h_emb.unsqueeze::<2>(),
+                target_w_emb.unsqueeze::<2>(),
+            ],
+            1,
+        )
     }
 
     /// Compute a sinusoidal embedding for a size value
@@ -1368,9 +1367,11 @@ impl<B: Backend> StableDiffusionXL<B> {
     /// Encode prompt for SDXL
     pub fn encode_prompt(&self, prompt: &str, negative_prompt: &str) -> SdxlConditioning<B> {
         let (cond_context, cond_pooled) = self.encode_text(prompt);
-        let (uncond_context, uncond_pooled) = self.encode_text(
-            if negative_prompt.is_empty() { "" } else { negative_prompt }
-        );
+        let (uncond_context, uncond_pooled) = self.encode_text(if negative_prompt.is_empty() {
+            ""
+        } else {
+            negative_prompt
+        });
 
         SdxlConditioning {
             cond_context,
@@ -1394,10 +1395,7 @@ impl<B: Backend> StableDiffusionXL<B> {
             num_inference_steps: config.steps,
             eta: 0.0,
         };
-        let sampler = DdimSampler::new(
-            NoiseSchedule::sdxl(&self.device),
-            ddim_config,
-        );
+        let sampler = DdimSampler::new(NoiseSchedule::sdxl(&self.device), ddim_config);
 
         // Initialize with random noise
         let mut latent = sampler.init_latent(1, 4, latent_height, latent_width, &self.device);
@@ -1420,12 +1418,7 @@ impl<B: Backend> StableDiffusionXL<B> {
         let timestep_tensors: Vec<Tensor<B, 1>> = sampler
             .timesteps()
             .iter()
-            .map(|&t| {
-                Tensor::<B, 1>::from_data(
-                    TensorData::new(vec![t as f32], [1]),
-                    &self.device,
-                )
-            })
+            .map(|&t| Tensor::<B, 1>::from_data(TensorData::new(vec![t as f32], [1]), &self.device))
             .collect();
 
         // Sampling loop
@@ -1543,10 +1536,9 @@ impl<B: Backend> StableDiffusionXLImg2Img<B> {
 
         let clip_hidden = self.clip_encoder.forward(token_tensor.clone());
         let eos_pos = tokens.iter().position(|&t| t == END_OF_TEXT).unwrap_or(76);
-        let (open_clip_hidden, pooled) = self.open_clip_encoder.forward_with_pooled(
-            token_tensor,
-            &[eos_pos],
-        );
+        let (open_clip_hidden, pooled) = self
+            .open_clip_encoder
+            .forward_with_pooled(token_tensor, &[eos_pos]);
 
         let context = Tensor::cat(vec![clip_hidden, open_clip_hidden], 2);
         (context, pooled)
@@ -1567,15 +1559,18 @@ impl<B: Backend> StableDiffusionXLImg2Img<B> {
         let target_h_emb = self.size_embedding(target_size.0);
         let target_w_emb = self.size_embedding(target_size.1);
 
-        Tensor::cat(vec![
-            pooled,
-            orig_h_emb.unsqueeze::<2>(),
-            orig_w_emb.unsqueeze::<2>(),
-            crop_t_emb.unsqueeze::<2>(),
-            crop_l_emb.unsqueeze::<2>(),
-            target_h_emb.unsqueeze::<2>(),
-            target_w_emb.unsqueeze::<2>(),
-        ], 1)
+        Tensor::cat(
+            vec![
+                pooled,
+                orig_h_emb.unsqueeze::<2>(),
+                orig_w_emb.unsqueeze::<2>(),
+                crop_t_emb.unsqueeze::<2>(),
+                crop_l_emb.unsqueeze::<2>(),
+                target_h_emb.unsqueeze::<2>(),
+                target_w_emb.unsqueeze::<2>(),
+            ],
+            1,
+        )
     }
 
     /// Compute a sinusoidal embedding for a size value
@@ -1595,9 +1590,11 @@ impl<B: Backend> StableDiffusionXLImg2Img<B> {
 
         // Encode prompts
         let (cond_context, cond_pooled) = self.encode_text(prompt);
-        let (uncond_context, uncond_pooled) = self.encode_text(
-            if negative_prompt.is_empty() { "" } else { negative_prompt }
-        );
+        let (uncond_context, uncond_pooled) = self.encode_text(if negative_prompt.is_empty() {
+            ""
+        } else {
+            negative_prompt
+        });
 
         // Encode image to latent (SDXL scale factor: 0.13025)
         let init_latent = self.vae_encoder.encode_deterministic(image) * (0.13025 / 0.18215);
@@ -1630,32 +1627,20 @@ impl<B: Backend> StableDiffusionXLImg2Img<B> {
         let sqrt_alpha = alpha_t.clone().sqrt();
         let sqrt_one_minus_alpha = (alpha_t.neg() + 1.0).sqrt();
 
-        let mut latent = init_latent * sqrt_alpha.unsqueeze() + noise * sqrt_one_minus_alpha.unsqueeze();
+        let mut latent =
+            init_latent * sqrt_alpha.unsqueeze() + noise * sqrt_one_minus_alpha.unsqueeze();
 
         // Create add_embed
-        let cond_add_embed = self.create_add_embed(
-            cond_pooled,
-            (height, width),
-            (0, 0),
-            (height, width),
-        );
-        let uncond_add_embed = self.create_add_embed(
-            uncond_pooled,
-            (height, width),
-            (0, 0),
-            (height, width),
-        );
+        let cond_add_embed =
+            self.create_add_embed(cond_pooled, (height, width), (0, 0), (height, width));
+        let uncond_add_embed =
+            self.create_add_embed(uncond_pooled, (height, width), (0, 0), (height, width));
 
         // Precompute timestep tensors
         let timestep_tensors: Vec<Tensor<B, 1>> = sampler
             .timesteps()
             .iter()
-            .map(|&t| {
-                Tensor::<B, 1>::from_data(
-                    TensorData::new(vec![t as f32], [1]),
-                    &self.device,
-                )
-            })
+            .map(|&t| Tensor::<B, 1>::from_data(TensorData::new(vec![t as f32], [1]), &self.device))
             .collect();
 
         // Denoising loop
@@ -1757,7 +1742,9 @@ impl<B: Backend> StableDiffusionXLInpaint<B> {
 
         // OpenCLIP hidden states and pooled
         let eos_pos = tokens.iter().position(|&t| t == END_OF_TEXT).unwrap_or(76);
-        let (open_clip_hidden, pooled) = self.open_clip_encoder.forward_with_pooled(token_tensor, &[eos_pos]);
+        let (open_clip_hidden, pooled) = self
+            .open_clip_encoder
+            .forward_with_pooled(token_tensor, &[eos_pos]);
 
         // Concatenate hidden states
         let context = Tensor::cat(vec![clip_hidden, open_clip_hidden], 2);
@@ -1785,15 +1772,18 @@ impl<B: Backend> StableDiffusionXLInpaint<B> {
         let target_h_emb = self.size_embedding(target_size.0);
         let target_w_emb = self.size_embedding(target_size.1);
 
-        Tensor::cat(vec![
-            pooled,
-            orig_h_emb.unsqueeze::<2>(),
-            orig_w_emb.unsqueeze::<2>(),
-            crop_t_emb.unsqueeze::<2>(),
-            crop_l_emb.unsqueeze::<2>(),
-            target_h_emb.unsqueeze::<2>(),
-            target_w_emb.unsqueeze::<2>(),
-        ], 1)
+        Tensor::cat(
+            vec![
+                pooled,
+                orig_h_emb.unsqueeze::<2>(),
+                orig_w_emb.unsqueeze::<2>(),
+                crop_t_emb.unsqueeze::<2>(),
+                crop_l_emb.unsqueeze::<2>(),
+                target_h_emb.unsqueeze::<2>(),
+                target_w_emb.unsqueeze::<2>(),
+            ],
+            1,
+        )
     }
 
     /// Inpaint masked regions of an image
@@ -1816,23 +1806,17 @@ impl<B: Backend> StableDiffusionXLInpaint<B> {
 
         // Encode prompts
         let (cond_context, cond_pooled) = self.encode_text(prompt);
-        let (uncond_context, uncond_pooled) = self.encode_text(
-            if negative_prompt.is_empty() { "" } else { negative_prompt }
-        );
+        let (uncond_context, uncond_pooled) = self.encode_text(if negative_prompt.is_empty() {
+            ""
+        } else {
+            negative_prompt
+        });
 
         // Create add_embed
-        let cond_add_embed = self.create_add_embed(
-            cond_pooled,
-            (img_h, img_w),
-            (0, 0),
-            (img_h, img_w),
-        );
-        let uncond_add_embed = self.create_add_embed(
-            uncond_pooled,
-            (img_h, img_w),
-            (0, 0),
-            (img_h, img_w),
-        );
+        let cond_add_embed =
+            self.create_add_embed(cond_pooled, (img_h, img_w), (0, 0), (img_h, img_w));
+        let uncond_add_embed =
+            self.create_add_embed(uncond_pooled, (img_h, img_w), (0, 0), (img_h, img_w));
 
         // Encode image to latent
         let init_latent = self.vae_encoder.encode_deterministic_sdxl(image);
@@ -1859,12 +1843,7 @@ impl<B: Backend> StableDiffusionXLInpaint<B> {
         let timestep_tensors: Vec<Tensor<B, 1>> = sampler
             .timesteps()
             .iter()
-            .map(|&t| {
-                Tensor::<B, 1>::from_data(
-                    TensorData::new(vec![t as f32], [1]),
-                    &self.device,
-                )
-            })
+            .map(|&t| Tensor::<B, 1>::from_data(TensorData::new(vec![t as f32], [1]), &self.device))
             .collect();
 
         // Inpainting loop
@@ -1900,10 +1879,12 @@ impl<B: Backend> StableDiffusionXLInpaint<B> {
                 burn::tensor::Distribution::Normal(0.0, 1.0),
                 &self.device,
             );
-            let noised_original = init_latent.clone() * sqrt_alpha.unsqueeze() + noise * sqrt_one_minus_alpha.unsqueeze();
+            let noised_original = init_latent.clone() * sqrt_alpha.unsqueeze()
+                + noise * sqrt_one_minus_alpha.unsqueeze();
 
             // mask = 1 means regenerate, mask = 0 means preserve
-            latent = latent.clone() * latent_mask.clone() + noised_original * (latent_mask.clone().neg() + 1.0);
+            latent = latent.clone() * latent_mask.clone()
+                + noised_original * (latent_mask.clone().neg() + 1.0);
         }
 
         // Final blend in latent space (without noise)
@@ -1914,7 +1895,12 @@ impl<B: Backend> StableDiffusionXLInpaint<B> {
     }
 
     /// Downsample mask from image space to latent space
-    fn downsample_mask(&self, mask: Tensor<B, 4>, target_h: usize, target_w: usize) -> Tensor<B, 4> {
+    fn downsample_mask(
+        &self,
+        mask: Tensor<B, 4>,
+        target_h: usize,
+        target_w: usize,
+    ) -> Tensor<B, 4> {
         let [b, c, h, w] = mask.dims();
 
         let scale_h = h / target_h;
@@ -2010,7 +1996,8 @@ impl<B: Backend> StableDiffusionXLRefiner<B> {
         let token_tensor = token_tensor.unsqueeze::<2>();
 
         let eos_pos = tokens.iter().position(|&t| t == END_OF_TEXT).unwrap_or(76);
-        self.text_encoder.forward_with_pooled(token_tensor, &[eos_pos])
+        self.text_encoder
+            .forward_with_pooled(token_tensor, &[eos_pos])
     }
 
     /// Create add_embed for refiner (includes aesthetic score)
@@ -2031,16 +2018,19 @@ impl<B: Backend> StableDiffusionXLRefiner<B> {
         let aesthetic_emb = self.aesthetic_embedding(aesthetic_score);
 
         // Refiner add_embed: pooled + sizes + aesthetic = 2560
-        Tensor::cat(vec![
-            pooled,
-            orig_h_emb.unsqueeze::<2>(),
-            orig_w_emb.unsqueeze::<2>(),
-            crop_t_emb.unsqueeze::<2>(),
-            crop_l_emb.unsqueeze::<2>(),
-            target_h_emb.unsqueeze::<2>(),
-            target_w_emb.unsqueeze::<2>(),
-            aesthetic_emb.unsqueeze::<2>(),
-        ], 1)
+        Tensor::cat(
+            vec![
+                pooled,
+                orig_h_emb.unsqueeze::<2>(),
+                orig_w_emb.unsqueeze::<2>(),
+                crop_t_emb.unsqueeze::<2>(),
+                crop_l_emb.unsqueeze::<2>(),
+                target_h_emb.unsqueeze::<2>(),
+                target_w_emb.unsqueeze::<2>(),
+                aesthetic_emb.unsqueeze::<2>(),
+            ],
+            1,
+        )
     }
 
     /// Compute a sinusoidal embedding for a size value
@@ -2078,9 +2068,11 @@ impl<B: Backend> StableDiffusionXLRefiner<B> {
 
         // Encode prompts
         let (cond_context, cond_pooled) = self.encode_text(prompt);
-        let (uncond_context, uncond_pooled) = self.encode_text(
-            if negative_prompt.is_empty() { "" } else { negative_prompt }
-        );
+        let (uncond_context, uncond_pooled) = self.encode_text(if negative_prompt.is_empty() {
+            ""
+        } else {
+            negative_prompt
+        });
 
         // Create add_embed with high aesthetic score
         let aesthetic_score = 6.0; // High aesthetic score for positive
@@ -2116,12 +2108,7 @@ impl<B: Backend> StableDiffusionXLRefiner<B> {
         let timestep_tensors: Vec<Tensor<B, 1>> = sampler
             .timesteps()
             .iter()
-            .map(|&t| {
-                Tensor::<B, 1>::from_data(
-                    TensorData::new(vec![t as f32], [1]),
-                    &self.device,
-                )
-            })
+            .map(|&t| Tensor::<B, 1>::from_data(TensorData::new(vec![t as f32], [1]), &self.device))
             .collect();
 
         // Refinement loop
@@ -2207,7 +2194,11 @@ impl<B: Backend> StableDiffusionXLWithRefiner<B> {
     ///
     /// Requires two tokenizers (same vocabulary, different instances) because
     /// the base and refiner pipelines each need their own tokenizer.
-    pub fn new(base_tokenizer: ClipTokenizer, refiner_tokenizer: ClipTokenizer, device: &B::Device) -> Self {
+    pub fn new(
+        base_tokenizer: ClipTokenizer,
+        refiner_tokenizer: ClipTokenizer,
+        device: &B::Device,
+    ) -> Self {
         Self {
             base: StableDiffusionXL::new(base_tokenizer, device),
             refiner: StableDiffusionXLRefiner::new(refiner_tokenizer, device),
@@ -2216,7 +2207,11 @@ impl<B: Backend> StableDiffusionXLWithRefiner<B> {
     }
 
     /// Create from pre-constructed base and refiner pipelines
-    pub fn from_pipelines(base: StableDiffusionXL<B>, refiner: StableDiffusionXLRefiner<B>, device: &B::Device) -> Self {
+    pub fn from_pipelines(
+        base: StableDiffusionXL<B>,
+        refiner: StableDiffusionXLRefiner<B>,
+        device: &B::Device,
+    ) -> Self {
         Self {
             base,
             refiner,
@@ -2252,7 +2247,9 @@ impl<B: Backend> StableDiffusionXLWithRefiner<B> {
             denoise_start: config.refiner_start,
         };
 
-        let refined = self.refiner.refine(latent, prompt, negative_prompt, &refiner_config);
+        let refined = self
+            .refiner
+            .refine(latent, prompt, negative_prompt, &refiner_config);
 
         // Decode to image
         self.refiner.decode(refined)
@@ -2276,10 +2273,7 @@ impl<B: Backend> StableDiffusionXLWithRefiner<B> {
             num_inference_steps: config.steps,
             eta: 0.0,
         };
-        let sampler = DdimSampler::new(
-            NoiseSchedule::sdxl(&self.device),
-            ddim_config,
-        );
+        let sampler = DdimSampler::new(NoiseSchedule::sdxl(&self.device), ddim_config);
 
         // Initialize with random noise
         let mut latent = sampler.init_latent(1, 4, latent_height, latent_width, &self.device);
@@ -2302,12 +2296,7 @@ impl<B: Backend> StableDiffusionXLWithRefiner<B> {
         let timestep_tensors: Vec<Tensor<B, 1>> = sampler
             .timesteps()
             .iter()
-            .map(|&t| {
-                Tensor::<B, 1>::from_data(
-                    TensorData::new(vec![t as f32], [1]),
-                    &self.device,
-                )
-            })
+            .map(|&t| Tensor::<B, 1>::from_data(TensorData::new(vec![t as f32], [1]), &self.device))
             .collect();
 
         // Sampling loop - stop at specified step
@@ -2369,7 +2358,9 @@ impl<B: Backend> StableDiffusionXLWithRefiner<B> {
             denoise_start: config.refiner_start,
         };
 
-        let refined = self.refiner.refine(latent, refiner_prompt, refiner_negative, &refiner_config);
+        let refined =
+            self.refiner
+                .refine(latent, refiner_prompt, refiner_negative, &refiner_config);
         self.refiner.decode(refined)
     }
 }

@@ -20,8 +20,8 @@
 //! - **Fast inference**: Optimized architecture
 //! - **Flow matching**: Rectified flow objective
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 use burn_models_core::glu::SwiGluFfn;
 use burn_models_core::layernorm::LayerNorm;
@@ -54,12 +54,12 @@ impl ZImageConfig {
     /// Z-Image 6B base configuration
     pub fn base() -> Self {
         Self {
-            in_channels: 16,  // From SDXL-style VAE
+            in_channels: 16, // From SDXL-style VAE
             patch_size: 2,
             hidden_size: 3072,
             num_heads: 24,
             num_blocks: 36,
-            text_dim: 4096,  // T5-XXL
+            text_dim: 4096, // T5-XXL
             time_embed_dim: 256,
             mlp_ratio: 4.0,
             max_seq_len: 4096,
@@ -116,11 +116,8 @@ impl ZImageConfig {
         // Single-stream DiT blocks
         let blocks: Vec<ZImageBlock<B>> = (0..self.num_blocks)
             .map(|_| {
-                ZImageBlockConfig::new(
-                    self.hidden_size,
-                    self.num_heads,
-                    self.intermediate_size(),
-                ).init(device)
+                ZImageBlockConfig::new(self.hidden_size, self.num_heads, self.intermediate_size())
+                    .init(device)
             })
             .collect();
 
@@ -211,7 +208,11 @@ struct ZImageBlockConfig {
 
 impl ZImageBlockConfig {
     fn new(hidden_size: usize, num_heads: usize, intermediate_size: usize) -> Self {
-        Self { hidden_size, num_heads, intermediate_size }
+        Self {
+            hidden_size,
+            num_heads,
+            intermediate_size,
+        }
     }
 
     fn init<B: Backend>(&self, device: &B::Device) -> ZImageBlock<B> {
@@ -253,19 +254,47 @@ pub struct ZImageAttention<B: Backend> {
 }
 
 impl<B: Backend> ZImageAttention<B> {
-    pub fn forward(&self, x: Tensor<B, 3>, rope: &RotaryEmbedding<B>, img_len: usize) -> Tensor<B, 3> {
+    pub fn forward(
+        &self,
+        x: Tensor<B, 3>,
+        rope: &RotaryEmbedding<B>,
+        img_len: usize,
+    ) -> Tensor<B, 3> {
         let [batch, seq_len, _hidden] = x.dims();
 
         let qkv = self.to_qkv.forward(x);
         let qkv = qkv.reshape([batch, seq_len, 3, self.num_heads, self.head_dim]);
 
-        let q = qkv.clone().slice([0..batch, 0..seq_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let q = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let k = qkv.clone().slice([0..batch, 0..seq_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let k = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = qkv.slice([0..batch, 0..seq_len, 2..3, 0..self.num_heads, 0..self.head_dim])
+        let v = qkv
+            .slice([
+                0..batch,
+                0..seq_len,
+                2..3,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
@@ -274,10 +303,24 @@ impl<B: Backend> ZImageAttention<B> {
         let text_len = seq_len - img_len;
 
         // Split q and k into text and image parts
-        let q_text = q.clone().slice([0..batch, 0..self.num_heads, 0..text_len, 0..self.head_dim]);
-        let q_img = q.slice([0..batch, 0..self.num_heads, text_len..seq_len, 0..self.head_dim]);
-        let k_text = k.clone().slice([0..batch, 0..self.num_heads, 0..text_len, 0..self.head_dim]);
-        let k_img = k.slice([0..batch, 0..self.num_heads, text_len..seq_len, 0..self.head_dim]);
+        let q_text = q
+            .clone()
+            .slice([0..batch, 0..self.num_heads, 0..text_len, 0..self.head_dim]);
+        let q_img = q.slice([
+            0..batch,
+            0..self.num_heads,
+            text_len..seq_len,
+            0..self.head_dim,
+        ]);
+        let k_text = k
+            .clone()
+            .slice([0..batch, 0..self.num_heads, 0..text_len, 0..self.head_dim]);
+        let k_img = k.slice([
+            0..batch,
+            0..self.num_heads,
+            text_len..seq_len,
+            0..self.head_dim,
+        ]);
 
         // Apply RoPE to image tokens
         let (q_img_rope, k_img_rope) = rope.forward(q_img, k_img, 0);
@@ -291,7 +334,9 @@ impl<B: Backend> ZImageAttention<B> {
         let attn = burn::tensor::activation::softmax(attn, 3);
         let out = attn.matmul(v);
 
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.to_out.forward(out)
     }
 }
@@ -322,10 +367,21 @@ impl<B: Backend> ZImageBlock<B> {
         let mod_params = self.modulation.forward(cond);
         let mod_params = mod_params.reshape([batch, 4, hidden]);
 
-        let shift1 = mod_params.clone().slice([0..batch, 0..1, 0..hidden]).reshape([batch, 1, hidden]);
-        let scale1 = mod_params.clone().slice([0..batch, 1..2, 0..hidden]).reshape([batch, 1, hidden]);
-        let shift2 = mod_params.clone().slice([0..batch, 2..3, 0..hidden]).reshape([batch, 1, hidden]);
-        let scale2 = mod_params.slice([0..batch, 3..4, 0..hidden]).reshape([batch, 1, hidden]);
+        let shift1 = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let scale1 = mod_params
+            .clone()
+            .slice([0..batch, 1..2, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let shift2 = mod_params
+            .clone()
+            .slice([0..batch, 2..3, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let scale2 = mod_params
+            .slice([0..batch, 3..4, 0..hidden])
+            .reshape([batch, 1, hidden]);
 
         // Self-attention
         let x_norm = self.norm1.forward(x.clone());
@@ -520,7 +576,7 @@ mod tests {
         let block = ZImageBlockConfig::new(256, 4, 512).init::<TestBackend>(&device);
         let rope = RotaryEmbedding::new(64, 256, &device);
 
-        let x = Tensor::zeros([2, 20, 256], &device);  // text=4 + img=16
+        let x = Tensor::zeros([2, 20, 256], &device); // text=4 + img=16
         let cond = Tensor::zeros([2, 256], &device);
 
         let out = block.forward(x, cond, &rope, 16);

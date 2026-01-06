@@ -3,8 +3,8 @@
 //! T2I-Adapter is a lightweight adapter that provides structural guidance
 //! (edges, depth, pose, etc.) to the diffusion process.
 
-use burn::nn::conv::{Conv2d, Conv2dConfig};
 use burn::nn::PaddingConfig2d;
+use burn::nn::conv::{Conv2d, Conv2dConfig};
 use burn::prelude::*;
 
 use burn_models_core::silu::silu;
@@ -195,11 +195,12 @@ impl<B: Backend> T2IAdapter<B> {
     /// Create a new T2I-Adapter
     pub fn new(config: T2IAdapterConfig, device: &B::Device) -> Self {
         // Initial convolution (with pixel unshuffle effect)
-        let unshuffle_channels = config.in_channels * config.downscale_factor * config.downscale_factor;
+        let unshuffle_channels =
+            config.in_channels * config.downscale_factor * config.downscale_factor;
         let first_channels = config.channels[0];
 
-        let pixel_unshuffle = Conv2dConfig::new([unshuffle_channels, first_channels], [1, 1])
-            .init(device);
+        let pixel_unshuffle =
+            Conv2dConfig::new([unshuffle_channels, first_channels], [1, 1]).init(device);
 
         // Build levels
         let mut levels = Vec::new();
@@ -218,7 +219,8 @@ impl<B: Backend> T2IAdapter<B> {
         }
 
         // Output projections
-        let out_convs = config.channels
+        let out_convs = config
+            .channels
             .iter()
             .map(|&ch| Conv2dConfig::new([ch, ch], [1, 1]).init(device))
             .collect();

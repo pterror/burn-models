@@ -16,14 +16,14 @@
 //! ```
 
 use burn::nn::{
-    conv::{Conv2d, Conv2dConfig},
     Linear, LinearConfig, PaddingConfig2d,
+    conv::{Conv2d, Conv2dConfig},
 };
 use burn::prelude::*;
 use burn_cubecl::{CubeBackend, CubeRuntime, tensor::CubeTensor};
 use burn_models_cubecl::{
-    GroupNormSiLuOptions, groupnorm_silu, tensor_to_cube, cube_to_tensor,
-    flash_attention, FlashAttentionOptions,
+    FlashAttentionOptions, GroupNormSiLuOptions, cube_to_tensor, flash_attention, groupnorm_silu,
+    tensor_to_cube,
 };
 
 /// CubeCL-accelerated ResNet block with fused GroupNorm+SiLU
@@ -92,11 +92,7 @@ impl<R: CubeRuntime> ResBlockCubeCL<R> {
     }
 
     /// Forward pass with fused GroupNorm+SiLU kernels
-    pub fn forward(
-        &self,
-        x: Tensor<B<R>, 4>,
-        time_emb: Tensor<B<R>, 2>,
-    ) -> Tensor<B<R>, 4> {
+    pub fn forward(&self, x: Tensor<B<R>, 4>, time_emb: Tensor<B<R>, 2>) -> Tensor<B<R>, 4> {
         let [b, _, _h, _w] = x.dims();
 
         let residual = match &self.skip_conv {
@@ -191,9 +187,15 @@ impl<R: CubeRuntime> CrossAttentionCubeCL<R> {
         let context_dim = context_dim.unwrap_or(query_dim);
 
         Self {
-            to_q: LinearConfig::new(query_dim, inner_dim).with_bias(false).init(device),
-            to_k: LinearConfig::new(context_dim, inner_dim).with_bias(false).init(device),
-            to_v: LinearConfig::new(context_dim, inner_dim).with_bias(false).init(device),
+            to_q: LinearConfig::new(query_dim, inner_dim)
+                .with_bias(false)
+                .init(device),
+            to_k: LinearConfig::new(context_dim, inner_dim)
+                .with_bias(false)
+                .init(device),
+            to_v: LinearConfig::new(context_dim, inner_dim)
+                .with_bias(false)
+                .init(device),
             to_out: LinearConfig::new(inner_dim, query_dim).init(device),
             num_heads,
             head_dim,
@@ -221,22 +223,31 @@ impl<R: CubeRuntime> CrossAttentionCubeCL<R> {
         let v = self.to_v.forward(context);
 
         // Reshape to multi-head: [b, seq, heads*dim] -> [b, heads, seq, dim]
-        let q = q.reshape([b, seq_len, self.num_heads, self.head_dim]).swap_dims(1, 2);
-        let k = k.reshape([b, ctx_len, self.num_heads, self.head_dim]).swap_dims(1, 2);
-        let v = v.reshape([b, ctx_len, self.num_heads, self.head_dim]).swap_dims(1, 2);
+        let q = q
+            .reshape([b, seq_len, self.num_heads, self.head_dim])
+            .swap_dims(1, 2);
+        let k = k
+            .reshape([b, ctx_len, self.num_heads, self.head_dim])
+            .swap_dims(1, 2);
+        let v = v
+            .reshape([b, ctx_len, self.num_heads, self.head_dim])
+            .swap_dims(1, 2);
 
         // Flash attention (non-causal for diffusion models)
         let out = flash_attention(
             tensor_to_cube(q),
             tensor_to_cube(k),
             tensor_to_cube(v),
-            FlashAttentionOptions::default(),  // non-causal
-        ).expect("Flash attention failed");
+            FlashAttentionOptions::default(), // non-causal
+        )
+        .expect("Flash attention failed");
 
         let out: Tensor<B<R>, 4> = cube_to_tensor(out);
 
         // Reshape back: [b, heads, seq, dim] -> [b, seq, heads*dim]
-        let out = out.swap_dims(1, 2).reshape([b, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([b, seq_len, self.num_heads * self.head_dim]);
 
         self.to_out.forward(out)
     }

@@ -126,13 +126,9 @@ pub fn spatial_downsample_3d<B: Backend>(x: Tensor<B, 5>, factor: usize) -> Tens
     // Real implementation would use strided conv or avg pool
     let mut result_frames = Vec::new();
     for t in 0..time {
-        let frame = x.clone().slice([
-            0..batch,
-            0..channels,
-            t..t + 1,
-            0..height,
-            0..width,
-        ]);
+        let frame = x
+            .clone()
+            .slice([0..batch, 0..channels, t..t + 1, 0..height, 0..width]);
         // Simple subsample (every factor'th pixel)
         let frame_3d = frame.reshape([batch, channels, height, width]);
         let subsampled = subsample_2d(frame_3d, factor);
@@ -157,21 +153,15 @@ fn subsample_2d<B: Backend>(x: Tensor<B, 4>, factor: usize) -> Tensor<B, 4> {
     // Real implementation would do proper resampling
     let mut rows = Vec::new();
     for h in 0..new_height {
-        let row = x.clone().slice([
-            0..batch,
-            0..channels,
-            h * factor..h * factor + 1,
-            0..width,
-        ]);
+        let row = x
+            .clone()
+            .slice([0..batch, 0..channels, h * factor..h * factor + 1, 0..width]);
         // Subsample width
         let mut cols = Vec::new();
         for w in 0..new_width {
-            let col = row.clone().slice([
-                0..batch,
-                0..channels,
-                0..1,
-                w * factor..w * factor + 1,
-            ]);
+            let col = row
+                .clone()
+                .slice([0..batch, 0..channels, 0..1, w * factor..w * factor + 1]);
             cols.push(col);
         }
         let subsampled_row = Tensor::cat(cols, 3);
@@ -194,13 +184,9 @@ pub fn spatial_upsample_3d<B: Backend>(x: Tensor<B, 5>, factor: usize) -> Tensor
 
     let mut result_frames = Vec::new();
     for t in 0..time {
-        let frame = x.clone().slice([
-            0..batch,
-            0..channels,
-            t..t + 1,
-            0..height,
-            0..width,
-        ]);
+        let frame = x
+            .clone()
+            .slice([0..batch, 0..channels, t..t + 1, 0..height, 0..width]);
         let frame_4d = frame.reshape([batch, channels, height, width]);
 
         // Upsample height then width using repeat
@@ -259,7 +245,13 @@ pub struct Vae3dStats {
 }
 
 impl Vae3dStats {
-    pub fn new(config: &Vae3dConfig, batch: usize, time: usize, height: usize, width: usize) -> Self {
+    pub fn new(
+        config: &Vae3dConfig,
+        batch: usize,
+        time: usize,
+        height: usize,
+        width: usize,
+    ) -> Self {
         let (lat_t, lat_h, lat_w) = config.encoded_shape(time, height, width);
 
         let input_elements = batch * config.in_channels * time * height * width;
@@ -285,9 +277,8 @@ pub mod cubecl {
     use super::*;
     use burn_cubecl::{CubeBackend, CubeRuntime, tensor::CubeTensor};
     use burn_models_cubecl::{
-        Conv3dOptions, Conv3dLayer,
-        groupnorm_silu, GroupNormSiLuOptions,
-        tensor_to_cube, cube_to_tensor,
+        Conv3dLayer, Conv3dOptions, GroupNormSiLuOptions, cube_to_tensor, groupnorm_silu,
+        tensor_to_cube,
     };
 
     type B<R> = CubeBackend<R, f32, i32, u32>;
@@ -307,11 +298,7 @@ pub mod cubecl {
 
     impl<R: CubeRuntime> ResBlock3dCubeCL<R> {
         /// Creates a new 3D residual block
-        pub fn new(
-            in_channels: usize,
-            out_channels: usize,
-            device: &R::Device,
-        ) -> Self {
+        pub fn new(in_channels: usize, out_channels: usize, device: &R::Device) -> Self {
             let num_groups = 32.min(in_channels);
 
             // GroupNorm weights
@@ -344,13 +331,19 @@ pub mod cubecl {
             let conv1 = Conv3dLayer::new(
                 tensor_to_cube(conv1_weight),
                 Some(tensor_to_cube(conv1_bias)),
-                Conv3dOptions { padding: [1, 1, 1], ..Default::default() },
+                Conv3dOptions {
+                    padding: [1, 1, 1],
+                    ..Default::default()
+                },
             );
 
             let conv2 = Conv3dLayer::new(
                 tensor_to_cube(conv2_weight),
                 Some(tensor_to_cube(conv2_bias)),
-                Conv3dOptions { padding: [1, 1, 1], ..Default::default() },
+                Conv3dOptions {
+                    padding: [1, 1, 1],
+                    ..Default::default()
+                },
             );
 
             let skip_conv = if in_channels != out_channels {
@@ -488,7 +481,10 @@ pub mod cubecl {
             let conv = Conv3dLayer::new(
                 tensor_to_cube(weight),
                 Some(tensor_to_cube(bias)),
-                Conv3dOptions { padding: [1, 1, 1], ..Default::default() },
+                Conv3dOptions {
+                    padding: [1, 1, 1],
+                    ..Default::default()
+                },
             );
 
             Self {
@@ -558,7 +554,10 @@ pub mod cubecl {
             let conv_in = Conv3dLayer::new(
                 tensor_to_cube(conv_in_weight),
                 Some(tensor_to_cube(conv_in_bias)),
-                Conv3dOptions { padding: [1, 1, 1], ..Default::default() },
+                Conv3dOptions {
+                    padding: [1, 1, 1],
+                    ..Default::default()
+                },
             );
 
             // Down blocks
@@ -576,7 +575,12 @@ pub mod cubecl {
                 let downsample = if !is_last {
                     // Downsample spatially by 2, temporally every other level
                     let temporal_stride = if i % 2 == 0 { 2 } else { 1 };
-                    Some(Downsample3dCubeCL::new(channels, temporal_stride, 2, device))
+                    Some(Downsample3dCubeCL::new(
+                        channels,
+                        temporal_stride,
+                        2,
+                        device,
+                    ))
                 } else {
                     None
                 };
@@ -597,11 +601,15 @@ pub mod cubecl {
                 burn::tensor::Distribution::Uniform(-0.1, 0.1),
                 device,
             );
-            let conv_out_bias = burn::tensor::Tensor::<B<R>, 1>::zeros([config.latent_channels * 2], device);
+            let conv_out_bias =
+                burn::tensor::Tensor::<B<R>, 1>::zeros([config.latent_channels * 2], device);
             let conv_out = Conv3dLayer::new(
                 tensor_to_cube(conv_out_weight),
                 Some(tensor_to_cube(conv_out_bias)),
-                Conv3dOptions { padding: [1, 1, 1], ..Default::default() },
+                Conv3dOptions {
+                    padding: [1, 1, 1],
+                    ..Default::default()
+                },
             );
 
             Self {
@@ -651,7 +659,9 @@ pub mod cubecl {
             let [b, c, t, height, w] = tensor.dims();
             let half_c = c / 2;
 
-            let mean = tensor.clone().slice([0..b, 0..half_c, 0..t, 0..height, 0..w]);
+            let mean = tensor
+                .clone()
+                .slice([0..b, 0..half_c, 0..t, 0..height, 0..w]);
             let logvar = tensor.slice([0..b, half_c..c, 0..t, 0..height, 0..w]);
 
             Vae3dEncoderOutput { mean, logvar }
@@ -685,7 +695,10 @@ pub mod cubecl {
             let conv_in = Conv3dLayer::new(
                 tensor_to_cube(conv_in_weight),
                 Some(tensor_to_cube(conv_in_bias)),
-                Conv3dOptions { padding: [1, 1, 1], ..Default::default() },
+                Conv3dOptions {
+                    padding: [1, 1, 1],
+                    ..Default::default()
+                },
             );
 
             // Mid blocks
@@ -723,11 +736,15 @@ pub mod cubecl {
                 burn::tensor::Distribution::Uniform(-0.1, 0.1),
                 device,
             );
-            let conv_out_bias = burn::tensor::Tensor::<B<R>, 1>::zeros([config.in_channels], device);
+            let conv_out_bias =
+                burn::tensor::Tensor::<B<R>, 1>::zeros([config.in_channels], device);
             let conv_out = Conv3dLayer::new(
                 tensor_to_cube(conv_out_weight),
                 Some(tensor_to_cube(conv_out_bias)),
-                Conv3dOptions { padding: [1, 1, 1], ..Default::default() },
+                Conv3dOptions {
+                    padding: [1, 1, 1],
+                    ..Default::default()
+                },
             );
 
             Self {
@@ -886,7 +903,11 @@ pub mod cubecl {
                 for suffix in ["norm1.weight", "norm1.bias", "norm2.weight", "norm2.bias"] {
                     weights.push(Vae3dWeightInfo {
                         key: format!("encoder.down.{level}.block.{block}.{suffix}"),
-                        shape: vec![if suffix.starts_with("norm1") { in_ch } else { out_ch }],
+                        shape: vec![if suffix.starts_with("norm1") {
+                            in_ch
+                        } else {
+                            out_ch
+                        }],
                         description: "GroupNorm affine params",
                     });
                 }
@@ -920,7 +941,7 @@ mod tests {
     fn test_encoded_shape() {
         let config = Vae3dConfig::default();
         let (t, h, w) = config.encoded_shape(16, 512, 512);
-        assert_eq!(t, 4);  // 16 / 4
+        assert_eq!(t, 4); // 16 / 4
         assert_eq!(h, 64); // 512 / 8
         assert_eq!(w, 64); // 512 / 8
     }

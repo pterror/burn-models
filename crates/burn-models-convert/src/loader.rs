@@ -25,7 +25,10 @@ pub enum LoadError {
     UnsupportedDtype(Dtype),
 
     #[error("Shape mismatch: expected {expected:?}, got {actual:?}")]
-    ShapeMismatch { expected: Vec<usize>, actual: Vec<usize> },
+    ShapeMismatch {
+        expected: Vec<usize>,
+        actual: Vec<usize>,
+    },
 }
 
 /// A loaded safetensors file with memory-mapped data
@@ -124,10 +127,7 @@ impl SafeTensorFile {
 
         // Safety: mmap is valid for lifetime of self
         let data = unsafe {
-            std::slice::from_raw_parts(
-                self.data_ptr.add(info.start),
-                info.end - info.start,
-            )
+            std::slice::from_raw_parts(self.data_ptr.add(info.start), info.end - info.start)
         };
 
         // Convert to f32, handling potentially unaligned mmap data

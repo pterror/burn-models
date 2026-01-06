@@ -110,8 +110,12 @@ pub fn verify_speculative<B: Backend>(
         let token_idx = token as usize;
 
         // Get p_draft(token) and p_target(token)
-        let p_draft = draft_probs.clone().slice([i..i + 1, token_idx..token_idx + 1]);
-        let p_target = target_probs.clone().slice([i..i + 1, token_idx..token_idx + 1]);
+        let p_draft = draft_probs
+            .clone()
+            .slice([i..i + 1, token_idx..token_idx + 1]);
+        let p_target = target_probs
+            .clone()
+            .slice([i..i + 1, token_idx..token_idx + 1]);
 
         let p_draft_val: f32 = p_draft.into_scalar().elem();
         let p_target_val: f32 = p_target.into_scalar().elem();
@@ -165,7 +169,9 @@ pub fn verify_speculative<B: Backend>(
     } else if let Some(reject_idx) = first_rejection_idx {
         // Resample from adjusted distribution at rejection point
         // p_adjusted(x) = max(0, p_target(x) - p_draft(x)) normalized
-        let target_row = target_probs.clone().slice([reject_idx..reject_idx + 1, 0..vocab_size]);
+        let target_row = target_probs
+            .clone()
+            .slice([reject_idx..reject_idx + 1, 0..vocab_size]);
         let draft_row = draft_probs.slice([reject_idx..reject_idx + 1, 0..vocab_size]);
 
         let adjusted = target_row - draft_row;

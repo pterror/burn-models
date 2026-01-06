@@ -1,8 +1,8 @@
 //! UNet building blocks: ResNet blocks, attention blocks, down/up sampling
 
 use burn::nn::{
-    conv::{Conv2d, Conv2dConfig},
     Linear, LinearConfig, PaddingConfig2d,
+    conv::{Conv2d, Conv2dConfig},
 };
 use burn::prelude::*;
 
@@ -76,7 +76,12 @@ impl<B: Backend> ResBlock<B> {
     /// * `out_channels` - Number of output channels
     /// * `time_emb_dim` - Dimension of the timestep embedding
     /// * `device` - Device to create tensors on
-    pub fn new(in_channels: usize, out_channels: usize, time_emb_dim: usize, device: &B::Device) -> Self {
+    pub fn new(
+        in_channels: usize,
+        out_channels: usize,
+        time_emb_dim: usize,
+        device: &B::Device,
+    ) -> Self {
         let norm1 = GroupNorm::new(32, in_channels, device);
         let conv1 = Conv2dConfig::new([in_channels, out_channels], [3, 3])
             .with_padding(PaddingConfig2d::Explicit(1, 1))
@@ -289,7 +294,10 @@ impl<B: Backend> TransformerBlock<B> {
         let x = x.clone() + self.attn1.forward(self.norm1.forward(x.clone()), None);
 
         // Cross-attention
-        let x = x.clone() + self.attn2.forward(self.norm2.forward(x.clone()), Some(context));
+        let x = x.clone()
+            + self
+                .attn2
+                .forward(self.norm2.forward(x.clone()), Some(context));
 
         // FFN
         x.clone() + self.ff.forward(self.norm3.forward(x))
@@ -334,9 +342,15 @@ impl<B: Backend> CrossAttention<B> {
         let context_dim = context_dim.unwrap_or(query_dim);
 
         Self {
-            to_q: LinearConfig::new(query_dim, inner_dim).with_bias(false).init(device),
-            to_k: LinearConfig::new(context_dim, inner_dim).with_bias(false).init(device),
-            to_v: LinearConfig::new(context_dim, inner_dim).with_bias(false).init(device),
+            to_q: LinearConfig::new(query_dim, inner_dim)
+                .with_bias(false)
+                .init(device),
+            to_k: LinearConfig::new(context_dim, inner_dim)
+                .with_bias(false)
+                .init(device),
+            to_v: LinearConfig::new(context_dim, inner_dim)
+                .with_bias(false)
+                .init(device),
             to_out: LinearConfig::new(inner_dim, query_dim).init(device),
             num_heads,
             head_dim,
@@ -364,9 +378,15 @@ impl<B: Backend> CrossAttention<B> {
         let v = self.to_v.forward(context);
 
         // Reshape to multi-head: [b, seq, heads*dim] -> [b, heads, seq, dim]
-        let q = q.reshape([b, seq_len, self.num_heads, self.head_dim]).swap_dims(1, 2);
-        let k = k.reshape([b, ctx_len, self.num_heads, self.head_dim]).swap_dims(1, 2);
-        let v = v.reshape([b, ctx_len, self.num_heads, self.head_dim]).swap_dims(1, 2);
+        let q = q
+            .reshape([b, seq_len, self.num_heads, self.head_dim])
+            .swap_dims(1, 2);
+        let k = k
+            .reshape([b, ctx_len, self.num_heads, self.head_dim])
+            .swap_dims(1, 2);
+        let v = v
+            .reshape([b, ctx_len, self.num_heads, self.head_dim])
+            .swap_dims(1, 2);
 
         // Attention
         let scale = (self.head_dim as f64).powf(-0.5);
@@ -375,7 +395,9 @@ impl<B: Backend> CrossAttention<B> {
         let out = attn.matmul(v);
 
         // Reshape back: [b, heads, seq, dim] -> [b, seq, heads*dim]
-        let out = out.swap_dims(1, 2).reshape([b, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([b, seq_len, self.num_heads * self.head_dim]);
 
         self.to_out.forward(out)
     }

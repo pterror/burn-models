@@ -3,8 +3,8 @@
 //! Provides configurable transformer components that can be composed to build
 //! various architectures including LLMs (LLaMA, Qwen), DiT, and encoders.
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 use crate::glu::{SwiGluFfn, SwiGluFfnConfig};
 use crate::rmsnorm::RmsNorm;
@@ -160,9 +160,12 @@ impl<B: Backend> MultiHeadAttention<B> {
         let [batch, kv_heads, seq_len, head_dim] = x.dims();
         let n_rep = self.num_heads / self.num_kv_heads;
 
-        x.unsqueeze_dim::<5>(2)
-            .repeat_dim(2, n_rep)
-            .reshape([batch, kv_heads * n_rep, seq_len, head_dim])
+        x.unsqueeze_dim::<5>(2).repeat_dim(2, n_rep).reshape([
+            batch,
+            kv_heads * n_rep,
+            seq_len,
+            head_dim,
+        ])
     }
 }
 
@@ -260,7 +263,10 @@ impl<B: Backend> TransformerBlock<B> {
         mask: Option<Tensor<B, 2>>,
     ) -> Tensor<B, 3> {
         // Pre-norm attention with residual
-        let h = x.clone() + self.attention.forward(self.input_norm.forward(x), rope, start_pos, mask);
+        let h = x.clone()
+            + self
+                .attention
+                .forward(self.input_norm.forward(x), rope, start_pos, mask);
 
         // Pre-norm FFN with residual
         h.clone() + self.ffn.forward(self.post_attention_norm.forward(h))
@@ -390,11 +396,11 @@ mod tests {
 
         // Check that upper triangle is -inf
         // mask_data layout: [0,0], [0,1], [0,2], [0,3], [1,0], ...
-        assert_eq!(mask_data[0], 0.0);      // [0,0] diagonal
+        assert_eq!(mask_data[0], 0.0); // [0,0] diagonal
         assert_eq!(mask_data[1], f32::NEG_INFINITY); // [0,1] above diagonal
         assert_eq!(mask_data[2], f32::NEG_INFINITY); // [0,2] above diagonal
-        assert_eq!(mask_data[4], 0.0);      // [1,0] below diagonal
-        assert_eq!(mask_data[5], 0.0);      // [1,1] diagonal
+        assert_eq!(mask_data[4], 0.0); // [1,0] below diagonal
+        assert_eq!(mask_data[5], 0.0); // [1,1] diagonal
     }
 
     #[test]
@@ -405,20 +411,20 @@ mod tests {
         let mask_data: Vec<f32> = mask.into_data().to_vec().unwrap();
 
         // Row 0: can attend to position 0 only
-        assert_eq!(mask_data[0], 0.0);  // [0,0]
-        assert_eq!(mask_data[1], f32::NEG_INFINITY);  // [0,1] future
+        assert_eq!(mask_data[0], 0.0); // [0,0]
+        assert_eq!(mask_data[1], f32::NEG_INFINITY); // [0,1] future
 
         // Row 3: can attend to positions 1, 2, 3 (i=3, window=2: 3-0=3>2, 3-1=2<=2)
-        assert_eq!(mask_data[15], f32::NEG_INFINITY);  // [3,0] outside window (3>0+2)
-        assert_eq!(mask_data[16], 0.0);  // [3,1] in window (3<=1+2=3)
-        assert_eq!(mask_data[17], 0.0);  // [3,2] in window
-        assert_eq!(mask_data[18], 0.0);  // [3,3] current
+        assert_eq!(mask_data[15], f32::NEG_INFINITY); // [3,0] outside window (3>0+2)
+        assert_eq!(mask_data[16], 0.0); // [3,1] in window (3<=1+2=3)
+        assert_eq!(mask_data[17], 0.0); // [3,2] in window
+        assert_eq!(mask_data[18], 0.0); // [3,3] current
 
         // Row 4: can attend to positions 2, 3, 4
-        assert_eq!(mask_data[20], f32::NEG_INFINITY);  // [4,0] outside window
-        assert_eq!(mask_data[21], f32::NEG_INFINITY);  // [4,1] outside window
-        assert_eq!(mask_data[22], 0.0);  // [4,2] in window
-        assert_eq!(mask_data[23], 0.0);  // [4,3] in window
-        assert_eq!(mask_data[24], 0.0);  // [4,4] current
+        assert_eq!(mask_data[20], f32::NEG_INFINITY); // [4,0] outside window
+        assert_eq!(mask_data[21], f32::NEG_INFINITY); // [4,1] outside window
+        assert_eq!(mask_data[22], 0.0); // [4,2] in window
+        assert_eq!(mask_data[23], 0.0); // [4,3] in window
+        assert_eq!(mask_data[24], 0.0); // [4,4] current
     }
 }

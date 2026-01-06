@@ -5,9 +5,9 @@
 
 use std::path::Path;
 
-use burn::prelude::*;
 use burn::module::Param;
 use burn::nn::{EmbeddingConfig, LinearConfig};
+use burn::prelude::*;
 use burn_models_convert::loader::SafeTensorFile;
 use burn_models_core::glu::SwiGluFfn;
 use burn_models_core::moe::{MoeRouter, SparseMoeFfn};
@@ -16,7 +16,7 @@ use burn_models_core::rope::RotaryEmbedding;
 use burn_models_core::transformer::MultiHeadAttention;
 use thiserror::Error;
 
-use crate::mixtral::{Mixtral, MixtralConfig, MixtralRuntime, MixtralLayer};
+use crate::mixtral::{Mixtral, MixtralConfig, MixtralLayer, MixtralRuntime};
 
 #[derive(Error, Debug)]
 pub enum MixtralLoadError {
@@ -48,7 +48,13 @@ pub fn load_mixtral<B: Backend, P: AsRef<Path>>(
     let file = SafeTensorFile::open(path)?;
 
     // Load embeddings
-    let embed_tokens = load_embedding(&file, "model.embed_tokens.weight", config.vocab_size, config.hidden_size, device)?;
+    let embed_tokens = load_embedding(
+        &file,
+        "model.embed_tokens.weight",
+        config.vocab_size,
+        config.hidden_size,
+        device,
+    )?;
 
     // Load transformer layers
     let mut layers = Vec::with_capacity(config.num_layers);
@@ -58,10 +64,23 @@ pub fn load_mixtral<B: Backend, P: AsRef<Path>>(
     }
 
     // Load final norm
-    let norm = load_rmsnorm(&file, "model.norm.weight", config.hidden_size, config.norm_eps, device)?;
+    let norm = load_rmsnorm(
+        &file,
+        "model.norm.weight",
+        config.hidden_size,
+        config.norm_eps,
+        device,
+    )?;
 
     // Load LM head
-    let lm_head = load_linear(&file, "lm_head.weight", None, config.hidden_size, config.vocab_size, device)?;
+    let lm_head = load_linear(
+        &file,
+        "lm_head.weight",
+        None,
+        config.hidden_size,
+        config.vocab_size,
+        device,
+    )?;
 
     let model = Mixtral {
         embed_tokens,
@@ -255,10 +274,8 @@ fn load_sparse_moe<B: Backend>(
     device: &B::Device,
 ) -> Result<SparseMoeFfn<B>, MixtralLoadError> {
     // Load router
-    let gate_weight: Tensor<B, 2> = file.load_f32(
-        &format!("{}.block_sparse_moe.gate.weight", prefix),
-        device,
-    )?;
+    let gate_weight: Tensor<B, 2> =
+        file.load_f32(&format!("{}.block_sparse_moe.gate.weight", prefix), device)?;
 
     let mut gate = LinearConfig::new(config.hidden_size, config.num_experts)
         .with_bias(false)

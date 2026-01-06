@@ -48,13 +48,15 @@ pub mod mapping;
 pub mod sd_loader;
 pub mod serialize;
 
-pub use controlnet_loader::{load_controlnet_info, ControlNetInfo, ControlNetLoadError, ControlNetType};
-pub use embedding_loader::{load_embedding, EmbeddingFormat, EmbeddingLoadError};
+pub use controlnet_loader::{
+    ControlNetInfo, ControlNetLoadError, ControlNetType, load_controlnet_info,
+};
+pub use embedding_loader::{EmbeddingFormat, EmbeddingLoadError, load_embedding};
 pub use loader::{LoadError, SafeTensorFile};
-pub use lora_loader::{load_lora, LoraFormat, LoraLoadError};
-pub use sd_loader::{SdWeightLoader, SdLoadError};
+pub use lora_loader::{LoraFormat, LoraLoadError, load_lora};
+pub use sd_loader::{SdLoadError, SdWeightLoader};
 pub use serialize::{
-    bytes_recorder, full_precision_recorder, half_precision_recorder,
-    BinBytesRecorder, BinFileRecorder, FullPrecisionSettings, HalfPrecisionSettings,
-    Recorder, RecorderError, SerializeError,
+    BinBytesRecorder, BinFileRecorder, FullPrecisionSettings, HalfPrecisionSettings, Recorder,
+    RecorderError, SerializeError, bytes_recorder, full_precision_recorder,
+    half_precision_recorder,
 };

@@ -4,13 +4,13 @@
 
 use std::path::Path;
 
-use burn::prelude::*;
 use burn::module::Param;
 use burn::nn::{EmbeddingConfig, LinearConfig};
+use burn::prelude::*;
 use burn_models_convert::loader::SafeTensorFile;
 use thiserror::Error;
 
-use crate::qwen::{Qwen, QwenConfig, QwenRuntime, QwenLayer, QwenAttention};
+use crate::qwen::{Qwen, QwenAttention, QwenConfig, QwenLayer, QwenRuntime};
 use burn_models_core::glu::SwiGluFfn;
 use burn_models_core::rmsnorm::RmsNorm;
 use burn_models_core::rope::RotaryEmbedding;
@@ -38,7 +38,13 @@ pub fn load_qwen<B: Backend, P: AsRef<Path>>(
 ) -> Result<(Qwen<B>, QwenRuntime<B>), QwenLoadError> {
     let file = SafeTensorFile::open(path)?;
 
-    let embed_tokens = load_embedding(&file, "model.embed_tokens.weight", config.vocab_size, config.hidden_size, device)?;
+    let embed_tokens = load_embedding(
+        &file,
+        "model.embed_tokens.weight",
+        config.vocab_size,
+        config.hidden_size,
+        device,
+    )?;
 
     let mut layers = Vec::with_capacity(config.num_layers);
     for i in 0..config.num_layers {
@@ -46,13 +52,26 @@ pub fn load_qwen<B: Backend, P: AsRef<Path>>(
         layers.push(layer);
     }
 
-    let norm = load_rmsnorm(&file, "model.norm.weight", config.hidden_size, config.norm_eps, device)?;
+    let norm = load_rmsnorm(
+        &file,
+        "model.norm.weight",
+        config.hidden_size,
+        config.norm_eps,
+        device,
+    )?;
 
     // Load lm_head if not tied, otherwise None
     let lm_head = if config.tie_embeddings {
         None
     } else {
-        Some(load_linear(&file, "lm_head.weight", None, config.hidden_size, config.vocab_size, device)?)
+        Some(load_linear(
+            &file,
+            "lm_head.weight",
+            None,
+            config.hidden_size,
+            config.vocab_size,
+            device,
+        )?)
     };
 
     let model = Qwen {

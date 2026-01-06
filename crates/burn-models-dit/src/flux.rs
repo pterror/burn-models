@@ -20,8 +20,8 @@
 //! - **Flux.1-dev**: Guidance-distilled, higher quality
 //! - **Flux.1-schnell**: Few-step generation (4 steps)
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 use burn_models_core::dit::{PatchEmbed, PatchEmbedConfig, unpatchify};
 use burn_models_core::glu::SwiGluFfn;
@@ -101,8 +101,8 @@ impl FluxConfig {
         let intermediate_size = (self.hidden_size as f32 * self.mlp_ratio) as usize;
 
         // Patch embedding for image
-        let img_embed = PatchEmbedConfig::new(self.patch_size, self.in_channels, self.hidden_size)
-            .init(device);
+        let img_embed =
+            PatchEmbedConfig::new(self.patch_size, self.in_channels, self.hidden_size).init(device);
 
         // Text projection (T5 dim → hidden dim)
         let txt_embed = LinearConfig::new(self.text_dim, self.hidden_size)
@@ -133,20 +133,29 @@ impl FluxConfig {
 
         // Dual-stream blocks
         let double_blocks: Vec<FluxDoubleBlock<B>> = (0..self.num_double_blocks)
-            .map(|_| FluxDoubleBlockConfig::new(self.hidden_size, self.num_heads, intermediate_size).init(device))
+            .map(|_| {
+                FluxDoubleBlockConfig::new(self.hidden_size, self.num_heads, intermediate_size)
+                    .init(device)
+            })
             .collect();
 
         // Single-stream blocks
         let single_blocks: Vec<FluxSingleBlock<B>> = (0..self.num_single_blocks)
-            .map(|_| FluxSingleBlockConfig::new(self.hidden_size, self.num_heads, intermediate_size).init(device))
+            .map(|_| {
+                FluxSingleBlockConfig::new(self.hidden_size, self.num_heads, intermediate_size)
+                    .init(device)
+            })
             .collect();
 
         // Final layer
         let final_layer = FinalLayer {
             norm: LayerNorm::new(self.hidden_size, device),
-            proj: LinearConfig::new(self.hidden_size, self.patch_size * self.patch_size * self.in_channels)
-                .with_bias(true)
-                .init(device),
+            proj: LinearConfig::new(
+                self.hidden_size,
+                self.patch_size * self.patch_size * self.in_channels,
+            )
+            .with_bias(true)
+            .init(device),
             ada_ln_modulation: LinearConfig::new(self.hidden_size, 2 * self.hidden_size)
                 .with_bias(true)
                 .init(device),
@@ -247,7 +256,11 @@ pub struct FluxDoubleBlockConfig {
 
 impl FluxDoubleBlockConfig {
     fn new(hidden_size: usize, num_heads: usize, intermediate_size: usize) -> Self {
-        Self { hidden_size, num_heads, intermediate_size }
+        Self {
+            hidden_size,
+            num_heads,
+            intermediate_size,
+        }
     }
 
     fn init<B: Backend>(&self, device: &B::Device) -> FluxDoubleBlock<B> {
@@ -321,11 +334,34 @@ impl<B: Backend> FluxAttention<B> {
         let qkv = self.qkv.forward(x);
         let qkv = qkv.reshape([batch, seq_len, 3, self.num_heads, self.head_dim]);
 
-        let q = qkv.clone().slice([0..batch, 0..seq_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let q = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim]);
-        let k = qkv.clone().slice([0..batch, 0..seq_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let k = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim]);
-        let v = qkv.slice([0..batch, 0..seq_len, 2..3, 0..self.num_heads, 0..self.head_dim])
+        let v = qkv
+            .slice([
+                0..batch,
+                0..seq_len,
+                2..3,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim]);
 
         // Apply RoPE
@@ -341,10 +377,25 @@ impl<B: Backend> FluxAttention<B> {
             let [_b, cross_len, _] = cross.dims();
             let cross_qkv = cross_qkv.reshape([batch, cross_len, 3, self.num_heads, self.head_dim]);
 
-            let cross_k = cross_qkv.clone().slice([0..batch, 0..cross_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+            let cross_k = cross_qkv
+                .clone()
+                .slice([
+                    0..batch,
+                    0..cross_len,
+                    1..2,
+                    0..self.num_heads,
+                    0..self.head_dim,
+                ])
                 .reshape([batch, cross_len, self.num_heads, self.head_dim])
                 .swap_dims(1, 2);
-            let cross_v = cross_qkv.slice([0..batch, 0..cross_len, 2..3, 0..self.num_heads, 0..self.head_dim])
+            let cross_v = cross_qkv
+                .slice([
+                    0..batch,
+                    0..cross_len,
+                    2..3,
+                    0..self.num_heads,
+                    0..self.head_dim,
+                ])
                 .reshape([batch, cross_len, self.num_heads, self.head_dim])
                 .swap_dims(1, 2);
 
@@ -364,7 +415,9 @@ impl<B: Backend> FluxAttention<B> {
         let out = attn.matmul(v);
 
         // Reshape back
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.proj.forward(out)
     }
 }
@@ -409,13 +462,23 @@ impl<B: Backend> FluxDoubleBlock<B> {
         let mod_params = mod_params.reshape([batch, 1, 6, hidden]);
 
         // Image stream with modulation
-        let img_mod1_shift = mod_params.clone().slice([0..batch, 0..1, 0..1, 0..hidden]).reshape([batch, 1, hidden]);
-        let img_mod1_scale = mod_params.clone().slice([0..batch, 0..1, 1..2, 0..hidden]).reshape([batch, 1, hidden]);
-        let img_gate = mod_params.clone().slice([0..batch, 0..1, 2..3, 0..hidden]).reshape([batch, 1, hidden]);
+        let img_mod1_shift = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 0..1, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let img_mod1_scale = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 1..2, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let img_gate = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 2..3, 0..hidden])
+            .reshape([batch, 1, hidden]);
 
         // Modulated image norm
         let img_normed = self.img_norm1.forward(img.clone());
-        let img_normed = (Tensor::ones_like(&img_mod1_scale) + img_mod1_scale) * img_normed + img_mod1_shift;
+        let img_normed =
+            (Tensor::ones_like(&img_mod1_scale) + img_mod1_scale) * img_normed + img_mod1_shift;
 
         // Image self-attention with cross-attention to text
         let img_attn_out = self.img_attn.forward(img_normed, rope, Some(txt.clone()));
@@ -425,13 +488,22 @@ impl<B: Backend> FluxDoubleBlock<B> {
         let img = img.clone() + img_gate * self.img_ffn.forward(self.img_norm2.forward(img));
 
         // Text stream with modulation
-        let txt_mod1_shift = mod_params.clone().slice([0..batch, 0..1, 3..4, 0..hidden]).reshape([batch, 1, hidden]);
-        let txt_mod1_scale = mod_params.clone().slice([0..batch, 0..1, 4..5, 0..hidden]).reshape([batch, 1, hidden]);
-        let txt_gate = mod_params.slice([0..batch, 0..1, 5..6, 0..hidden]).reshape([batch, 1, hidden]);
+        let txt_mod1_shift = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 3..4, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let txt_mod1_scale = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 4..5, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let txt_gate = mod_params
+            .slice([0..batch, 0..1, 5..6, 0..hidden])
+            .reshape([batch, 1, hidden]);
 
         // Modulated text norm
         let txt_normed = self.txt_norm1.forward(txt.clone());
-        let txt_normed = (Tensor::ones_like(&txt_mod1_scale) + txt_mod1_scale) * txt_normed + txt_mod1_shift;
+        let txt_normed =
+            (Tensor::ones_like(&txt_mod1_scale) + txt_mod1_scale) * txt_normed + txt_mod1_shift;
 
         // Text self-attention with cross-attention to image
         let txt_attn_out = self.txt_attn.forward(txt_normed, rope, Some(img.clone()));
@@ -453,7 +525,11 @@ pub struct FluxSingleBlockConfig {
 
 impl FluxSingleBlockConfig {
     fn new(hidden_size: usize, num_heads: usize, intermediate_size: usize) -> Self {
-        Self { hidden_size, num_heads, intermediate_size }
+        Self {
+            hidden_size,
+            num_heads,
+            intermediate_size,
+        }
     }
 
     fn init<B: Backend>(&self, device: &B::Device) -> FluxSingleBlock<B> {
@@ -506,9 +582,17 @@ impl<B: Backend> FluxSingleBlock<B> {
         let mod_params = self.modulation.forward(cond);
         let mod_params = mod_params.reshape([batch, 1, 3, hidden]);
 
-        let shift = mod_params.clone().slice([0..batch, 0..1, 0..1, 0..hidden]).reshape([batch, 1, hidden]);
-        let scale = mod_params.clone().slice([0..batch, 0..1, 1..2, 0..hidden]).reshape([batch, 1, hidden]);
-        let gate = mod_params.slice([0..batch, 0..1, 2..3, 0..hidden]).reshape([batch, 1, hidden]);
+        let shift = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 0..1, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let scale = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 1..2, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let gate = mod_params
+            .slice([0..batch, 0..1, 2..3, 0..hidden])
+            .reshape([batch, 1, hidden]);
 
         // Modulated norm
         let x_normed = self.norm.forward(x.clone());

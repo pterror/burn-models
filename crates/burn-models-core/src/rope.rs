@@ -142,11 +142,7 @@ impl<B: Backend> RotaryEmbedding<B> {
     }
 
     /// Applies rotation to a single tensor
-    fn apply_rotary(
-        x: Tensor<B, 4>,
-        cos: Tensor<B, 4>,
-        sin: Tensor<B, 4>,
-    ) -> Tensor<B, 4> {
+    fn apply_rotary(x: Tensor<B, 4>, cos: Tensor<B, 4>, sin: Tensor<B, 4>) -> Tensor<B, 4> {
         // Rotate pairs: for (x0, x1), compute (x0*cos - x1*sin, x0*sin + x1*cos)
         let x_rotated = Self::rotate_half(x.clone());
         x * cos + x_rotated * sin
@@ -161,7 +157,9 @@ impl<B: Backend> RotaryEmbedding<B> {
         let x_reshaped = x.reshape([batch, heads, seq_len, half, 2]);
 
         // Split into even and odd
-        let x_even = x_reshaped.clone().slice([0..batch, 0..heads, 0..seq_len, 0..half, 0..1]);
+        let x_even = x_reshaped
+            .clone()
+            .slice([0..batch, 0..heads, 0..seq_len, 0..half, 0..1]);
         let x_odd = x_reshaped.slice([0..batch, 0..heads, 0..seq_len, 0..half, 1..2]);
 
         // Rotate: (-odd, even)
@@ -223,7 +221,9 @@ mod tests {
         let q_rot_data: Vec<f32> = q_rot.into_data().to_vec().unwrap();
 
         // At least some values should change
-        let any_changed = q_data.iter().zip(q_rot_data.iter())
+        let any_changed = q_data
+            .iter()
+            .zip(q_rot_data.iter())
             .any(|(orig, rotated)| (orig - rotated).abs() > 1e-6);
         assert!(any_changed, "RoPE should modify the input values");
     }

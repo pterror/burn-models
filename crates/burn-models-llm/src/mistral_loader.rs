@@ -5,9 +5,9 @@
 
 use std::path::Path;
 
-use burn::prelude::*;
 use burn::module::Param;
 use burn::nn::{EmbeddingConfig, LinearConfig};
+use burn::prelude::*;
 use burn_models_convert::loader::SafeTensorFile;
 use thiserror::Error;
 
@@ -46,7 +46,13 @@ pub fn load_mistral<B: Backend, P: AsRef<Path>>(
     let file = SafeTensorFile::open(path)?;
 
     // Load embeddings
-    let embed_tokens = load_embedding(&file, "model.embed_tokens.weight", config.vocab_size, config.hidden_size, device)?;
+    let embed_tokens = load_embedding(
+        &file,
+        "model.embed_tokens.weight",
+        config.vocab_size,
+        config.hidden_size,
+        device,
+    )?;
 
     // Load transformer layers
     let mut layers = Vec::with_capacity(config.num_layers);
@@ -56,10 +62,23 @@ pub fn load_mistral<B: Backend, P: AsRef<Path>>(
     }
 
     // Load final norm
-    let norm = load_rmsnorm(&file, "model.norm.weight", config.hidden_size, config.norm_eps, device)?;
+    let norm = load_rmsnorm(
+        &file,
+        "model.norm.weight",
+        config.hidden_size,
+        config.norm_eps,
+        device,
+    )?;
 
     // Load LM head
-    let lm_head = load_linear(&file, "lm_head.weight", None, config.hidden_size, config.vocab_size, device)?;
+    let lm_head = load_linear(
+        &file,
+        "lm_head.weight",
+        None,
+        config.hidden_size,
+        config.vocab_size,
+        device,
+    )?;
 
     let model = Mistral {
         embed_tokens,

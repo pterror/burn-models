@@ -3,8 +3,8 @@
 //! ControlNet adds spatial conditioning to diffusion models via additional
 //! input images (edge maps, depth maps, poses, etc.)
 
-use burn::nn::conv::{Conv2d, Conv2dConfig};
 use burn::nn::PaddingConfig2d;
+use burn::nn::conv::{Conv2d, Conv2dConfig};
 use burn::prelude::*;
 
 use crate::blocks::{Downsample, ResBlock, SpatialTransformer, timestep_embedding};
@@ -113,11 +113,21 @@ impl<B: Backend> ControlNetEncoderBlock<B> {
         let mut res_blocks = Vec::new();
 
         // First res block may change channels
-        res_blocks.push(ResBlock::new(in_channels, out_channels, time_emb_dim, device));
+        res_blocks.push(ResBlock::new(
+            in_channels,
+            out_channels,
+            time_emb_dim,
+            device,
+        ));
 
         // Remaining res blocks maintain channels
         for _ in 1..num_res_blocks {
-            res_blocks.push(ResBlock::new(out_channels, out_channels, time_emb_dim, device));
+            res_blocks.push(ResBlock::new(
+                out_channels,
+                out_channels,
+                time_emb_dim,
+                device,
+            ));
         }
 
         let attention = if has_attention {
@@ -236,10 +246,9 @@ impl<B: Backend> ControlNet<B> {
             .init(device);
 
         // Time embedding MLP
-        let time_embed_0 = burn::nn::LinearConfig::new(config.model_channels, time_embed_dim)
-            .init(device);
-        let time_embed_2 = burn::nn::LinearConfig::new(time_embed_dim, time_embed_dim)
-            .init(device);
+        let time_embed_0 =
+            burn::nn::LinearConfig::new(config.model_channels, time_embed_dim).init(device);
+        let time_embed_2 = burn::nn::LinearConfig::new(time_embed_dim, time_embed_dim).init(device);
 
         // Input convolution
         let input_conv = Conv2dConfig::new([4, config.model_channels], [3, 3])
@@ -369,8 +378,8 @@ impl<B: Backend> ControlNet<B> {
         for level in 0..self.num_levels {
             // Process res blocks at this level
             for _ in 0..blocks_per_level {
-                let (new_hidden, control) = self.encoder_blocks[block_idx]
-                    .forward(hidden, t_emb.clone(), context.clone());
+                let (new_hidden, control) =
+                    self.encoder_blocks[block_idx].forward(hidden, t_emb.clone(), context.clone());
                 hidden = new_hidden;
                 control_outputs.push(control);
                 block_idx += 1;
@@ -417,7 +426,8 @@ impl<B: Backend> ControlNetOutput<B> {
     /// Combine with another ControlNet output (for multi-ControlNet)
     pub fn add(self, other: Self) -> Self {
         Self {
-            controls: self.controls
+            controls: self
+                .controls
                 .into_iter()
                 .zip(other.controls)
                 .map(|(a, b)| a + b)

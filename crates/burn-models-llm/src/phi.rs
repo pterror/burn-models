@@ -18,8 +18,8 @@
 //! - Phi-3 Medium (14B) - 40 heads, 10 KV heads (GQA)
 //! - Phi-3.5 Mini (3.8B) - Similar to Phi-3 Mini
 
-use burn::prelude::*;
 use burn::nn::{Embedding, EmbeddingConfig, Linear, LinearConfig};
+use burn::prelude::*;
 
 use burn_models_core::kv_cache::ModelKvCache;
 use burn_models_core::rmsnorm::RmsNorm;
@@ -152,13 +152,16 @@ impl PhiConfig {
         let head_dim = self.hidden_size / self.num_heads;
 
         let layers: Vec<PhiLayer<B>> = (0..self.num_layers)
-            .map(|_| PhiLayerConfig {
-                hidden_size: self.hidden_size,
-                intermediate_size: self.intermediate_size,
-                num_heads: self.num_heads,
-                num_kv_heads: self.num_kv_heads,
-                norm_eps: self.norm_eps,
-            }.init(device))
+            .map(|_| {
+                PhiLayerConfig {
+                    hidden_size: self.hidden_size,
+                    intermediate_size: self.intermediate_size,
+                    num_heads: self.num_heads,
+                    num_kv_heads: self.num_kv_heads,
+                    norm_eps: self.norm_eps,
+                }
+                .init(device)
+            })
             .collect();
 
         let model = Phi {
@@ -246,13 +249,29 @@ impl<B: Backend> PhiAttention<B> {
         let qkv = self.qkv_proj.forward(x);
 
         // Split into Q, K, V
-        let q = qkv.clone().slice([0..batch, 0..seq_len, 0..self.num_heads * self.head_dim]);
-        let k = qkv.clone().slice([0..batch, 0..seq_len, self.num_heads * self.head_dim..self.num_heads * self.head_dim + kv_dim]);
-        let v = qkv.slice([0..batch, 0..seq_len, self.num_heads * self.head_dim + kv_dim..self.num_heads * self.head_dim + 2 * kv_dim]);
+        let q = qkv
+            .clone()
+            .slice([0..batch, 0..seq_len, 0..self.num_heads * self.head_dim]);
+        let k = qkv.clone().slice([
+            0..batch,
+            0..seq_len,
+            self.num_heads * self.head_dim..self.num_heads * self.head_dim + kv_dim,
+        ]);
+        let v = qkv.slice([
+            0..batch,
+            0..seq_len,
+            self.num_heads * self.head_dim + kv_dim..self.num_heads * self.head_dim + 2 * kv_dim,
+        ]);
 
-        let q = q.reshape([batch, seq_len, self.num_heads, self.head_dim]).swap_dims(1, 2);
-        let k = k.reshape([batch, seq_len, self.num_kv_heads, self.head_dim]).swap_dims(1, 2);
-        let v = v.reshape([batch, seq_len, self.num_kv_heads, self.head_dim]).swap_dims(1, 2);
+        let q = q
+            .reshape([batch, seq_len, self.num_heads, self.head_dim])
+            .swap_dims(1, 2);
+        let k = k
+            .reshape([batch, seq_len, self.num_kv_heads, self.head_dim])
+            .swap_dims(1, 2);
+        let v = v
+            .reshape([batch, seq_len, self.num_kv_heads, self.head_dim])
+            .swap_dims(1, 2);
 
         let (q, k) = rope.forward(q, k, start_pos);
 
@@ -270,7 +289,9 @@ impl<B: Backend> PhiAttention<B> {
         let attn = burn::tensor::activation::softmax(attn, 3);
         let out = attn.matmul(v);
 
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.o_proj.forward(out)
     }
 
@@ -282,9 +303,12 @@ impl<B: Backend> PhiAttention<B> {
         let [batch, kv_heads, seq_len, head_dim] = x.dims();
         let n_rep = self.num_heads / self.num_kv_heads;
 
-        x.unsqueeze_dim::<5>(2)
-            .repeat_dim(2, n_rep)
-            .reshape([batch, kv_heads * n_rep, seq_len, head_dim])
+        x.unsqueeze_dim::<5>(2).repeat_dim(2, n_rep).reshape([
+            batch,
+            kv_heads * n_rep,
+            seq_len,
+            head_dim,
+        ])
     }
 }
 
@@ -307,8 +331,14 @@ impl<B: Backend> PhiFfn<B> {
         let gate_up = self.gate_up_proj.forward(x);
 
         // Split into gate and up
-        let gate = gate_up.clone().slice([0..batch, 0..seq_len, 0..self.intermediate_size]);
-        let up = gate_up.slice([0..batch, 0..seq_len, self.intermediate_size..2 * self.intermediate_size]);
+        let gate = gate_up
+            .clone()
+            .slice([0..batch, 0..seq_len, 0..self.intermediate_size]);
+        let up = gate_up.slice([
+            0..batch,
+            0..seq_len,
+            self.intermediate_size..2 * self.intermediate_size,
+        ]);
 
         // SwiGLU: silu(gate) * up
         let gate = burn::tensor::activation::silu(gate);
@@ -413,7 +443,11 @@ impl<B: Backend> Phi<B> {
             let output = self.forward(all_tokens.clone(), runtime, None);
 
             let seq_len = all_tokens.dims()[1];
-            let last_logits = output.logits.slice([0..batch, (seq_len - 1)..seq_len, 0..runtime.config.vocab_size]);
+            let last_logits = output.logits.slice([
+                0..batch,
+                (seq_len - 1)..seq_len,
+                0..runtime.config.vocab_size,
+            ]);
             let last_logits = last_logits.reshape([batch, runtime.config.vocab_size]);
 
             let scaled_logits = if (temperature - 1.0).abs() > 1e-6 {

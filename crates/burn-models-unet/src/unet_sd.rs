@@ -3,8 +3,8 @@
 //! The diffusion backbone for Stable Diffusion 1.x models.
 
 use burn::nn::{
-    conv::{Conv2d, Conv2dConfig},
     Linear, LinearConfig, PaddingConfig2d,
+    conv::{Conv2d, Conv2dConfig},
 };
 use burn::prelude::*;
 
@@ -12,7 +12,8 @@ use burn_models_core::groupnorm::GroupNorm;
 use burn_models_core::silu::silu;
 
 use crate::blocks::{
-    timestep_embedding_with_freqs, timestep_freqs, Downsample, ResBlock, SpatialTransformer, Upsample,
+    Downsample, ResBlock, SpatialTransformer, Upsample, timestep_embedding_with_freqs,
+    timestep_freqs,
 };
 
 /// UNet configuration for SD 1.x
@@ -303,17 +304,35 @@ impl<B: Backend> DownBlock<B> {
         Self {
             res1: ResBlock::new(in_ch, out_ch, time_dim, device),
             attn1: if has_attention {
-                Some(SpatialTransformer::new(out_ch, num_heads, head_dim, context_dim, transformer_depth, device))
+                Some(SpatialTransformer::new(
+                    out_ch,
+                    num_heads,
+                    head_dim,
+                    context_dim,
+                    transformer_depth,
+                    device,
+                ))
             } else {
                 None
             },
             res2: ResBlock::new(out_ch, out_ch, time_dim, device),
             attn2: if has_attention {
-                Some(SpatialTransformer::new(out_ch, num_heads, head_dim, context_dim, transformer_depth, device))
+                Some(SpatialTransformer::new(
+                    out_ch,
+                    num_heads,
+                    head_dim,
+                    context_dim,
+                    transformer_depth,
+                    device,
+                ))
             } else {
                 None
             },
-            downsample: if downsample { Some(Downsample::new(out_ch, device)) } else { None },
+            downsample: if downsample {
+                Some(Downsample::new(out_ch, device))
+            } else {
+                None
+            },
         }
     }
 
@@ -378,7 +397,14 @@ impl<B: Backend> MidBlock<B> {
     ) -> Self {
         Self {
             res1: ResBlock::new(channels, channels, time_dim, device),
-            attn: SpatialTransformer::new(channels, num_heads, head_dim, context_dim, transformer_depth, device),
+            attn: SpatialTransformer::new(
+                channels,
+                num_heads,
+                head_dim,
+                context_dim,
+                transformer_depth,
+                device,
+            ),
             res2: ResBlock::new(channels, channels, time_dim, device),
         }
     }
@@ -419,11 +445,22 @@ impl<B: Backend> UpBlock<B> {
         Self {
             res: ResBlock::new(in_ch, out_ch, time_dim, device),
             attn: if has_attention {
-                Some(SpatialTransformer::new(out_ch, num_heads, head_dim, context_dim, transformer_depth, device))
+                Some(SpatialTransformer::new(
+                    out_ch,
+                    num_heads,
+                    head_dim,
+                    context_dim,
+                    transformer_depth,
+                    device,
+                ))
             } else {
                 None
             },
-            upsample: if upsample { Some(Upsample::new(out_ch, device)) } else { None },
+            upsample: if upsample {
+                Some(Upsample::new(out_ch, device))
+            } else {
+                None
+            },
         }
     }
 

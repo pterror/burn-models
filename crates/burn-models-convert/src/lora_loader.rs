@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::loader::SafeTensorFile;
-use burn_models_core::lora::{LoraModel, LoraWeight, LoraConvWeight};
+use burn_models_core::lora::{LoraConvWeight, LoraModel, LoraWeight};
 
 /// LoRA file format
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -27,8 +27,8 @@ pub fn load_lora<B: Backend>(
     format: LoraFormat,
     device: &B::Device,
 ) -> Result<LoraModel<B>, LoraLoadError> {
-    let file = SafeTensorFile::open(path.as_ref())
-        .map_err(|e| LoraLoadError::FileError(e.to_string()))?;
+    let file =
+        SafeTensorFile::open(path.as_ref()).map_err(|e| LoraLoadError::FileError(e.to_string()))?;
 
     let names: Vec<String> = file.names().map(|s| s.to_string()).collect();
 
@@ -48,7 +48,9 @@ pub fn load_lora<B: Backend>(
 /// Detects the LoRA format from tensor key names
 fn detect_format(names: &[String]) -> LoraFormat {
     // Check for Kohya-style keys
-    let has_kohya = names.iter().any(|k| k.starts_with("lora_unet_") || k.starts_with("lora_te_"));
+    let has_kohya = names
+        .iter()
+        .any(|k| k.starts_with("lora_unet_") || k.starts_with("lora_te_"));
 
     if has_kohya {
         LoraFormat::Kohya
@@ -72,11 +74,13 @@ fn load_kohya_lora<B: Backend>(
     for key in names {
         // Parse Kohya-style keys: lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.lora_down.weight
         if let Some(base) = key.strip_suffix(".lora_down.weight") {
-            groups.entry(base.to_string())
+            groups
+                .entry(base.to_string())
                 .or_insert((None, None, None))
                 .0 = Some(key.clone());
         } else if let Some(base) = key.strip_suffix(".lora_up.weight") {
-            groups.entry(base.to_string())
+            groups
+                .entry(base.to_string())
                 .or_insert((None, None, None))
                 .1 = Some(key.clone());
         } else if let Some(base) = key.strip_suffix(".alpha") {
@@ -84,7 +88,8 @@ fn load_kohya_lora<B: Backend>(
             if let Ok(data) = file.load_f32::<B, 1>(key, device) {
                 let alpha_data = data.into_data();
                 let alpha: f32 = alpha_data.to_vec().unwrap()[0];
-                groups.entry(base.to_string())
+                groups
+                    .entry(base.to_string())
                     .or_insert((None, None, None))
                     .2 = Some(alpha);
             }
@@ -141,19 +146,17 @@ fn load_diffusers_lora<B: Backend>(
     for key in names {
         // Parse diffusers-style keys
         if key.ends_with(".down.weight") || key.ends_with("_lora.down.weight") {
-            let base = key.trim_end_matches(".down.weight")
-                         .trim_end_matches("_lora.down.weight")
-                         .trim_end_matches("_lora");
-            groups.entry(base.to_string())
-                .or_insert((None, None))
-                .0 = Some(key.clone());
+            let base = key
+                .trim_end_matches(".down.weight")
+                .trim_end_matches("_lora.down.weight")
+                .trim_end_matches("_lora");
+            groups.entry(base.to_string()).or_insert((None, None)).0 = Some(key.clone());
         } else if key.ends_with(".up.weight") || key.ends_with("_lora.up.weight") {
-            let base = key.trim_end_matches(".up.weight")
-                         .trim_end_matches("_lora.up.weight")
-                         .trim_end_matches("_lora");
-            groups.entry(base.to_string())
-                .or_insert((None, None))
-                .1 = Some(key.clone());
+            let base = key
+                .trim_end_matches(".up.weight")
+                .trim_end_matches("_lora.up.weight")
+                .trim_end_matches("_lora");
+            groups.entry(base.to_string()).or_insert((None, None)).1 = Some(key.clone());
         }
     }
 

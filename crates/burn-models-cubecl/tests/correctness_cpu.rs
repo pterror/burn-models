@@ -11,10 +11,9 @@ use burn::prelude::*;
 use burn_cpu::{Cpu, CpuDevice};
 use burn_cubecl::tensor::CubeTensor;
 use burn_models_cubecl::{
-    conv3d, conv3d_nthwc, avg_pool3d, max_pool3d,
-    flash_attention, FlashAttentionOptions,
-    groupnorm, groupnorm_silu, GroupNormSiLuOptions,
-    Conv3dOptions, Conv3dOptimizedOptions, Pool3dOptions, Layout,
+    Conv3dOptimizedOptions, Conv3dOptions, FlashAttentionOptions, GroupNormSiLuOptions, Layout,
+    Pool3dOptions, avg_pool3d, conv3d, conv3d_nthwc, flash_attention, groupnorm, groupnorm_silu,
+    max_pool3d,
 };
 use burn_ndarray::NdArray;
 use cubecl::cpu::CpuRuntime;
@@ -122,9 +121,11 @@ mod reference {
 
         let cols = im2col_3d(x_padded, [k_t, k_h, k_w], stride, [out_t, out_h, out_w]);
 
-        let weight_expanded = weight_2d
-            .unsqueeze_dim::<3>(0)
-            .expand([batch, out_ch, in_ch_per_group * kernel_elements]);
+        let weight_expanded = weight_2d.unsqueeze_dim::<3>(0).expand([
+            batch,
+            out_ch,
+            in_ch_per_group * kernel_elements,
+        ]);
 
         let out = weight_expanded.matmul(cols);
 
@@ -244,7 +245,8 @@ fn test_cpu_conv3d_1x1x1_kernel() {
     };
 
     let cubecl_output = run_cubecl_conv3d(input, weight, Some(bias), options);
-    let ref_output = reference::conv3d_reference(input_ref, weight_ref, Some(bias_ref), [1, 1, 1], [0, 0, 0]);
+    let ref_output =
+        reference::conv3d_reference(input_ref, weight_ref, Some(bias_ref), [1, 1, 1], [0, 0, 0]);
 
     assert_eq!(cubecl_output.dims(), ref_output.dims());
     assert_tensors_approx_eq(cubecl_output, ref_output, 1e-5, "1x1x1 kernel (CPU)");
@@ -284,7 +286,8 @@ fn test_cpu_conv3d_3x3x3_same_padding() {
     };
 
     let cubecl_output = run_cubecl_conv3d(input, weight, Some(bias), options);
-    let ref_output = reference::conv3d_reference(input_ref, weight_ref, Some(bias_ref), [1, 1, 1], [1, 1, 1]);
+    let ref_output =
+        reference::conv3d_reference(input_ref, weight_ref, Some(bias_ref), [1, 1, 1], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [1, 8, 8, 8, 8]);
     assert_tensors_approx_eq(cubecl_output, ref_output, 1e-4, "3x3x3 same padding (CPU)");
@@ -392,7 +395,8 @@ fn test_cpu_conv3d_batch_2() {
     };
 
     let cubecl_output = run_cubecl_conv3d(input, weight, Some(bias), options);
-    let ref_output = reference::conv3d_reference(input_ref, weight_ref, Some(bias_ref), [1, 1, 1], [1, 1, 1]);
+    let ref_output =
+        reference::conv3d_reference(input_ref, weight_ref, Some(bias_ref), [1, 1, 1], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [2, 3, 4, 4, 4]);
     assert_tensors_approx_eq(cubecl_output, ref_output, 1e-4, "batch 2 (CPU)");
@@ -525,9 +529,15 @@ fn test_cpu_conv3d_nthwc_3x3x3_same_padding() {
 
     // Convert back to NCTHW for comparison with reference
     let cubecl_output_ncthw = nthwc_to_ncthw(cubecl_output_nthwc);
-    let ref_output = reference::conv3d_reference(input_ref, weight_ref, Some(bias_ref), [1, 1, 1], [1, 1, 1]);
+    let ref_output =
+        reference::conv3d_reference(input_ref, weight_ref, Some(bias_ref), [1, 1, 1], [1, 1, 1]);
 
-    assert_tensors_approx_eq(cubecl_output_ncthw, ref_output, 1e-4, "NTHWC 3x3x3 same padding (CPU)");
+    assert_tensors_approx_eq(
+        cubecl_output_ncthw,
+        ref_output,
+        1e-4,
+        "NTHWC 3x3x3 same padding (CPU)",
+    );
 }
 
 #[test]
@@ -567,7 +577,12 @@ fn test_cpu_conv3d_nthwc_stride_2() {
     let cubecl_output_ncthw = nthwc_to_ncthw(cubecl_output_nthwc);
     let ref_output = reference::conv3d_reference(input_ref, weight_ref, None, [2, 2, 2], [1, 1, 1]);
 
-    assert_tensors_approx_eq(cubecl_output_ncthw, ref_output, 1e-4, "NTHWC stride 2 (CPU)");
+    assert_tensors_approx_eq(
+        cubecl_output_ncthw,
+        ref_output,
+        1e-4,
+        "NTHWC stride 2 (CPU)",
+    );
 }
 
 // ============================================================================
@@ -623,7 +638,8 @@ fn test_cpu_optimized_conv3d_3x3x3_same_padding() {
     let input_ref = Tensor::<RefBackend, 5>::from_data(input_ncthw.to_data(), &ref_device);
     let weight_ref = Tensor::<RefBackend, 5>::from_data(weight_ncthw.to_data(), &ref_device);
     let bias_ref = Tensor::<RefBackend, 1>::from_data(bias.to_data(), &ref_device);
-    let ref_output = reference::conv3d_reference(input_ref, weight_ref, Some(bias_ref), [1, 1, 1], [1, 1, 1]);
+    let ref_output =
+        reference::conv3d_reference(input_ref, weight_ref, Some(bias_ref), [1, 1, 1], [1, 1, 1]);
 
     // Optimized kernel: NTHWC layout
     let input_nthwc = ncthw_to_nthwc(input_ncthw);
@@ -642,7 +658,12 @@ fn test_cpu_optimized_conv3d_3x3x3_same_padding() {
     let opt_output_ncthw = nthwc_to_ncthw(opt_output_nthwc);
 
     assert_eq!(opt_output_ncthw.dims(), [1, 8, 8, 8, 8]);
-    assert_tensors_approx_eq(opt_output_ncthw, ref_output, 1e-4, "optimized 3x3x3 same padding (CPU)");
+    assert_tensors_approx_eq(
+        opt_output_ncthw,
+        ref_output,
+        1e-4,
+        "optimized 3x3x3 same padding (CPU)",
+    );
 }
 
 #[test]
@@ -679,7 +700,12 @@ fn test_cpu_optimized_conv3d_no_bias() {
     let opt_output_ncthw = nthwc_to_ncthw(opt_output_nthwc);
 
     assert_eq!(opt_output_ncthw.dims(), [1, 4, 4, 4, 4]);
-    assert_tensors_approx_eq(opt_output_ncthw, ref_output, 1e-4, "optimized no bias (CPU)");
+    assert_tensors_approx_eq(
+        opt_output_ncthw,
+        ref_output,
+        1e-4,
+        "optimized no bias (CPU)",
+    );
 }
 
 // ============================================================================
@@ -718,13 +744,20 @@ mod pool_reference {
                             for kt in 0..kernel_size[0] {
                                 for kh in 0..kernel_size[1] {
                                     for kw in 0..kernel_size[2] {
-                                        let it = (ot * stride[0] + kt) as isize - padding[0] as isize;
-                                        let ih = (oh * stride[1] + kh) as isize - padding[1] as isize;
-                                        let iw = (ow * stride[2] + kw) as isize - padding[2] as isize;
+                                        let it =
+                                            (ot * stride[0] + kt) as isize - padding[0] as isize;
+                                        let ih =
+                                            (oh * stride[1] + kh) as isize - padding[1] as isize;
+                                        let iw =
+                                            (ow * stride[2] + kw) as isize - padding[2] as isize;
 
-                                        if it >= 0 && (it as usize) < in_t &&
-                                           ih >= 0 && (ih as usize) < in_h &&
-                                           iw >= 0 && (iw as usize) < in_w {
+                                        if it >= 0
+                                            && (it as usize) < in_t
+                                            && ih >= 0
+                                            && (ih as usize) < in_h
+                                            && iw >= 0
+                                            && (iw as usize) < in_w
+                                        {
                                             let in_idx = b * channels * in_t * in_h * in_w
                                                 + c * in_t * in_h * in_w
                                                 + (it as usize) * in_h * in_w
@@ -782,13 +815,20 @@ mod pool_reference {
                             for kt in 0..kernel_size[0] {
                                 for kh in 0..kernel_size[1] {
                                     for kw in 0..kernel_size[2] {
-                                        let it = (ot * stride[0] + kt) as isize - padding[0] as isize;
-                                        let ih = (oh * stride[1] + kh) as isize - padding[1] as isize;
-                                        let iw = (ow * stride[2] + kw) as isize - padding[2] as isize;
+                                        let it =
+                                            (ot * stride[0] + kt) as isize - padding[0] as isize;
+                                        let ih =
+                                            (oh * stride[1] + kh) as isize - padding[1] as isize;
+                                        let iw =
+                                            (ow * stride[2] + kw) as isize - padding[2] as isize;
 
-                                        if it >= 0 && (it as usize) < in_t &&
-                                           ih >= 0 && (ih as usize) < in_h &&
-                                           iw >= 0 && (iw as usize) < in_w {
+                                        if it >= 0
+                                            && (it as usize) < in_t
+                                            && ih >= 0
+                                            && (ih as usize) < in_h
+                                            && iw >= 0
+                                            && (iw as usize) < in_w
+                                        {
                                             let in_idx = b * channels * in_t * in_h * in_w
                                                 + c * in_t * in_h * in_w
                                                 + (it as usize) * in_h * in_w
@@ -859,10 +899,16 @@ fn test_cpu_avg_pool3d_2x2x2_no_padding() {
     };
 
     let cubecl_output = run_cubecl_avg_pool3d(input, options);
-    let ref_output = pool_reference::avg_pool3d_reference(input_ref, [2, 2, 2], [2, 2, 2], [0, 0, 0]);
+    let ref_output =
+        pool_reference::avg_pool3d_reference(input_ref, [2, 2, 2], [2, 2, 2], [0, 0, 0]);
 
     assert_eq!(cubecl_output.dims(), [1, 2, 2, 2, 2]);
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-5, "avg_pool3d 2x2x2 no padding (CPU)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-5,
+        "avg_pool3d 2x2x2 no padding (CPU)",
+    );
 }
 
 #[test]
@@ -885,10 +931,16 @@ fn test_cpu_avg_pool3d_with_padding() {
     };
 
     let cubecl_output = run_cubecl_avg_pool3d(input, options);
-    let ref_output = pool_reference::avg_pool3d_reference(input_ref, [3, 3, 3], [2, 2, 2], [1, 1, 1]);
+    let ref_output =
+        pool_reference::avg_pool3d_reference(input_ref, [3, 3, 3], [2, 2, 2], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [1, 3, 3, 3, 3]);
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-5, "avg_pool3d with padding (CPU)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-5,
+        "avg_pool3d with padding (CPU)",
+    );
 }
 
 #[test]
@@ -911,10 +963,16 @@ fn test_cpu_max_pool3d_2x2x2_no_padding() {
     };
 
     let cubecl_output = run_cubecl_max_pool3d(input, options);
-    let ref_output = pool_reference::max_pool3d_reference(input_ref, [2, 2, 2], [2, 2, 2], [0, 0, 0]);
+    let ref_output =
+        pool_reference::max_pool3d_reference(input_ref, [2, 2, 2], [2, 2, 2], [0, 0, 0]);
 
     assert_eq!(cubecl_output.dims(), [1, 2, 2, 2, 2]);
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-5, "max_pool3d 2x2x2 no padding (CPU)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-5,
+        "max_pool3d 2x2x2 no padding (CPU)",
+    );
 }
 
 #[test]
@@ -937,10 +995,16 @@ fn test_cpu_max_pool3d_with_padding() {
     };
 
     let cubecl_output = run_cubecl_max_pool3d(input, options);
-    let ref_output = pool_reference::max_pool3d_reference(input_ref, [3, 3, 3], [2, 2, 2], [1, 1, 1]);
+    let ref_output =
+        pool_reference::max_pool3d_reference(input_ref, [3, 3, 3], [2, 2, 2], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [2, 4, 4, 4, 4]);
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-5, "max_pool3d with padding (CPU)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-5,
+        "max_pool3d with padding (CPU)",
+    );
 }
 
 #[test]
@@ -963,10 +1027,16 @@ fn test_cpu_avg_pool3d_asymmetric_kernel() {
     };
 
     let cubecl_output = run_cubecl_avg_pool3d(input, options);
-    let ref_output = pool_reference::avg_pool3d_reference(input_ref, [2, 3, 2], [2, 2, 2], [0, 0, 0]);
+    let ref_output =
+        pool_reference::avg_pool3d_reference(input_ref, [2, 3, 2], [2, 2, 2], [0, 0, 0]);
 
     assert_eq!(cubecl_output.dims(), [1, 2, 4, 2, 2]);
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-5, "avg_pool3d asymmetric kernel (CPU)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-5,
+        "avg_pool3d asymmetric kernel (CPU)",
+    );
 }
 
 // ============================================================================
@@ -979,9 +1049,9 @@ mod attention_reference {
 
     /// Standard causal attention: softmax(Q @ K^T / sqrt(d) + causal_mask) @ V
     pub fn causal_attention_reference<B: Backend>(
-        q: Tensor<B, 4>,  // [batch, heads, seq_q, head_dim]
-        k: Tensor<B, 4>,  // [batch, heads, seq_k, head_dim]
-        v: Tensor<B, 4>,  // [batch, heads, seq_k, val_dim]
+        q: Tensor<B, 4>, // [batch, heads, seq_q, head_dim]
+        k: Tensor<B, 4>, // [batch, heads, seq_k, head_dim]
+        v: Tensor<B, 4>, // [batch, heads, seq_k, val_dim]
     ) -> Tensor<B, 4> {
         let [batch, heads, seq_q, head_dim] = q.dims();
         let [_, _, seq_k, _] = k.dims();
@@ -1067,7 +1137,12 @@ fn test_cpu_flash_attention_basic() {
     let ref_output = attention_reference::causal_attention_reference(q_ref, k_ref, v_ref);
 
     assert_eq!(flash_output.dims(), ref_output.dims());
-    assert_tensors_approx_eq(flash_output, ref_output, 1e-3, "flash attention basic (CPU)");
+    assert_tensors_approx_eq(
+        flash_output,
+        ref_output,
+        1e-3,
+        "flash attention basic (CPU)",
+    );
 }
 
 #[test]
@@ -1105,7 +1180,12 @@ fn test_cpu_flash_attention_longer_sequence() {
     let ref_output = attention_reference::causal_attention_reference(q_ref, k_ref, v_ref);
 
     assert_eq!(flash_output.dims(), ref_output.dims());
-    assert_tensors_approx_eq(flash_output, ref_output, 5e-3, "flash attention longer seq (CPU)");
+    assert_tensors_approx_eq(
+        flash_output,
+        ref_output,
+        5e-3,
+        "flash attention longer seq (CPU)",
+    );
 }
 
 #[test]
@@ -1118,7 +1198,7 @@ fn test_cpu_flash_attention_small() {
     let batch = 1;
     let heads = 2;
     let seq_len = 8;
-    let head_dim = 64;  // Must be divisible by line_size
+    let head_dim = 64; // Must be divisible by line_size
 
     let q = Tensor::<TestBackend, 4>::random(
         [batch, heads, seq_len, head_dim],
@@ -1144,7 +1224,12 @@ fn test_cpu_flash_attention_small() {
     let ref_output = attention_reference::causal_attention_reference(q_ref, k_ref, v_ref);
 
     assert_eq!(flash_output.dims(), ref_output.dims());
-    assert_tensors_approx_eq(flash_output, ref_output, 1e-4, "flash attention small (CPU)");
+    assert_tensors_approx_eq(
+        flash_output,
+        ref_output,
+        1e-4,
+        "flash attention small (CPU)",
+    );
 }
 
 // ============================================================================
@@ -1265,7 +1350,8 @@ fn test_cpu_groupnorm_basic() {
     let options = GroupNormSiLuOptions::with_groups(num_groups);
 
     let cubecl_output = run_cubecl_groupnorm(input, weight, bias, options);
-    let ref_output = groupnorm_reference::groupnorm_reference(input_ref, weight_ref, bias_ref, num_groups, 1e-5);
+    let ref_output =
+        groupnorm_reference::groupnorm_reference(input_ref, weight_ref, bias_ref, num_groups, 1e-5);
 
     assert_eq!(cubecl_output.dims(), ref_output.dims());
     // Tolerance accounts for variance calculation differences (biased vs unbiased)
@@ -1306,11 +1392,18 @@ fn test_cpu_groupnorm_silu_basic() {
     let options = GroupNormSiLuOptions::with_groups(num_groups);
 
     let cubecl_output = run_cubecl_groupnorm_silu(input, weight, bias, options);
-    let ref_output = groupnorm_reference::groupnorm_silu_reference(input_ref, weight_ref, bias_ref, num_groups, 1e-5);
+    let ref_output = groupnorm_reference::groupnorm_silu_reference(
+        input_ref, weight_ref, bias_ref, num_groups, 1e-5,
+    );
 
     assert_eq!(cubecl_output.dims(), ref_output.dims());
     // Tolerance accounts for variance calculation differences (biased vs unbiased)
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-2, "groupnorm_silu basic (CPU)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-2,
+        "groupnorm_silu basic (CPU)",
+    );
 }
 
 #[test]
@@ -1347,11 +1440,18 @@ fn test_cpu_groupnorm_silu_batch() {
     let options = GroupNormSiLuOptions::with_groups(num_groups);
 
     let cubecl_output = run_cubecl_groupnorm_silu(input, weight, bias, options);
-    let ref_output = groupnorm_reference::groupnorm_silu_reference(input_ref, weight_ref, bias_ref, num_groups, 1e-5);
+    let ref_output = groupnorm_reference::groupnorm_silu_reference(
+        input_ref, weight_ref, bias_ref, num_groups, 1e-5,
+    );
 
     assert_eq!(cubecl_output.dims(), ref_output.dims());
     // Tolerance accounts for variance calculation differences (biased vs unbiased)
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-2, "groupnorm_silu batch (CPU)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-2,
+        "groupnorm_silu batch (CPU)",
+    );
 }
 
 #[test]
@@ -1381,11 +1481,18 @@ fn test_cpu_groupnorm_silu_unit_weight_bias() {
     let options = GroupNormSiLuOptions::with_groups(num_groups);
 
     let cubecl_output = run_cubecl_groupnorm_silu(input, weight, bias, options);
-    let ref_output = groupnorm_reference::groupnorm_silu_reference(input_ref, weight_ref, bias_ref, num_groups, 1e-5);
+    let ref_output = groupnorm_reference::groupnorm_silu_reference(
+        input_ref, weight_ref, bias_ref, num_groups, 1e-5,
+    );
 
     assert_eq!(cubecl_output.dims(), ref_output.dims());
     // Tolerance accounts for variance calculation differences (biased vs unbiased)
-    assert_tensors_approx_eq(cubecl_output, ref_output, 2e-2, "groupnorm_silu unit weight (CPU)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        2e-2,
+        "groupnorm_silu unit weight (CPU)",
+    );
 }
 
 #[test]
@@ -1423,9 +1530,16 @@ fn test_cpu_groupnorm_silu_single_group() {
     let options = GroupNormSiLuOptions::with_groups(num_groups);
 
     let cubecl_output = run_cubecl_groupnorm_silu(input, weight, bias, options);
-    let ref_output = groupnorm_reference::groupnorm_silu_reference(input_ref, weight_ref, bias_ref, num_groups, 1e-5);
+    let ref_output = groupnorm_reference::groupnorm_silu_reference(
+        input_ref, weight_ref, bias_ref, num_groups, 1e-5,
+    );
 
     assert_eq!(cubecl_output.dims(), ref_output.dims());
     // Tolerance accounts for variance calculation differences (biased vs unbiased)
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-2, "groupnorm_silu single group (CPU)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-2,
+        "groupnorm_silu single group (CPU)",
+    );
 }

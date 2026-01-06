@@ -37,9 +37,9 @@
 use std::path::{Path, PathBuf};
 
 use burn::module::Param;
-use burn::nn::{EmbeddingConfig, LinearConfig};
-use burn::nn::conv::Conv2dConfig;
 use burn::nn::PaddingConfig2d;
+use burn::nn::conv::Conv2dConfig;
+use burn::nn::{EmbeddingConfig, LinearConfig};
 use burn::prelude::*;
 
 use crate::loader::{LoadError, SafeTensorFile};
@@ -103,7 +103,10 @@ impl SdWeightLoader {
     /// Get the SafeTensorFile for text encoder weights
     fn get_text_encoder_file(&mut self) -> Result<&SafeTensorFile, SdLoadError> {
         if self.text_encoder_file.is_none() {
-            let file_path = self.find_component_file(&["text_encoder.safetensors", "text_encoder/model.safetensors"])?;
+            let file_path = self.find_component_file(&[
+                "text_encoder.safetensors",
+                "text_encoder/model.safetensors",
+            ])?;
             self.text_encoder_file = Some(SafeTensorFile::open(file_path)?);
         }
         Ok(self.text_encoder_file.as_ref().unwrap())
@@ -112,7 +115,10 @@ impl SdWeightLoader {
     /// Get the SafeTensorFile for UNet weights
     fn get_unet_file(&mut self) -> Result<&SafeTensorFile, SdLoadError> {
         if self.unet_file.is_none() {
-            let file_path = self.find_component_file(&["unet.safetensors", "unet/diffusion_pytorch_model.safetensors"])?;
+            let file_path = self.find_component_file(&[
+                "unet.safetensors",
+                "unet/diffusion_pytorch_model.safetensors",
+            ])?;
             self.unet_file = Some(SafeTensorFile::open(file_path)?);
         }
         Ok(self.unet_file.as_ref().unwrap())
@@ -121,7 +127,10 @@ impl SdWeightLoader {
     /// Get the SafeTensorFile for VAE weights
     fn get_vae_file(&mut self) -> Result<&SafeTensorFile, SdLoadError> {
         if self.vae_file.is_none() {
-            let file_path = self.find_component_file(&["vae.safetensors", "vae/diffusion_pytorch_model.safetensors"])?;
+            let file_path = self.find_component_file(&[
+                "vae.safetensors",
+                "vae/diffusion_pytorch_model.safetensors",
+            ])?;
             self.vae_file = Some(SafeTensorFile::open(file_path)?);
         }
         Ok(self.vae_file.as_ref().unwrap())
@@ -199,7 +208,8 @@ fn load_clip_from_file<B: Backend>(
     let token_emb_key = format!("{}.embeddings.token_embedding.weight", prefix);
     let token_emb_weight: Tensor<B, 2> = file.load_f32(&token_emb_key, device)?;
 
-    let mut token_embedding = EmbeddingConfig::new(config.vocab_size, config.embed_dim).init(device);
+    let mut token_embedding =
+        EmbeddingConfig::new(config.vocab_size, config.embed_dim).init(device);
     token_embedding.weight = Param::from_tensor(token_emb_weight);
 
     // Load position embedding
@@ -217,10 +227,17 @@ fn load_clip_from_file<B: Backend>(
     // Load final layer norm
     let final_ln_weight_key = format!("{}.final_layer_norm.weight", prefix);
     let final_ln_bias_key = format!("{}.final_layer_norm.bias", prefix);
-    let final_layer_norm = load_layer_norm(file, &final_ln_weight_key, &final_ln_bias_key, config.embed_dim, device)?;
+    let final_layer_norm = load_layer_norm(
+        file,
+        &final_ln_weight_key,
+        &final_ln_bias_key,
+        config.embed_dim,
+        device,
+    )?;
 
     // Precompute causal mask for max context length
-    let causal_mask = burn_models_clip::attention::precompute_causal_mask(config.context_length, device);
+    let causal_mask =
+        burn_models_clip::attention::precompute_causal_mask(config.context_length, device);
 
     Ok(ClipTextEncoder {
         token_embedding,
@@ -390,7 +407,8 @@ fn load_linear<B: Backend>(
     out_features: usize,
     device: &B::Device,
 ) -> Result<burn::nn::Linear<B>, SdLoadError> {
-    let weight: Tensor<B, 2> = file.load_f32(weight_key, device)
+    let weight: Tensor<B, 2> = file
+        .load_f32(weight_key, device)
         .map_err(|e| SdLoadError::MissingTensor(format!("{}: {}", weight_key, e)))?;
 
     // Verify shape [out_features, in_features] (PyTorch convention)
@@ -431,9 +449,11 @@ fn load_layer_norm<B: Backend>(
     _size: usize,
     device: &B::Device,
 ) -> Result<LayerNorm<B>, SdLoadError> {
-    let weight: Tensor<B, 1> = file.load_f32(weight_key, device)
+    let weight: Tensor<B, 1> = file
+        .load_f32(weight_key, device)
         .map_err(|e| SdLoadError::MissingTensor(format!("{}: {}", weight_key, e)))?;
-    let bias: Tensor<B, 1> = file.load_f32(bias_key, device)
+    let bias: Tensor<B, 1> = file
+        .load_f32(bias_key, device)
         .map_err(|e| SdLoadError::MissingTensor(format!("{}: {}", bias_key, e)))?;
 
     Ok(LayerNorm::from_weight_bias(weight, bias))
@@ -448,9 +468,11 @@ fn load_group_norm<B: Backend>(
     num_groups: usize,
     device: &B::Device,
 ) -> Result<GroupNorm<B>, SdLoadError> {
-    let weight: Tensor<B, 1> = file.load_f32(weight_key, device)
+    let weight: Tensor<B, 1> = file
+        .load_f32(weight_key, device)
         .map_err(|e| SdLoadError::MissingTensor(format!("{}: {}", weight_key, e)))?;
-    let bias: Tensor<B, 1> = file.load_f32(bias_key, device)
+    let bias: Tensor<B, 1> = file
+        .load_f32(bias_key, device)
         .map_err(|e| SdLoadError::MissingTensor(format!("{}: {}", bias_key, e)))?;
 
     Ok(GroupNorm {
@@ -472,7 +494,8 @@ fn load_conv2d<B: Backend>(
     padding: usize,
     device: &B::Device,
 ) -> Result<burn::nn::conv::Conv2d<B>, SdLoadError> {
-    let weight: Tensor<B, 4> = file.load_f32(weight_key, device)
+    let weight: Tensor<B, 4> = file
+        .load_f32(weight_key, device)
         .map_err(|e| SdLoadError::MissingTensor(format!("{}: {}", weight_key, e)))?;
 
     let has_bias = bias_key.map(|k| file.contains(k)).unwrap_or(false);
@@ -505,7 +528,8 @@ fn load_conv2d_strided<B: Backend>(
     padding: usize,
     device: &B::Device,
 ) -> Result<burn::nn::conv::Conv2d<B>, SdLoadError> {
-    let weight: Tensor<B, 4> = file.load_f32(weight_key, device)
+    let weight: Tensor<B, 4> = file
+        .load_f32(weight_key, device)
         .map_err(|e| SdLoadError::MissingTensor(format!("{}: {}", weight_key, e)))?;
 
     let has_bias = bias_key.map(|k| file.contains(k)).unwrap_or(false);
@@ -532,9 +556,8 @@ fn load_conv2d_strided<B: Backend>(
 // ============================================================================
 
 use burn_models_unet::{
-    UNet, UNetConfig, DownBlock, MidBlock, UpBlock,
-    ResBlock, SpatialTransformer, TransformerBlock, CrossAttention, FeedForward,
-    Downsample, Upsample, timestep_freqs,
+    CrossAttention, DownBlock, Downsample, FeedForward, MidBlock, ResBlock, SpatialTransformer,
+    TransformerBlock, UNet, UNetConfig, UpBlock, Upsample, timestep_freqs,
 };
 
 /// Naming convention used in safetensors files
@@ -595,10 +618,10 @@ impl CompVisBlockMap {
                 vec![10, 11], // level 3 (no attention)
             ],
             down_sample_indices: vec![
-                Some(3),  // level 0 -> 1
-                Some(6),  // level 1 -> 2
-                Some(9),  // level 2 -> 3
-                None,     // level 3 (no downsample)
+                Some(3), // level 0 -> 1
+                Some(6), // level 1 -> 2
+                Some(9), // level 2 -> 3
+                None,    // level 3 (no downsample)
             ],
             // output_blocks: 0-2 = level 3, 3-5 = level 2, 6-8 = level 1, 9-11 = level 0
             up_res_indices: vec![
@@ -811,11 +834,7 @@ fn load_unet_hf<B: Backend>(
 
 /// Detect the prefix used for UNet weights
 fn detect_unet_prefix(file: &SafeTensorFile) -> String {
-    let prefixes = [
-        "model.diffusion_model",
-        "unet",
-        "",
-    ];
+    let prefixes = ["model.diffusion_model", "unet", ""];
 
     for prefix in prefixes {
         let test_key = if prefix.is_empty() {
@@ -1031,21 +1050,58 @@ fn load_down_block<B: Backend>(
 ) -> Result<DownBlock<B>, SdLoadError> {
     let block_prefix = format!("{}.down_blocks.{}", prefix, level);
 
-    let res1 = load_resblock(file, &format!("{}.resnets.0", block_prefix), in_ch, out_ch, time_dim, device)?;
+    let res1 = load_resblock(
+        file,
+        &format!("{}.resnets.0", block_prefix),
+        in_ch,
+        out_ch,
+        time_dim,
+        device,
+    )?;
     let attn1 = if has_attention {
-        Some(load_spatial_transformer(file, &format!("{}.attentions.0", block_prefix), out_ch, num_heads, head_dim, context_dim, transformer_depth, device)?)
+        Some(load_spatial_transformer(
+            file,
+            &format!("{}.attentions.0", block_prefix),
+            out_ch,
+            num_heads,
+            head_dim,
+            context_dim,
+            transformer_depth,
+            device,
+        )?)
     } else {
         None
     };
-    let res2 = load_resblock(file, &format!("{}.resnets.1", block_prefix), out_ch, out_ch, time_dim, device)?;
+    let res2 = load_resblock(
+        file,
+        &format!("{}.resnets.1", block_prefix),
+        out_ch,
+        out_ch,
+        time_dim,
+        device,
+    )?;
     let attn2 = if has_attention {
-        Some(load_spatial_transformer(file, &format!("{}.attentions.1", block_prefix), out_ch, num_heads, head_dim, context_dim, transformer_depth, device)?)
+        Some(load_spatial_transformer(
+            file,
+            &format!("{}.attentions.1", block_prefix),
+            out_ch,
+            num_heads,
+            head_dim,
+            context_dim,
+            transformer_depth,
+            device,
+        )?)
     } else {
         None
     };
 
     let downsample = if has_downsample {
-        Some(load_downsample(file, &format!("{}.downsamplers.0", block_prefix), out_ch, device)?)
+        Some(load_downsample(
+            file,
+            &format!("{}.downsamplers.0", block_prefix),
+            out_ch,
+            device,
+        )?)
     } else {
         None
     };
@@ -1073,15 +1129,34 @@ fn load_mid_block<B: Backend>(
 ) -> Result<MidBlock<B>, SdLoadError> {
     let block_prefix = format!("{}.mid_block", prefix);
 
-    let res1 = load_resblock(file, &format!("{}.resnets.0", block_prefix), channels, channels, time_dim, device)?;
-    let attn = load_spatial_transformer(file, &format!("{}.attentions.0", block_prefix), channels, num_heads, head_dim, context_dim, transformer_depth, device)?;
-    let res2 = load_resblock(file, &format!("{}.resnets.1", block_prefix), channels, channels, time_dim, device)?;
+    let res1 = load_resblock(
+        file,
+        &format!("{}.resnets.0", block_prefix),
+        channels,
+        channels,
+        time_dim,
+        device,
+    )?;
+    let attn = load_spatial_transformer(
+        file,
+        &format!("{}.attentions.0", block_prefix),
+        channels,
+        num_heads,
+        head_dim,
+        context_dim,
+        transformer_depth,
+        device,
+    )?;
+    let res2 = load_resblock(
+        file,
+        &format!("{}.resnets.1", block_prefix),
+        channels,
+        channels,
+        time_dim,
+        device,
+    )?;
 
-    Ok(MidBlock {
-        res1,
-        attn,
-        res2,
-    })
+    Ok(MidBlock { res1, attn, res2 })
 }
 
 /// Load an UpBlock
@@ -1102,15 +1177,36 @@ fn load_up_block<B: Backend>(
 ) -> Result<UpBlock<B>, SdLoadError> {
     let block_prefix = format!("{}.up_blocks.{}", prefix, block_idx);
 
-    let res = load_resblock(file, &format!("{}.resnets.0", block_prefix), in_ch, out_ch, time_dim, device)?;
+    let res = load_resblock(
+        file,
+        &format!("{}.resnets.0", block_prefix),
+        in_ch,
+        out_ch,
+        time_dim,
+        device,
+    )?;
     let attn = if has_attention {
-        Some(load_spatial_transformer(file, &format!("{}.attentions.0", block_prefix), out_ch, num_heads, head_dim, context_dim, transformer_depth, device)?)
+        Some(load_spatial_transformer(
+            file,
+            &format!("{}.attentions.0", block_prefix),
+            out_ch,
+            num_heads,
+            head_dim,
+            context_dim,
+            transformer_depth,
+            device,
+        )?)
     } else {
         None
     };
 
     let upsample = if has_upsample {
-        Some(load_upsample(file, &format!("{}.upsamplers.0", block_prefix), out_ch, device)?)
+        Some(load_upsample(
+            file,
+            &format!("{}.upsamplers.0", block_prefix),
+            out_ch,
+            device,
+        )?)
     } else {
         None
     };
@@ -1327,13 +1423,7 @@ fn load_transformer_block<B: Backend>(
         device,
     )?;
 
-    let ff = load_feedforward(
-        file,
-        &format!("{}.ff", prefix),
-        dim,
-        dim * 4,
-        device,
-    )?;
+    let ff = load_feedforward(file, &format!("{}.ff", prefix), dim, dim * 4, device)?;
 
     Ok(TransformerBlock {
         norm1,
@@ -1509,7 +1599,16 @@ fn load_down_block_compvis<B: Backend>(
 
     let attn1 = if has_attn {
         let attn1_prefix = format!("{}.input_blocks.{}.1", prefix, indices[0]);
-        Some(load_spatial_transformer_compvis(file, &attn1_prefix, out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)?)
+        Some(load_spatial_transformer_compvis(
+            file,
+            &attn1_prefix,
+            out_ch,
+            num_heads,
+            out_head_dim,
+            context_dim,
+            transformer_depth,
+            device,
+        )?)
     } else {
         None
     };
@@ -1520,7 +1619,16 @@ fn load_down_block_compvis<B: Backend>(
 
     let attn2 = if has_attn {
         let attn2_prefix = format!("{}.input_blocks.{}.1", prefix, indices[1]);
-        Some(load_spatial_transformer_compvis(file, &attn2_prefix, out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)?)
+        Some(load_spatial_transformer_compvis(
+            file,
+            &attn2_prefix,
+            out_ch,
+            num_heads,
+            out_head_dim,
+            context_dim,
+            transformer_depth,
+            device,
+        )?)
     } else {
         None
     };
@@ -1619,7 +1727,16 @@ fn load_up_block_compvis<B: Backend>(
     // output_blocks.{block_idx}.1 = SpatialTransformer (if has_attn) or Upsample (if has_upsample and no attn)
     let attn = if has_attn {
         let attn_prefix = format!("{}.output_blocks.{}.1", prefix, block_idx);
-        Some(load_spatial_transformer_compvis(file, &attn_prefix, out_ch, num_heads, out_head_dim, context_dim, transformer_depth, device)?)
+        Some(load_spatial_transformer_compvis(
+            file,
+            &attn_prefix,
+            out_ch,
+            num_heads,
+            out_head_dim,
+            context_dim,
+            transformer_depth,
+            device,
+        )?)
     } else {
         None
     };
@@ -1633,7 +1750,11 @@ fn load_up_block_compvis<B: Backend>(
         None
     };
 
-    Ok(UpBlock { res, attn, upsample })
+    Ok(UpBlock {
+        res,
+        attn,
+        upsample,
+    })
 }
 
 /// Load a ResBlock using CompVis naming
@@ -1756,7 +1877,8 @@ fn load_spatial_transformer_compvis<B: Backend>(
 
     // Check if proj_in is stored as Conv2d (4D) or Linear (2D)
     let proj_in_key = format!("{}.proj_in.weight", prefix);
-    let proj_in_shape = file.shape(&proj_in_key)
+    let proj_in_shape = file
+        .shape(&proj_in_key)
         .ok_or_else(|| SdLoadError::MissingTensor(proj_in_key.clone()))?;
 
     let proj_in = if proj_in_shape.len() == 4 {
@@ -1798,7 +1920,8 @@ fn load_spatial_transformer_compvis<B: Backend>(
     }
 
     let proj_out_key = format!("{}.proj_out.weight", prefix);
-    let proj_out_shape = file.shape(&proj_out_key)
+    let proj_out_shape = file
+        .shape(&proj_out_key)
         .ok_or_else(|| SdLoadError::MissingTensor(proj_out_key.clone()))?;
 
     let proj_out = if proj_out_shape.len() == 4 {
@@ -1842,7 +1965,8 @@ fn load_linear_as_conv2d<B: Backend>(
     out_features: usize,
     device: &B::Device,
 ) -> Result<burn::nn::conv::Conv2d<B>, SdLoadError> {
-    let weight: Tensor<B, 2> = file.load_f32(weight_key, device)
+    let weight: Tensor<B, 2> = file
+        .load_f32(weight_key, device)
         .map_err(|e| SdLoadError::MissingTensor(format!("{}: {}", weight_key, e)))?;
 
     // Reshape [out, in] -> [out, in, 1, 1]
@@ -1938,9 +2062,22 @@ fn load_vae_decoder_from_file<B: Backend>(
     )?;
 
     // Mid blocks
-    let mid_block1 = load_vae_resnet_block(file, &format!("{}.mid.block_1", prefix), block_in, block_in, device)?;
-    let mid_attn = load_vae_self_attention(file, &format!("{}.mid.attn_1", prefix), block_in, device)?;
-    let mid_block2 = load_vae_resnet_block(file, &format!("{}.mid.block_2", prefix), block_in, block_in, device)?;
+    let mid_block1 = load_vae_resnet_block(
+        file,
+        &format!("{}.mid.block_1", prefix),
+        block_in,
+        block_in,
+        device,
+    )?;
+    let mid_attn =
+        load_vae_self_attention(file, &format!("{}.mid.attn_1", prefix), block_in, device)?;
+    let mid_block2 = load_vae_resnet_block(
+        file,
+        &format!("{}.mid.block_2", prefix),
+        block_in,
+        block_in,
+        device,
+    )?;
 
     // Up blocks (reverse order, with upsampling)
     let mut up_blocks = Vec::new();
@@ -1997,11 +2134,7 @@ fn load_vae_decoder_from_file<B: Backend>(
 
 /// Detect the prefix used for VAE decoder weights
 fn detect_vae_decoder_prefix(file: &SafeTensorFile) -> String {
-    let prefixes = [
-        "decoder",
-        "vae.decoder",
-        "first_stage_model.decoder",
-    ];
+    let prefixes = ["decoder", "vae.decoder", "first_stage_model.decoder"];
 
     for prefix in prefixes {
         let test_key = format!("{}.conv_in.weight", prefix);
@@ -2049,7 +2182,12 @@ fn load_vae_decoder_block<B: Backend>(
     }
 
     let upsample_layer = if upsample {
-        Some(load_vae_upsample(file, &format!("{}.upsample", block_prefix), out_ch, device)?)
+        Some(load_vae_upsample(
+            file,
+            &format!("{}.upsample", block_prefix),
+            out_ch,
+            device,
+        )?)
     } else {
         None
     };

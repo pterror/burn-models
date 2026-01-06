@@ -20,8 +20,8 @@
 //! - **Cross-attention**: Similar to PixArt architecture
 //! - **Skip connections**: Long skip connections for better gradients
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 use burn_models_core::dit::{PatchEmbed, PatchEmbedConfig, unpatchify};
 use burn_models_core::glu::SwiGluFfn;
@@ -64,8 +64,8 @@ impl HunyuanDiTConfig {
             hidden_size: 1408,
             num_heads: 16,
             num_blocks: 40,
-            clip_dim: 1024,   // CLIP-ViT-L
-            mt5_dim: 2048,    // MT5-XL
+            clip_dim: 1024, // CLIP-ViT-L
+            mt5_dim: 2048,  // MT5-XL
             time_embed_dim: 256,
             mlp_ratio: 4.0,
             max_seq_len: 4096,
@@ -103,7 +103,7 @@ impl HunyuanDiTConfig {
             time_embed_dim: 64,
             mlp_ratio: 4.0,
             max_seq_len: 256,
-            use_skip: false,  // Skip for tiny to simplify
+            use_skip: false, // Skip for tiny to simplify
         }
     }
 
@@ -123,8 +123,8 @@ impl HunyuanDiTConfig {
     /// Initialize the model
     pub fn init<B: Backend>(&self, device: &B::Device) -> (HunyuanDiT<B>, HunyuanDiTRuntime<B>) {
         // Patch embedding
-        let patch_embed = PatchEmbedConfig::new(self.patch_size, self.in_channels, self.hidden_size)
-            .init(device);
+        let patch_embed =
+            PatchEmbedConfig::new(self.patch_size, self.in_channels, self.hidden_size).init(device);
 
         // Text projections (separate for CLIP and MT5)
         let clip_proj = LinearConfig::new(self.clip_dim, self.hidden_size)
@@ -157,8 +157,9 @@ impl HunyuanDiTConfig {
                     self.hidden_size,
                     self.num_heads,
                     self.intermediate_size(),
-                    i < self.num_blocks / 2,  // First half can receive skip
-                ).init(device)
+                    i < self.num_blocks / 2, // First half can receive skip
+                )
+                .init(device)
             })
             .collect();
 
@@ -255,8 +256,18 @@ struct HunyuanBlockConfig {
 }
 
 impl HunyuanBlockConfig {
-    fn new(hidden_size: usize, num_heads: usize, intermediate_size: usize, has_skip_input: bool) -> Self {
-        Self { hidden_size, num_heads, intermediate_size, has_skip_input }
+    fn new(
+        hidden_size: usize,
+        num_heads: usize,
+        intermediate_size: usize,
+        has_skip_input: bool,
+    ) -> Self {
+        Self {
+            hidden_size,
+            num_heads,
+            intermediate_size,
+            has_skip_input,
+        }
     }
 
     fn init<B: Backend>(&self, device: &B::Device) -> HunyuanBlock<B> {
@@ -266,9 +277,11 @@ impl HunyuanBlockConfig {
 
         // Skip connection projection (if this block receives skip)
         let skip_proj = if self.has_skip_input {
-            Some(LinearConfig::new(self.hidden_size * 2, self.hidden_size)
-                .with_bias(true)
-                .init(device))
+            Some(
+                LinearConfig::new(self.hidden_size * 2, self.hidden_size)
+                    .with_bias(true)
+                    .init(device),
+            )
         } else {
             None
         };
@@ -328,13 +341,36 @@ impl<B: Backend> HunyuanAttention<B> {
         let qkv = self.to_qkv.forward(x);
         let qkv = qkv.reshape([batch, seq_len, 3, self.num_heads, self.head_dim]);
 
-        let q = qkv.clone().slice([0..batch, 0..seq_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let q = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let k = qkv.clone().slice([0..batch, 0..seq_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let k = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = qkv.slice([0..batch, 0..seq_len, 2..3, 0..self.num_heads, 0..self.head_dim])
+        let v = qkv
+            .slice([
+                0..batch,
+                0..seq_len,
+                2..3,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
@@ -347,7 +383,9 @@ impl<B: Backend> HunyuanAttention<B> {
         let attn = burn::tensor::activation::softmax(attn, 3);
         let out = attn.matmul(v);
 
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.to_out.forward(out)
     }
 }
@@ -370,15 +408,32 @@ impl<B: Backend> HunyuanCrossAttention<B> {
         let [_, ctx_len, _] = context.dims();
 
         let q = self.to_q.forward(x);
-        let q = q.reshape([batch, seq_len, self.num_heads, self.head_dim]).swap_dims(1, 2);
+        let q = q
+            .reshape([batch, seq_len, self.num_heads, self.head_dim])
+            .swap_dims(1, 2);
 
         let kv = self.to_kv.forward(context);
         let kv = kv.reshape([batch, ctx_len, 2, self.num_heads, self.head_dim]);
 
-        let k = kv.clone().slice([0..batch, 0..ctx_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let k = kv
+            .clone()
+            .slice([
+                0..batch,
+                0..ctx_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, ctx_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = kv.slice([0..batch, 0..ctx_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let v = kv
+            .slice([
+                0..batch,
+                0..ctx_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, ctx_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
@@ -387,7 +442,9 @@ impl<B: Backend> HunyuanCrossAttention<B> {
         let attn = burn::tensor::activation::softmax(attn, 3);
         let out = attn.matmul(v);
 
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.to_out.forward(out)
     }
 }
@@ -430,12 +487,29 @@ impl<B: Backend> HunyuanBlock<B> {
         let mod_params = self.modulation.forward(cond);
         let mod_params = mod_params.reshape([batch, 6, hidden]);
 
-        let shift1 = mod_params.clone().slice([0..batch, 0..1, 0..hidden]).reshape([batch, 1, hidden]);
-        let scale1 = mod_params.clone().slice([0..batch, 1..2, 0..hidden]).reshape([batch, 1, hidden]);
-        let gate1 = mod_params.clone().slice([0..batch, 2..3, 0..hidden]).reshape([batch, 1, hidden]);
-        let shift2 = mod_params.clone().slice([0..batch, 3..4, 0..hidden]).reshape([batch, 1, hidden]);
-        let scale2 = mod_params.clone().slice([0..batch, 4..5, 0..hidden]).reshape([batch, 1, hidden]);
-        let gate2 = mod_params.slice([0..batch, 5..6, 0..hidden]).reshape([batch, 1, hidden]);
+        let shift1 = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let scale1 = mod_params
+            .clone()
+            .slice([0..batch, 1..2, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let gate1 = mod_params
+            .clone()
+            .slice([0..batch, 2..3, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let shift2 = mod_params
+            .clone()
+            .slice([0..batch, 3..4, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let scale2 = mod_params
+            .clone()
+            .slice([0..batch, 4..5, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let gate2 = mod_params
+            .slice([0..batch, 5..6, 0..hidden])
+            .reshape([batch, 1, hidden]);
 
         // Self-attention with modulation
         let x_norm = self.norm1.forward(x.clone());
@@ -554,7 +628,13 @@ impl<B: Backend> HunyuanDiT<B> {
         for (i, block) in self.blocks.iter().enumerate() {
             // First half: save outputs for skip connections
             if i < half_blocks {
-                x = block.forward(x.clone(), None, cond.clone(), context.clone(), &runtime.rope);
+                x = block.forward(
+                    x.clone(),
+                    None,
+                    cond.clone(),
+                    context.clone(),
+                    &runtime.rope,
+                );
                 if self.use_skip {
                     skip_outputs.push(x.clone());
                 }
@@ -578,13 +658,7 @@ impl<B: Backend> HunyuanDiT<B> {
         let out = self.final_layer.forward(x, cond);
 
         // Unpatchify
-        let noise = unpatchify(
-            out,
-            self.patch_size,
-            height,
-            width,
-            self.in_channels,
-        );
+        let noise = unpatchify(out, self.patch_size, height, width, self.in_channels);
 
         HunyuanDiTOutput { noise }
     }

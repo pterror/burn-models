@@ -26,8 +26,8 @@
 //! - **SD3.5-Large**: Latest iteration with improved quality
 //! - **SD3.5-Turbo**: Distilled for fast generation
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 use burn_models_core::dit::{PatchEmbed, PatchEmbedConfig, unpatchify};
 use burn_models_core::glu::SwiGluFfn;
@@ -70,8 +70,8 @@ impl Sd3Config {
             hidden_size: 1536,
             num_heads: 24,
             num_blocks: 24,
-            context_dim: 4096,  // T5-XXL
-            pooled_dim: 2048,   // CLIP-L (768) + CLIP-G (1280)
+            context_dim: 4096, // T5-XXL
+            pooled_dim: 2048,  // CLIP-L (768) + CLIP-G (1280)
             time_embed_dim: 256,
             max_seq_len: 4096,
             mlp_ratio: 4.0,
@@ -134,8 +134,8 @@ impl Sd3Config {
     /// Initialize the model
     pub fn init<B: Backend>(&self, device: &B::Device) -> (Sd3<B>, Sd3Runtime<B>) {
         // Patch embedding for image
-        let x_embed = PatchEmbedConfig::new(self.patch_size, self.in_channels, self.hidden_size)
-            .init(device);
+        let x_embed =
+            PatchEmbedConfig::new(self.patch_size, self.in_channels, self.hidden_size).init(device);
 
         // Context projection (T5 dim → hidden dim)
         let context_embed = LinearConfig::new(self.context_dim, self.hidden_size)
@@ -170,16 +170,20 @@ impl Sd3Config {
                     self.num_heads,
                     self.intermediate_size(),
                     self.qk_norm,
-                ).init(device)
+                )
+                .init(device)
             })
             .collect();
 
         // Final layer
         let final_layer = Sd3FinalLayer {
             norm: LayerNorm::new(self.hidden_size, device),
-            proj: LinearConfig::new(self.hidden_size, self.patch_size * self.patch_size * self.in_channels)
-                .with_bias(true)
-                .init(device),
+            proj: LinearConfig::new(
+                self.hidden_size,
+                self.patch_size * self.patch_size * self.in_channels,
+            )
+            .with_bias(true)
+            .init(device),
             modulation: LinearConfig::new(self.hidden_size, 2 * self.hidden_size)
                 .with_bias(true)
                 .init(device),
@@ -268,7 +272,12 @@ pub struct MMDiTBlockConfig {
 
 impl MMDiTBlockConfig {
     fn new(hidden_size: usize, num_heads: usize, intermediate_size: usize, qk_norm: bool) -> Self {
-        Self { hidden_size, num_heads, intermediate_size, qk_norm }
+        Self {
+            hidden_size,
+            num_heads,
+            intermediate_size,
+            qk_norm,
+        }
     }
 
     fn init<B: Backend>(&self, device: &B::Device) -> MMDiTBlock<B> {
@@ -416,7 +425,9 @@ impl<B: Backend> MMDiTAttention<B> {
     /// Project attention output back
     fn proj_out(&self, x: Tensor<B, 4>) -> Tensor<B, 3> {
         let [batch, _heads, seq_len, _head_dim] = x.dims();
-        let x = x.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let x = x
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.to_out.forward(x)
     }
 }
@@ -470,12 +481,29 @@ impl<B: Backend> MMDiTBlock<B> {
         let mod_params = self.modulation.forward(y);
         let mod_params = mod_params.reshape([batch, 6, hidden]);
 
-        let x_shift = mod_params.clone().slice([0..batch, 0..1, 0..hidden]).reshape([batch, 1, hidden]);
-        let x_scale = mod_params.clone().slice([0..batch, 1..2, 0..hidden]).reshape([batch, 1, hidden]);
-        let x_gate = mod_params.clone().slice([0..batch, 2..3, 0..hidden]).reshape([batch, 1, hidden]);
-        let c_shift = mod_params.clone().slice([0..batch, 3..4, 0..hidden]).reshape([batch, 1, hidden]);
-        let c_scale = mod_params.clone().slice([0..batch, 4..5, 0..hidden]).reshape([batch, 1, hidden]);
-        let c_gate = mod_params.slice([0..batch, 5..6, 0..hidden]).reshape([batch, 1, hidden]);
+        let x_shift = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let x_scale = mod_params
+            .clone()
+            .slice([0..batch, 1..2, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let x_gate = mod_params
+            .clone()
+            .slice([0..batch, 2..3, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let c_shift = mod_params
+            .clone()
+            .slice([0..batch, 3..4, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let c_scale = mod_params
+            .clone()
+            .slice([0..batch, 4..5, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let c_gate = mod_params
+            .slice([0..batch, 5..6, 0..hidden])
+            .reshape([batch, 1, hidden]);
 
         // Apply modulated norms
         let x_norm = self.x_norm1.forward(x.clone());
@@ -675,8 +703,8 @@ mod tests {
 
         // 32x32 latents, patch_size=2 → 16x16 = 256 patches
         let latents = Tensor::zeros([1, 4, 32, 32], &device);
-        let context = Tensor::zeros([1, 8, 128], &device);  // T5 embeddings
-        let pooled = Tensor::zeros([1, 128], &device);       // CLIP pooled
+        let context = Tensor::zeros([1, 8, 128], &device); // T5 embeddings
+        let pooled = Tensor::zeros([1, 128], &device); // CLIP pooled
 
         let output = model.forward(latents, 0.5, context, pooled, &runtime);
 
@@ -689,9 +717,9 @@ mod tests {
         let block = MMDiTBlockConfig::new(256, 4, 512, false).init::<TestBackend>(&device);
         let rope = RotaryEmbedding::new(64, 512, &device);
 
-        let x = Tensor::zeros([2, 64, 256], &device);  // Image tokens
-        let c = Tensor::zeros([2, 8, 256], &device);   // Context tokens
-        let y = Tensor::zeros([2, 256], &device);      // Conditioning
+        let x = Tensor::zeros([2, 64, 256], &device); // Image tokens
+        let c = Tensor::zeros([2, 8, 256], &device); // Context tokens
+        let y = Tensor::zeros([2, 256], &device); // Conditioning
 
         let (x_out, c_out) = block.forward(x, c, y, &rope);
 

@@ -68,11 +68,11 @@ impl<B: Backend> GroupNorm<B> {
 
         // Compute mean and variance over the last dimension
         let mean = x.clone().mean_dim(2); // [batch, num_groups]
-        let var = x.clone().var(2);       // [batch, num_groups]
+        let var = x.clone().var(2); // [batch, num_groups]
 
         // Expand for broadcasting: [batch, num_groups, 1]
         let mean = mean.unsqueeze::<3>(); // [batch, num_groups, 1]
-        let var = var.unsqueeze::<3>();   // [batch, num_groups, 1]
+        let var = var.unsqueeze::<3>(); // [batch, num_groups, 1]
 
         // Normalize
         let x = (x - mean) / (var + self.eps).sqrt();

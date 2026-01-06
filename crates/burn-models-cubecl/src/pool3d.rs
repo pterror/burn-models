@@ -3,7 +3,7 @@
 //! Provides AvgPool3d and MaxPool3d for NCTHW layout tensors.
 
 use burn::tensor::Shape;
-use burn_cubecl::{CubeRuntime, tensor::CubeTensor, ops::numeric::empty_device_dtype};
+use burn_cubecl::{CubeRuntime, ops::numeric::empty_device_dtype, tensor::CubeTensor};
 use cubecl::prelude::*;
 use cubecl::{CubeDim, calculate_cube_count_elemwise};
 
@@ -141,10 +141,7 @@ fn avg_pool3d_kernel<E: Numeric>(
 /// Performs 3D average pooling
 ///
 /// Input/output layout: NCTHW (batch, channels, time, height, width)
-pub fn avg_pool3d<R: CubeRuntime>(
-    input: CubeTensor<R>,
-    options: Pool3dOptions,
-) -> CubeTensor<R> {
+pub fn avg_pool3d<R: CubeRuntime>(input: CubeTensor<R>, options: Pool3dOptions) -> CubeTensor<R> {
     let [batch, channels, in_t, in_h, in_w] = input.shape.dims();
 
     let out_t = calculate_pool_output_size(
@@ -294,10 +291,7 @@ fn max_pool3d_kernel<E: Numeric>(
 /// Performs 3D max pooling
 ///
 /// Input/output layout: NCTHW (batch, channels, time, height, width)
-pub fn max_pool3d<R: CubeRuntime>(
-    input: CubeTensor<R>,
-    options: Pool3dOptions,
-) -> CubeTensor<R> {
+pub fn max_pool3d<R: CubeRuntime>(input: CubeTensor<R>, options: Pool3dOptions) -> CubeTensor<R> {
     let [batch, channels, in_t, in_h, in_w] = input.shape.dims();
 
     let out_t = calculate_pool_output_size(

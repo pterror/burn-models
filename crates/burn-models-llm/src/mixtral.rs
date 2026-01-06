@@ -15,8 +15,8 @@
 //! - Mixtral 8x7B (8 experts, ~12B active params)
 //! - Mixtral 8x22B (8 experts, ~39B active params)
 
-use burn::prelude::*;
 use burn::nn::{Embedding, EmbeddingConfig};
+use burn::prelude::*;
 
 use burn_models_core::kv_cache::ModelKvCache;
 use burn_models_core::moe::{SparseMoeFfn, SparseMoeFfnConfig};
@@ -168,12 +168,10 @@ impl<B: Backend> MixtralLayer<B> {
         mask: Option<Tensor<B, 2>>,
     ) -> Tensor<B, 3> {
         // Pre-norm attention with residual
-        let h = x.clone() + self.attention.forward(
-            self.input_norm.forward(x),
-            Some(rope),
-            start_pos,
-            mask,
-        );
+        let h = x.clone()
+            + self
+                .attention
+                .forward(self.input_norm.forward(x), Some(rope), start_pos, mask);
 
         // Pre-norm MoE FFN with residual
         h.clone() + self.moe.forward(self.post_attention_norm.forward(h))
@@ -259,7 +257,11 @@ impl<B: Backend> Mixtral<B> {
             let output = self.forward(all_tokens.clone(), runtime, None);
 
             let seq_len = all_tokens.dims()[1];
-            let last_logits = output.logits.slice([0..batch, (seq_len - 1)..seq_len, 0..runtime.config.vocab_size]);
+            let last_logits = output.logits.slice([
+                0..batch,
+                (seq_len - 1)..seq_len,
+                0..runtime.config.vocab_size,
+            ]);
             let last_logits = last_logits.reshape([batch, runtime.config.vocab_size]);
 
             let scaled_logits = if (temperature - 1.0).abs() > 1e-6 {
@@ -320,10 +322,7 @@ mod tests {
         let config = MixtralConfig::tiny();
         let (model, runtime) = config.init::<TestBackend>(&device);
 
-        let input_ids = Tensor::<TestBackend, 2, Int>::from_ints(
-            [[1, 2, 3], [4, 5, 6]],
-            &device
-        );
+        let input_ids = Tensor::<TestBackend, 2, Int>::from_ints([[1, 2, 3], [4, 5, 6]], &device);
         let output = model.forward(input_ids, &runtime, None);
 
         assert_eq!(output.logits.dims(), [2, 3, 1000]);

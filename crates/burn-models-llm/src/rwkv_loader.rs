@@ -5,15 +5,13 @@
 
 use std::path::Path;
 
-use burn::prelude::*;
 use burn::module::Param;
-use burn::nn::{EmbeddingConfig, LinearConfig, LayerNormConfig};
+use burn::nn::{EmbeddingConfig, LayerNormConfig, LinearConfig};
+use burn::prelude::*;
 use burn_models_convert::loader::SafeTensorFile;
 use thiserror::Error;
 
-use crate::rwkv::{
-    Rwkv, RwkvConfig, RwkvRuntime, RwkvBlock, RwkvTimeMix, RwkvChannelMix,
-};
+use crate::rwkv::{Rwkv, RwkvBlock, RwkvChannelMix, RwkvConfig, RwkvRuntime, RwkvTimeMix};
 
 #[derive(Error, Debug)]
 pub enum RwkvLoadError {
@@ -45,7 +43,13 @@ pub fn load_rwkv<B: Backend, P: AsRef<Path>>(
     let file = SafeTensorFile::open(path)?;
 
     // Load embeddings
-    let embed_tokens = load_embedding(&file, "rwkv.embeddings.weight", config.vocab_size, config.hidden_size, device)?;
+    let embed_tokens = load_embedding(
+        &file,
+        "rwkv.embeddings.weight",
+        config.vocab_size,
+        config.hidden_size,
+        device,
+    )?;
 
     // Load transformer layers
     let mut layers = Vec::with_capacity(config.num_layers);
@@ -55,11 +59,24 @@ pub fn load_rwkv<B: Backend, P: AsRef<Path>>(
     }
 
     // Load final layer norm
-    let ln_out = load_layer_norm(&file, "rwkv.ln_out", config.hidden_size, config.layer_norm_eps, device)?;
+    let ln_out = load_layer_norm(
+        &file,
+        "rwkv.ln_out",
+        config.hidden_size,
+        config.layer_norm_eps,
+        device,
+    )?;
 
     // Load LM head (may be tied to embeddings)
     let lm_head = if file.contains("head.weight") {
-        load_linear(&file, "head.weight", None, config.hidden_size, config.vocab_size, device)?
+        load_linear(
+            &file,
+            "head.weight",
+            None,
+            config.hidden_size,
+            config.vocab_size,
+            device,
+        )?
     } else {
         // Tied weights - reuse embedding
         let weight: Tensor<B, 2> = file.load_f32("rwkv.embeddings.weight", device)?;
@@ -199,7 +216,13 @@ fn load_time_mix<B: Backend>(
     let head_dim = config.head_dim;
     let inner_dim = num_heads * head_dim;
 
-    let ln = load_layer_norm(file, &format!("{}.ln1", prefix), hidden, config.layer_norm_eps, device)?;
+    let ln = load_layer_norm(
+        file,
+        &format!("{}.ln1", prefix),
+        hidden,
+        config.layer_norm_eps,
+        device,
+    )?;
 
     // Load time mixing parameters
     let time_maa_x: Tensor<B, 1> = file.load_f32(&format!("{}.att.time_maa_x", prefix), device)?;
@@ -214,17 +237,56 @@ fn load_time_mix<B: Backend>(
     let time_faaaa: Tensor<B, 2> = file.load_f32(&format!("{}.att.time_faaaa", prefix), device)?;
 
     // Load projections
-    let receptance = load_linear(file, &format!("{}.att.receptance.weight", prefix), None, hidden, inner_dim, device)?;
-    let key = load_linear(file, &format!("{}.att.key.weight", prefix), None, hidden, inner_dim, device)?;
-    let value = load_linear(file, &format!("{}.att.value.weight", prefix), None, hidden, inner_dim, device)?;
-    let gate = load_linear(file, &format!("{}.att.gate.weight", prefix), None, hidden, inner_dim, device)?;
-    let output = load_linear(file, &format!("{}.att.output.weight", prefix), None, inner_dim, hidden, device)?;
+    let receptance = load_linear(
+        file,
+        &format!("{}.att.receptance.weight", prefix),
+        None,
+        hidden,
+        inner_dim,
+        device,
+    )?;
+    let key = load_linear(
+        file,
+        &format!("{}.att.key.weight", prefix),
+        None,
+        hidden,
+        inner_dim,
+        device,
+    )?;
+    let value = load_linear(
+        file,
+        &format!("{}.att.value.weight", prefix),
+        None,
+        hidden,
+        inner_dim,
+        device,
+    )?;
+    let gate = load_linear(
+        file,
+        &format!("{}.att.gate.weight", prefix),
+        None,
+        hidden,
+        inner_dim,
+        device,
+    )?;
+    let output = load_linear(
+        file,
+        &format!("{}.att.output.weight", prefix),
+        None,
+        inner_dim,
+        hidden,
+        device,
+    )?;
 
     // Load low-rank projections
-    let time_maa_w1: Tensor<B, 2> = file.load_f32(&format!("{}.att.time_maa_w1", prefix), device)?;
-    let time_maa_w2: Tensor<B, 3> = file.load_f32(&format!("{}.att.time_maa_w2", prefix), device)?;
-    let time_decay_w1: Tensor<B, 2> = file.load_f32(&format!("{}.att.time_decay_w1", prefix), device)?;
-    let time_decay_w2: Tensor<B, 2> = file.load_f32(&format!("{}.att.time_decay_w2", prefix), device)?;
+    let time_maa_w1: Tensor<B, 2> =
+        file.load_f32(&format!("{}.att.time_maa_w1", prefix), device)?;
+    let time_maa_w2: Tensor<B, 3> =
+        file.load_f32(&format!("{}.att.time_maa_w2", prefix), device)?;
+    let time_decay_w1: Tensor<B, 2> =
+        file.load_f32(&format!("{}.att.time_decay_w1", prefix), device)?;
+    let time_decay_w2: Tensor<B, 2> =
+        file.load_f32(&format!("{}.att.time_decay_w2", prefix), device)?;
 
     // Group norm
     let ln_x = burn::nn::GroupNormConfig::new(num_heads, inner_dim).init(device);
@@ -264,12 +326,32 @@ fn load_channel_mix<B: Backend>(
     let hidden = config.hidden_size;
     let intermediate = hidden * config.ffn_multiplier;
 
-    let ln = load_layer_norm(file, &format!("{}.ln2", prefix), hidden, config.layer_norm_eps, device)?;
+    let ln = load_layer_norm(
+        file,
+        &format!("{}.ln2", prefix),
+        hidden,
+        config.layer_norm_eps,
+        device,
+    )?;
 
     let time_maa_k: Tensor<B, 1> = file.load_f32(&format!("{}.ffn.time_maa_k", prefix), device)?;
 
-    let key = load_linear(file, &format!("{}.ffn.key.weight", prefix), None, hidden, intermediate, device)?;
-    let value = load_linear(file, &format!("{}.ffn.value.weight", prefix), None, intermediate, hidden, device)?;
+    let key = load_linear(
+        file,
+        &format!("{}.ffn.key.weight", prefix),
+        None,
+        hidden,
+        intermediate,
+        device,
+    )?;
+    let value = load_linear(
+        file,
+        &format!("{}.ffn.value.weight", prefix),
+        None,
+        intermediate,
+        hidden,
+        device,
+    )?;
 
     Ok(RwkvChannelMix {
         ln,

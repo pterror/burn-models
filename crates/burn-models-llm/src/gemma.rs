@@ -17,8 +17,8 @@
 //! - Gemma 2 9B
 //! - Gemma 2 27B
 
-use burn::prelude::*;
 use burn::nn::{Embedding, EmbeddingConfig, Linear, LinearConfig};
+use burn::prelude::*;
 
 use burn_models_core::kv_cache::ModelKvCache;
 use burn_models_core::rmsnorm::RmsNorm;
@@ -131,15 +131,18 @@ impl GemmaConfig {
         let head_dim = self.hidden_size / self.num_heads;
 
         let layers: Vec<GemmaLayer<B>> = (0..self.num_layers)
-            .map(|i| GemmaLayerConfig {
-                hidden_size: self.hidden_size,
-                intermediate_size: self.intermediate_size,
-                num_heads: self.num_heads,
-                num_kv_heads: self.num_kv_heads,
-                norm_eps: self.norm_eps,
-                // Even layers use sliding window, odd layers use global
-                use_sliding_window: i % 2 == 0,
-            }.init(device))
+            .map(|i| {
+                GemmaLayerConfig {
+                    hidden_size: self.hidden_size,
+                    intermediate_size: self.intermediate_size,
+                    num_heads: self.num_heads,
+                    num_kv_heads: self.num_kv_heads,
+                    norm_eps: self.norm_eps,
+                    // Even layers use sliding window, odd layers use global
+                    use_sliding_window: i % 2 == 0,
+                }
+                .init(device)
+            })
             .collect();
 
         let model = Gemma {
@@ -236,9 +239,15 @@ impl<B: Backend> GemmaAttention<B> {
         let k = self.k_proj.forward(x.clone());
         let v = self.v_proj.forward(x);
 
-        let q = q.reshape([batch, seq_len, self.num_heads, self.head_dim]).swap_dims(1, 2);
-        let k = k.reshape([batch, seq_len, self.num_kv_heads, self.head_dim]).swap_dims(1, 2);
-        let v = v.reshape([batch, seq_len, self.num_kv_heads, self.head_dim]).swap_dims(1, 2);
+        let q = q
+            .reshape([batch, seq_len, self.num_heads, self.head_dim])
+            .swap_dims(1, 2);
+        let k = k
+            .reshape([batch, seq_len, self.num_kv_heads, self.head_dim])
+            .swap_dims(1, 2);
+        let v = v
+            .reshape([batch, seq_len, self.num_kv_heads, self.head_dim])
+            .swap_dims(1, 2);
 
         let (q, k) = rope.forward(q, k, start_pos);
 
@@ -261,7 +270,9 @@ impl<B: Backend> GemmaAttention<B> {
         let attn = burn::tensor::activation::softmax(attn, 3);
         let out = attn.matmul(v);
 
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.o_proj.forward(out)
     }
 
@@ -273,9 +284,12 @@ impl<B: Backend> GemmaAttention<B> {
         let [batch, kv_heads, seq_len, head_dim] = x.dims();
         let n_rep = self.num_heads / self.num_kv_heads;
 
-        x.unsqueeze_dim::<5>(2)
-            .repeat_dim(2, n_rep)
-            .reshape([batch, kv_heads * n_rep, seq_len, head_dim])
+        x.unsqueeze_dim::<5>(2).repeat_dim(2, n_rep).reshape([
+            batch,
+            kv_heads * n_rep,
+            seq_len,
+            head_dim,
+        ])
     }
 }
 
@@ -326,7 +340,9 @@ impl<B: Backend> GemmaLayer<B> {
 
         // Pre-norm attention
         let normed = self.input_norm.forward(x.clone());
-        let attn_out = self.attention.forward(normed, rope, start_pos, mask, softcap);
+        let attn_out = self
+            .attention
+            .forward(normed, rope, start_pos, mask, softcap);
         // Post-attention norm + residual
         let h = x + self.post_attention_norm.forward(attn_out);
 
@@ -379,7 +395,11 @@ impl<B: Backend> Gemma<B> {
         // Prepare both mask types
         let (sliding_mask, global_mask) = if seq_len > 1 {
             (
-                Some(sliding_window_mask::<B>(seq_len, runtime.config.sliding_window, &device)),
+                Some(sliding_window_mask::<B>(
+                    seq_len,
+                    runtime.config.sliding_window,
+                    &device,
+                )),
                 Some(causal_mask::<B>(seq_len, &device)),
             )
         } else {
@@ -403,7 +423,9 @@ impl<B: Backend> Gemma<B> {
         // Tied embeddings for logits
         let [_b, _s, hidden_size] = hidden_states.dims();
         let weight = self.embed_tokens.weight.val().transpose();
-        let flat_hidden = hidden_states.clone().reshape([batch * seq_len, hidden_size]);
+        let flat_hidden = hidden_states
+            .clone()
+            .reshape([batch * seq_len, hidden_size]);
         let mut logits = flat_hidden.matmul(weight);
 
         // Apply final logit soft-capping
@@ -434,7 +456,11 @@ impl<B: Backend> Gemma<B> {
             let output = self.forward(all_tokens.clone(), runtime, None);
 
             let seq_len = all_tokens.dims()[1];
-            let last_logits = output.logits.slice([0..batch, (seq_len - 1)..seq_len, 0..runtime.config.vocab_size]);
+            let last_logits = output.logits.slice([
+                0..batch,
+                (seq_len - 1)..seq_len,
+                0..runtime.config.vocab_size,
+            ]);
             let last_logits = last_logits.reshape([batch, runtime.config.vocab_size]);
 
             let scaled_logits = if (temperature - 1.0).abs() > 1e-6 {
@@ -513,9 +539,9 @@ mod tests {
         let (model, _runtime) = config.init::<TestBackend>(&device);
 
         // Check that layers alternate between sliding window and global
-        assert!(model.layers[0].use_sliding_window);  // Layer 0: sliding
+        assert!(model.layers[0].use_sliding_window); // Layer 0: sliding
         assert!(!model.layers[1].use_sliding_window); // Layer 1: global
-        assert!(model.layers[2].use_sliding_window);  // Layer 2: sliding
+        assert!(model.layers[2].use_sliding_window); // Layer 2: sliding
         assert!(!model.layers[3].use_sliding_window); // Layer 3: global
     }
 }

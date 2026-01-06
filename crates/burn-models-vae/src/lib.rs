@@ -29,9 +29,11 @@
 //! let image = decoder.forward(latents);
 //! ```
 
-pub mod encoder;
-pub mod decoder;
 pub mod autoencoder;
+pub mod decoder;
+pub mod encoder;
 
-pub use decoder::{Decoder, DecoderConfig, DecoderBlock, ResnetBlock, SelfAttention, Upsample, scaling};
+pub use decoder::{
+    Decoder, DecoderBlock, DecoderConfig, ResnetBlock, SelfAttention, Upsample, scaling,
+};
 pub use encoder::{Encoder, EncoderConfig};

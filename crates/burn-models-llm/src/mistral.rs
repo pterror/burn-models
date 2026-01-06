@@ -14,13 +14,15 @@
 //! - Mistral 7B v0.1, v0.2, v0.3
 //! - Mistral Nemo 12B
 
-use burn::prelude::*;
 use burn::nn::{Embedding, EmbeddingConfig};
+use burn::prelude::*;
 
 use burn_models_core::kv_cache::ModelKvCache;
 use burn_models_core::rmsnorm::RmsNorm;
 use burn_models_core::rope::RotaryEmbedding;
-use burn_models_core::transformer::{TransformerBlock, TransformerBlockConfig, sliding_window_mask, causal_mask};
+use burn_models_core::transformer::{
+    TransformerBlock, TransformerBlockConfig, causal_mask, sliding_window_mask,
+};
 
 /// Mistral Model Configuration
 #[derive(Debug, Clone)]
@@ -202,7 +204,8 @@ impl<B: Backend> Mistral<B> {
 
         for (layer_idx, layer) in self.layers.iter().enumerate() {
             let _ = cache.as_mut().map(|c| c.layer(layer_idx));
-            hidden_states = layer.forward(hidden_states, Some(&runtime.rope), start_pos, mask.clone());
+            hidden_states =
+                layer.forward(hidden_states, Some(&runtime.rope), start_pos, mask.clone());
         }
 
         hidden_states = self.norm.forward(hidden_states);
@@ -229,7 +232,11 @@ impl<B: Backend> Mistral<B> {
             let output = self.forward(all_tokens.clone(), runtime, None);
 
             let seq_len = all_tokens.dims()[1];
-            let last_logits = output.logits.slice([0..batch, (seq_len - 1)..seq_len, 0..runtime.config.vocab_size]);
+            let last_logits = output.logits.slice([
+                0..batch,
+                (seq_len - 1)..seq_len,
+                0..runtime.config.vocab_size,
+            ]);
             let last_logits = last_logits.reshape([batch, runtime.config.vocab_size]);
 
             let scaled_logits = if (temperature - 1.0).abs() > 1e-6 {

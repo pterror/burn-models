@@ -3,12 +3,12 @@
 //! Direct convolution implementation for 3D inputs (video, volumetric data).
 //! Based on burn-cubecl's conv_transpose3d pattern.
 
+use burn::tensor::Shape;
 use burn_cubecl::{
     CubeRuntime,
-    tensor::CubeTensor,
     ops::numeric::{empty_device_dtype, zeros_client},
+    tensor::CubeTensor,
 };
-use burn::tensor::Shape;
 use cubecl::{calculate_cube_count_elemwise, prelude::*};
 
 /// Convolution arguments passed to the kernel
@@ -115,7 +115,8 @@ fn conv3d_kernel<E: Numeric>(
 
             for kh in 0..kernel_h {
                 // Input position in height dimension
-                let ih = (oh * args.stride_h) as i32 + (kh * args.dilation_h) as i32 - args.padding_h;
+                let ih =
+                    (oh * args.stride_h) as i32 + (kh * args.dilation_h) as i32 - args.padding_h;
 
                 // Bounds check for height
                 if ih >= 0 && (ih as u32) < input.shape(3) {
@@ -123,7 +124,8 @@ fn conv3d_kernel<E: Numeric>(
 
                     for kw in 0..kernel_w {
                         // Input position in width dimension
-                        let iw = (ow * args.stride_w) as i32 + (kw * args.dilation_w) as i32 - args.padding_w;
+                        let iw = (ow * args.stride_w) as i32 + (kw * args.dilation_w) as i32
+                            - args.padding_w;
 
                         // Bounds check for width
                         if iw >= 0 && (iw as u32) < input.shape(4) {
@@ -327,17 +329,22 @@ impl<R: CubeRuntime> std::fmt::Debug for Conv3dLayer<R> {
 
 impl<R: CubeRuntime> Conv3dLayer<R> {
     /// Create a new Conv3d layer
-    pub fn new(
-        weight: CubeTensor<R>,
-        bias: Option<CubeTensor<R>>,
-        options: Conv3dOptions,
-    ) -> Self {
-        Self { weight, bias, options }
+    pub fn new(weight: CubeTensor<R>, bias: Option<CubeTensor<R>>, options: Conv3dOptions) -> Self {
+        Self {
+            weight,
+            bias,
+            options,
+        }
     }
 
     /// Forward pass
     pub fn forward(&self, input: CubeTensor<R>) -> Result<CubeTensor<R>, LaunchError> {
-        conv3d(input, self.weight.clone(), self.bias.clone(), self.options.clone())
+        conv3d(
+            input,
+            self.weight.clone(),
+            self.bias.clone(),
+            self.options.clone(),
+        )
     }
 }
 

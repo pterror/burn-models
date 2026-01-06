@@ -5,14 +5,14 @@
 
 use std::path::Path;
 
-use burn::prelude::*;
 use burn::module::Param;
-use burn::nn::{EmbeddingConfig, LinearConfig, LayerNormConfig};
 use burn::nn::conv::Conv1dConfig;
+use burn::nn::{EmbeddingConfig, LayerNormConfig, LinearConfig};
+use burn::prelude::*;
 use burn_models_convert::loader::SafeTensorFile;
 use thiserror::Error;
 
-use crate::mamba::{Mamba, MambaConfig, MambaRuntime, MambaBlock, MambaMixer};
+use crate::mamba::{Mamba, MambaBlock, MambaConfig, MambaMixer, MambaRuntime};
 
 #[derive(Error, Debug)]
 pub enum MambaLoadError {
@@ -44,7 +44,13 @@ pub fn load_mamba<B: Backend, P: AsRef<Path>>(
     let file = SafeTensorFile::open(path)?;
 
     // Load embeddings
-    let embed_tokens = load_embedding(&file, "backbone.embedding.weight", config.vocab_size, config.d_model, device)?;
+    let embed_tokens = load_embedding(
+        &file,
+        "backbone.embedding.weight",
+        config.vocab_size,
+        config.d_model,
+        device,
+    )?;
 
     // Load Mamba layers
     let mut layers = Vec::with_capacity(config.n_layer);
@@ -54,10 +60,23 @@ pub fn load_mamba<B: Backend, P: AsRef<Path>>(
     }
 
     // Load final layer norm
-    let ln_f = load_layer_norm(&file, "backbone.norm_f", config.d_model, config.layer_norm_eps, device)?;
+    let ln_f = load_layer_norm(
+        &file,
+        "backbone.norm_f",
+        config.d_model,
+        config.layer_norm_eps,
+        device,
+    )?;
 
     // Load LM head
-    let lm_head = load_linear(&file, "lm_head.weight", None, config.d_model, config.vocab_size, device)?;
+    let lm_head = load_linear(
+        &file,
+        "lm_head.weight",
+        None,
+        config.d_model,
+        config.vocab_size,
+        device,
+    )?;
 
     let model = Mamba {
         embed_tokens,
@@ -171,7 +190,13 @@ fn load_mamba_block<B: Backend>(
 ) -> Result<MambaBlock<B>, MambaLoadError> {
     let prefix = format!("backbone.layers.{}", layer_idx);
 
-    let ln = load_layer_norm(file, &format!("{}.norm", prefix), config.d_model, config.layer_norm_eps, device)?;
+    let ln = load_layer_norm(
+        file,
+        &format!("{}.norm", prefix),
+        config.d_model,
+        config.layer_norm_eps,
+        device,
+    )?;
     let mixer = load_mamba_mixer(file, &prefix, config, device)?;
 
     Ok(MambaBlock { ln, mixer })

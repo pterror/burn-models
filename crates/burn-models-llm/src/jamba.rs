@@ -15,9 +15,9 @@
 
 use burn::module::{Module, Param};
 use burn::nn::conv::{Conv1d, Conv1dConfig};
-use burn::nn::{Embedding, EmbeddingConfig, Linear, LinearConfig, LayerNorm, LayerNormConfig};
+use burn::nn::{Embedding, EmbeddingConfig, LayerNorm, LayerNormConfig, Linear, LinearConfig};
 use burn::prelude::*;
-use burn::tensor::{activation, Int};
+use burn::tensor::{Int, activation};
 
 /// Jamba model configuration
 #[derive(Clone, Debug)]
@@ -74,7 +74,7 @@ impl JambaConfig {
             n_experts: 16,
             n_experts_per_tok: 4,
             attn_layer_period: 8, // 1 attention per 8 layers
-            moe_layer_period: 2,   // MoE every 2 layers
+            moe_layer_period: 2,  // MoE every 2 layers
             layer_norm_eps: 1e-5,
         }
     }
@@ -195,7 +195,12 @@ impl<B: Backend> JambaState<B> {
     }
 
     /// Create appropriate state for a layer
-    pub fn for_layer(config: &JambaConfig, layer_idx: usize, batch: usize, device: &B::Device) -> Self {
+    pub fn for_layer(
+        config: &JambaConfig,
+        layer_idx: usize,
+        batch: usize,
+        device: &B::Device,
+    ) -> Self {
         if (layer_idx + 1) % config.attn_layer_period == 0 {
             Self::new_attention()
         } else {
@@ -254,7 +259,12 @@ impl<B: Backend> Jamba<B> {
     }
 
     /// Initialize fresh states for recurrent inference
-    pub fn init_states(&self, runtime: &JambaRuntime<B>, batch: usize, device: &B::Device) -> Vec<JambaState<B>> {
+    pub fn init_states(
+        &self,
+        runtime: &JambaRuntime<B>,
+        batch: usize,
+        device: &B::Device,
+    ) -> Vec<JambaState<B>> {
         (0..runtime.config.n_layer)
             .map(|i| JambaState::for_layer(&runtime.config, i, batch, device))
             .collect()
@@ -279,7 +289,9 @@ impl<B: Backend> Jamba<B> {
 
         // Get last token prediction
         let [_, seq_len, vocab_size] = output.logits.dims();
-        let mut last_logits = output.logits.slice([0..batch, seq_len - 1..seq_len, 0..vocab_size])
+        let mut last_logits = output
+            .logits
+            .slice([0..batch, seq_len - 1..seq_len, 0..vocab_size])
             .squeeze_dim::<2>(1);
 
         let mut all_tokens = input_ids;
@@ -355,11 +367,7 @@ impl<B: Backend> JambaBlock<B> {
         }
     }
 
-    pub fn forward(
-        &self,
-        x: Tensor<B, 3>,
-        state: Option<&mut JambaState<B>>,
-    ) -> Tensor<B, 3> {
+    pub fn forward(&self, x: Tensor<B, 3>, state: Option<&mut JambaState<B>>) -> Tensor<B, 3> {
         // Pre-norm for core
         let residual = x.clone();
         let x = self.ln.forward(x);
@@ -422,8 +430,8 @@ impl<B: Backend> JambaMambaMixer<B> {
         let a_log_data: Vec<f32> = (0..d_inner)
             .flat_map(|_| (1..=d_state).map(|i| (i as f32).ln()))
             .collect();
-        let a_log: Tensor<B, 2> = Tensor::<B, 1>::from_floats(&a_log_data[..], device)
-            .reshape([d_inner, d_state]);
+        let a_log: Tensor<B, 2> =
+            Tensor::<B, 1>::from_floats(&a_log_data[..], device).reshape([d_inner, d_state]);
 
         Self {
             in_proj: LinearConfig::new(config.d_model, d_inner * 2)
@@ -471,7 +479,9 @@ impl<B: Backend> JambaMambaMixer<B> {
                 let conv_in = Tensor::cat(vec![cs.clone(), x.clone()], 2);
                 let total_len = conv_in.dims()[2];
                 let state_start = total_len - (self.d_conv - 1);
-                *cs = conv_in.clone().slice([0..batch, 0..self.d_inner, state_start..total_len]);
+                *cs = conv_in
+                    .clone()
+                    .slice([0..batch, 0..self.d_inner, state_start..total_len]);
                 let x = self.conv1d.forward(conv_in);
                 let seq_out = x.dims()[2];
                 x.slice([0..batch, 0..self.d_inner, seq_out - 1..seq_out])
@@ -487,9 +497,19 @@ impl<B: Backend> JambaMambaMixer<B> {
         let x = x.swap_dims(1, 2);
 
         let x_proj = self.x_proj.forward(x.clone());
-        let dt_low = x_proj.clone().slice([0..batch, 0..seq_len, 0..self.dt_rank]);
-        let b = x_proj.clone().slice([0..batch, 0..seq_len, self.dt_rank..self.dt_rank + self.d_state]);
-        let c = x_proj.slice([0..batch, 0..seq_len, self.dt_rank + self.d_state..self.dt_rank + self.d_state * 2]);
+        let dt_low = x_proj
+            .clone()
+            .slice([0..batch, 0..seq_len, 0..self.dt_rank]);
+        let b = x_proj.clone().slice([
+            0..batch,
+            0..seq_len,
+            self.dt_rank..self.dt_rank + self.d_state,
+        ]);
+        let c = x_proj.slice([
+            0..batch,
+            0..seq_len,
+            self.dt_rank + self.d_state..self.dt_rank + self.d_state * 2,
+        ]);
 
         let dt = self.dt_proj.forward(dt_low);
         let dt = burn::tensor::activation::softplus(dt, 1.0);
@@ -525,25 +545,52 @@ impl<B: Backend> JambaMambaMixer<B> {
         let mut outputs = Vec::with_capacity(seq_len);
 
         for t in 0..seq_len {
-            let x_t = x.clone().slice([0..batch, t..t + 1, 0..self.d_inner]).squeeze_dim::<2>(1);
-            let dt_t = dt.clone().slice([0..batch, t..t + 1, 0..self.d_inner]).squeeze_dim::<2>(1);
-            let b_t = b.clone().slice([0..batch, t..t + 1, 0..self.d_state]).squeeze_dim::<2>(1);
-            let c_t = c.clone().slice([0..batch, t..t + 1, 0..self.d_state]).squeeze_dim::<2>(1);
+            let x_t = x
+                .clone()
+                .slice([0..batch, t..t + 1, 0..self.d_inner])
+                .squeeze_dim::<2>(1);
+            let dt_t = dt
+                .clone()
+                .slice([0..batch, t..t + 1, 0..self.d_inner])
+                .squeeze_dim::<2>(1);
+            let b_t = b
+                .clone()
+                .slice([0..batch, t..t + 1, 0..self.d_state])
+                .squeeze_dim::<2>(1);
+            let c_t = c
+                .clone()
+                .slice([0..batch, t..t + 1, 0..self.d_state])
+                .squeeze_dim::<2>(1);
 
-            let dt_expanded = dt_t.clone().unsqueeze_dim::<3>(2)
-                .expand([batch, self.d_inner, self.d_state]);
-            let a_expanded = a.clone().unsqueeze_dim::<3>(0).expand([batch, self.d_inner, self.d_state]);
+            let dt_expanded =
+                dt_t.clone()
+                    .unsqueeze_dim::<3>(2)
+                    .expand([batch, self.d_inner, self.d_state]);
+            let a_expanded =
+                a.clone()
+                    .unsqueeze_dim::<3>(0)
+                    .expand([batch, self.d_inner, self.d_state]);
             let d_a = (dt_expanded.clone() * a_expanded).exp();
 
-            let b_expanded = b_t.unsqueeze_dim::<3>(1).expand([batch, self.d_inner, self.d_state]);
+            let b_expanded = b_t
+                .unsqueeze_dim::<3>(1)
+                .expand([batch, self.d_inner, self.d_state]);
             let d_b = dt_expanded * b_expanded;
 
-            let x_expanded = x_t.clone().unsqueeze_dim::<3>(2).expand([batch, self.d_inner, self.d_state]);
+            let x_expanded =
+                x_t.clone()
+                    .unsqueeze_dim::<3>(2)
+                    .expand([batch, self.d_inner, self.d_state]);
             h = d_a * h + d_b * x_expanded;
 
-            let c_expanded = c_t.unsqueeze_dim::<3>(1).expand([batch, self.d_inner, self.d_state]);
+            let c_expanded = c_t
+                .unsqueeze_dim::<3>(1)
+                .expand([batch, self.d_inner, self.d_state]);
             let y_t = (h.clone() * c_expanded).sum_dim(2).squeeze_dim::<2>(2);
-            let d_expanded = d.clone().unsqueeze_dim::<2>(0).expand([batch, self.d_inner]);
+            let d_expanded = d
+                .clone()
+                .unsqueeze_dim::<2>(0)
+                .expand([batch, self.d_inner]);
             let y_t = y_t + d_expanded * x_t;
 
             outputs.push(y_t.unsqueeze_dim::<3>(1));
@@ -596,13 +643,19 @@ impl<B: Backend> JambaAttention<B> {
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let [batch, seq_len, _] = x.dims();
 
-        let q = self.q_proj.forward(x.clone())
+        let q = self
+            .q_proj
+            .forward(x.clone())
             .reshape([batch, seq_len, self.n_heads, self.head_dim])
             .swap_dims(1, 2);
-        let k = self.k_proj.forward(x.clone())
+        let k = self
+            .k_proj
+            .forward(x.clone())
             .reshape([batch, seq_len, self.n_kv_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = self.v_proj.forward(x)
+        let v = self
+            .v_proj
+            .forward(x)
             .reshape([batch, seq_len, self.n_kv_heads, self.head_dim])
             .swap_dims(1, 2);
 
@@ -635,7 +688,8 @@ impl<B: Backend> JambaAttention<B> {
         let out = attn.matmul(v);
 
         // Reshape back
-        let out = out.swap_dims(1, 2)
+        let out = out
+            .swap_dims(1, 2)
             .reshape([batch, seq_len, self.n_heads * self.head_dim]);
         self.o_proj.forward(out)
     }
@@ -644,8 +698,7 @@ impl<B: Backend> JambaAttention<B> {
         let mask_data: Vec<f32> = (0..seq_len)
             .flat_map(|i| (0..seq_len).map(move |j| if j <= i { 0.0 } else { f32::NEG_INFINITY }))
             .collect();
-        Tensor::<B2, 1>::from_floats(&mask_data[..], device)
-            .reshape([1, 1, seq_len, seq_len])
+        Tensor::<B2, 1>::from_floats(&mask_data[..], device).reshape([1, 1, seq_len, seq_len])
     }
 }
 
@@ -728,8 +781,10 @@ impl<B: Backend> JambaMoEFFN<B> {
 
         for (expert_idx, expert) in self.experts.iter().enumerate() {
             let expert_out = expert.forward(x.clone());
-            let weight = router_probs.clone()
-                .slice([0..batch, 0..seq_len, expert_idx..expert_idx + 1]);
+            let weight =
+                router_probs
+                    .clone()
+                    .slice([0..batch, 0..seq_len, expert_idx..expert_idx + 1]);
             output = output + expert_out * weight.expand([batch, seq_len, d_model]);
         }
 

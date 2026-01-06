@@ -15,7 +15,7 @@
 use burn::tensor::Shape;
 use burn_cubecl::{CubeRuntime, ops::numeric::empty_device_dtype, tensor::CubeTensor};
 use cubecl::prelude::*;
-use cubecl::{calculate_cube_count_elemwise, CubeDim};
+use cubecl::{CubeDim, calculate_cube_count_elemwise};
 
 /// Options for GroupNorm + SiLU
 #[derive(Debug, Clone, Copy)]
@@ -446,11 +446,7 @@ pub struct GroupNormSiLuLayer<R: CubeRuntime> {
 
 impl<R: CubeRuntime> GroupNormSiLuLayer<R> {
     /// Creates a layer from existing weight and bias CubeTensors
-    pub fn from_tensors(
-        num_groups: usize,
-        weight: CubeTensor<R>,
-        bias: CubeTensor<R>,
-    ) -> Self {
+    pub fn from_tensors(num_groups: usize, weight: CubeTensor<R>, bias: CubeTensor<R>) -> Self {
         Self {
             num_groups,
             weight,

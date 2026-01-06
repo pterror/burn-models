@@ -18,12 +18,8 @@
 //! let output = flash_attention(query, key, value, FlashAttentionOptions::causal())?;
 //! ```
 
-use burn_cubecl::{
-    tensor::CubeTensor,
-    CubeRuntime,
-    ops::numeric::empty_device_dtype,
-};
 use burn::tensor::{DType, Shape};
+use burn_cubecl::{CubeRuntime, ops::numeric::empty_device_dtype, tensor::CubeTensor};
 use cubek::attention::{
     definition::{AccumulatorPrecision, AttentionGlobalTypes, AttentionOptions},
     launch::Strategy,
@@ -47,7 +43,7 @@ impl Default for FlashAttentionOptions {
     fn default() -> Self {
         Self {
             out_dtype: None,
-            causal: false,  // Non-causal by default (suitable for diffusion models)
+            causal: false, // Non-causal by default (suitable for diffusion models)
         }
     }
 }

@@ -52,16 +52,12 @@ pub mod unet_sdxl;
 pub mod cubecl;
 
 pub use blocks::{
-    timestep_embedding, timestep_embedding_with_freqs, timestep_freqs,
-    CrossAttention, Downsample, FeedForward, ResBlock,
-    SpatialTransformer, TransformerBlock, Upsample,
+    CrossAttention, Downsample, FeedForward, ResBlock, SpatialTransformer, TransformerBlock,
+    Upsample, timestep_embedding, timestep_embedding_with_freqs, timestep_freqs,
 };
 pub use controlnet::{ControlNet, ControlNetConfig, ControlNetOutput, ControlNetPreprocessor};
-pub use ip_adapter::{IpAdapter, IpAdapterConfig, ImageProjection, combine_embeddings};
-pub use stable_cascade::{
-    StageC, StageCConfig, StageCOutput,
-    StageB, StageBConfig, StageBOutput,
-};
+pub use ip_adapter::{ImageProjection, IpAdapter, IpAdapterConfig, combine_embeddings};
+pub use stable_cascade::{StageB, StageBConfig, StageBOutput, StageC, StageCConfig, StageCOutput};
 pub use t2i_adapter::{T2IAdapter, T2IAdapterConfig, T2IAdapterOutput};
-pub use unet_sd::{UNet, UNetConfig, DownBlock, MidBlock, UpBlock};
+pub use unet_sd::{DownBlock, MidBlock, UNet, UNetConfig, UpBlock};
 pub use unet_sdxl::{UNetXL, UNetXLConfig};

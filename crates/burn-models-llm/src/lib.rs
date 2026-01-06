@@ -86,25 +86,25 @@ pub mod serve;
 
 // Re-export model types
 pub use deepseek::{DeepSeek, DeepSeekConfig, DeepSeekOutput, DeepSeekRuntime};
-pub use deepseek_loader::{load_deepseek, DeepSeekLoadError};
+pub use deepseek_loader::{DeepSeekLoadError, load_deepseek};
 pub use gemma::{Gemma, GemmaConfig, GemmaOutput, GemmaRuntime};
-pub use gemma_loader::{load_gemma, GemmaLoadError};
+pub use gemma_loader::{GemmaLoadError, load_gemma};
 pub use jamba::{Jamba, JambaConfig, JambaOutput, JambaRuntime, JambaState};
-pub use jamba_loader::{load_jamba, JambaLoadError};
+pub use jamba_loader::{JambaLoadError, load_jamba};
 pub use llama::{Llama, LlamaConfig, LlamaOutput, LlamaRuntime};
-pub use llama_loader::{load_llama, LlamaLoadError};
+pub use llama_loader::{LlamaLoadError, load_llama};
 pub use mamba::{Mamba, MambaConfig, MambaOutput, MambaRuntime, MambaState};
-pub use mamba_loader::{load_mamba, MambaLoadError};
+pub use mamba_loader::{MambaLoadError, load_mamba};
 pub use mistral::{Mistral, MistralConfig, MistralOutput, MistralRuntime};
-pub use mistral_loader::{load_mistral, MistralLoadError};
+pub use mistral_loader::{MistralLoadError, load_mistral};
 pub use mixtral::{Mixtral, MixtralConfig, MixtralOutput, MixtralRuntime};
-pub use mixtral_loader::{load_mixtral, MixtralLoadError};
+pub use mixtral_loader::{MixtralLoadError, load_mixtral};
 pub use phi::{Phi, PhiConfig, PhiOutput, PhiRuntime};
-pub use phi_loader::{load_phi, PhiLoadError};
+pub use phi_loader::{PhiLoadError, load_phi};
 pub use qwen::{Qwen, QwenConfig, QwenOutput, QwenRuntime};
-pub use qwen_loader::{load_qwen, QwenLoadError};
+pub use qwen_loader::{QwenLoadError, load_qwen};
 pub use rwkv::{Rwkv, RwkvConfig, RwkvOutput, RwkvRuntime, RwkvState};
-pub use rwkv_loader::{load_rwkv, RwkvLoadError};
+pub use rwkv_loader::{RwkvLoadError, load_rwkv};
 
 // Re-export high-level APIs
 pub use chat::{ChatMessage, ChatSession, ChatTemplate, Role};

@@ -4,8 +4,8 @@
 //! modern transformer FFN layers. These activations multiply one part of
 //! the input by a gated transformation of another part.
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 /// SwiGLU Feed-Forward Network
 ///
@@ -63,12 +63,12 @@ impl SwiGluFfnConfig {
 
     /// Initializes the SwiGluFfn module
     pub fn init<B: Backend>(&self, device: &B::Device) -> SwiGluFfn<B> {
-        let gate_config = LinearConfig::new(self.hidden_size, self.intermediate_size)
-            .with_bias(self.bias);
-        let up_config = LinearConfig::new(self.hidden_size, self.intermediate_size)
-            .with_bias(self.bias);
-        let down_config = LinearConfig::new(self.intermediate_size, self.hidden_size)
-            .with_bias(self.bias);
+        let gate_config =
+            LinearConfig::new(self.hidden_size, self.intermediate_size).with_bias(self.bias);
+        let up_config =
+            LinearConfig::new(self.hidden_size, self.intermediate_size).with_bias(self.bias);
+        let down_config =
+            LinearConfig::new(self.intermediate_size, self.hidden_size).with_bias(self.bias);
 
         SwiGluFfn {
             gate_proj: gate_config.init(device),
@@ -134,12 +134,12 @@ impl GeGluFfnConfig {
 
     /// Initializes the GeGluFfn module
     pub fn init<B: Backend>(&self, device: &B::Device) -> GeGluFfn<B> {
-        let gate_config = LinearConfig::new(self.hidden_size, self.intermediate_size)
-            .with_bias(self.bias);
-        let up_config = LinearConfig::new(self.hidden_size, self.intermediate_size)
-            .with_bias(self.bias);
-        let down_config = LinearConfig::new(self.intermediate_size, self.hidden_size)
-            .with_bias(self.bias);
+        let gate_config =
+            LinearConfig::new(self.hidden_size, self.intermediate_size).with_bias(self.bias);
+        let up_config =
+            LinearConfig::new(self.hidden_size, self.intermediate_size).with_bias(self.bias);
+        let down_config =
+            LinearConfig::new(self.intermediate_size, self.hidden_size).with_bias(self.bias);
 
         GeGluFfn {
             gate_proj: gate_config.init(device),
@@ -197,7 +197,10 @@ pub fn geglu<B: Backend, const D: usize>(x: Tensor<B, D>) -> Tensor<B, D> {
 }
 
 /// Helper to split a tensor along the last dimension
-fn split_last_dim<B: Backend, const D: usize>(x: Tensor<B, D>, split_at: usize) -> (Tensor<B, D>, Tensor<B, D>) {
+fn split_last_dim<B: Backend, const D: usize>(
+    x: Tensor<B, D>,
+    split_at: usize,
+) -> (Tensor<B, D>, Tensor<B, D>) {
     let dims = x.dims();
     let last_dim = dims[D - 1];
 

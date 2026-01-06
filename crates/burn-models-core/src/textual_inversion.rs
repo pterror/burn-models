@@ -36,7 +36,10 @@ impl<B: Backend> TextualInversionEmbedding<B> {
 
     /// Get a single vector (for single-vector embeddings)
     pub fn single_vector(&self) -> Tensor<B, 1> {
-        self.vectors.clone().slice([0..1, 0..self.embedding_dim()]).flatten(0, 1)
+        self.vectors
+            .clone()
+            .slice([0..1, 0..self.embedding_dim()])
+            .flatten(0, 1)
     }
 
     /// Get vector at index
@@ -45,7 +48,12 @@ impl<B: Backend> TextualInversionEmbedding<B> {
             return None;
         }
         let dim = self.embedding_dim();
-        Some(self.vectors.clone().slice([index..index+1, 0..dim]).flatten(0, 1))
+        Some(
+            self.vectors
+                .clone()
+                .slice([index..index + 1, 0..dim])
+                .flatten(0, 1),
+        )
     }
 }
 
@@ -108,11 +116,7 @@ impl<B: Backend> EmbeddingManager<B> {
     ///
     /// Replaces placeholder tokens in the input with their learned embeddings.
     /// `tokens` is the list of tokens corresponding to each position.
-    pub fn apply_embeddings(
-        &self,
-        embeddings: Tensor<B, 3>,
-        tokens: &[String],
-    ) -> Tensor<B, 3> {
+    pub fn apply_embeddings(&self, embeddings: Tensor<B, 3>, tokens: &[String]) -> Tensor<B, 3> {
         let [batch, seq_len, dim] = embeddings.dims();
 
         // For each token position, check if it's a placeholder
@@ -128,16 +132,15 @@ impl<B: Backend> EmbeddingManager<B> {
                 // This is a simplified version - full implementation would
                 // need to handle multi-vector embeddings
                 for b in 0..batch {
-
                     // Get current tensor and create a new one with replacement
                     let before = if pos > 0 {
-                        Some(result.clone().slice([b..b+1, 0..pos, 0..dim]))
+                        Some(result.clone().slice([b..b + 1, 0..pos, 0..dim]))
                     } else {
                         None
                     };
 
                     let after = if pos + 1 < seq_len {
-                        Some(result.clone().slice([b..b+1, pos+1..seq_len, 0..dim]))
+                        Some(result.clone().slice([b..b + 1, pos + 1..seq_len, 0..dim]))
                     } else {
                         None
                     };
@@ -177,7 +180,11 @@ impl std::fmt::Display for EmbeddingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::DimensionMismatch { expected, got } => {
-                write!(f, "Embedding dimension mismatch: expected {}, got {}", expected, got)
+                write!(
+                    f,
+                    "Embedding dimension mismatch: expected {}, got {}",
+                    expected, got
+                )
             }
             Self::LoadError(msg) => write!(f, "Load error: {}", msg),
             Self::FormatError(msg) => write!(f, "Format error: {}", msg),

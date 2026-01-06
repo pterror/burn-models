@@ -6,13 +6,11 @@
 //! - Comptime recursive kernel loop for dimension unrolling
 //! - Channels-last layout where channels have stride=1
 
-use burn_cubecl::{
-    CubeRuntime,
-    tensor::CubeTensor,
-    ops::numeric::empty_device_optimized_dtype,
-    kernel::into_contiguous_aligned,
-};
 use burn::tensor::Shape;
+use burn_cubecl::{
+    CubeRuntime, kernel::into_contiguous_aligned, ops::numeric::empty_device_optimized_dtype,
+    tensor::CubeTensor,
+};
 use cubecl::{
     calculate_cube_count_elemwise,
     prelude::*,
@@ -277,7 +275,13 @@ impl Default for Conv3dOptimizedOptions {
 }
 
 /// Calculate output size for one dimension
-fn calc_out_size(in_size: usize, kernel: usize, stride: usize, padding: usize, dilation: usize) -> usize {
+fn calc_out_size(
+    in_size: usize,
+    kernel: usize,
+    stride: usize,
+    padding: usize,
+    dilation: usize,
+) -> usize {
     (in_size + 2 * padding - dilation * (kernel - 1) - 1) / stride + 1
 }
 
@@ -322,9 +326,27 @@ pub fn conv3d_nthwc<R: CubeRuntime>(
     let channels_per_group = out_channels / options.groups;
 
     // Calculate output spatial dimensions
-    let out_t = calc_out_size(in_t, kernel_t, options.stride[0], options.padding[0], options.dilation[0]);
-    let out_h = calc_out_size(in_h, kernel_h, options.stride[1], options.padding[1], options.dilation[1]);
-    let out_w = calc_out_size(in_w, kernel_w, options.stride[2], options.padding[2], options.dilation[2]);
+    let out_t = calc_out_size(
+        in_t,
+        kernel_t,
+        options.stride[0],
+        options.padding[0],
+        options.dilation[0],
+    );
+    let out_h = calc_out_size(
+        in_h,
+        kernel_h,
+        options.stride[1],
+        options.padding[1],
+        options.dilation[1],
+    );
+    let out_w = calc_out_size(
+        in_w,
+        kernel_w,
+        options.stride[2],
+        options.padding[2],
+        options.dilation[2],
+    );
 
     // Output shape: [batch, out_t, out_h, out_w, out_channels]
     let shape_out = Shape::new([batch_size, out_t, out_h, out_w, out_channels]);

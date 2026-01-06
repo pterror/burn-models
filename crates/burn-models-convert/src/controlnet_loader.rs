@@ -28,9 +28,7 @@ pub fn load_controlnet_info(path: impl AsRef<Path>) -> Result<ControlNetInfo, Co
     let model_type = detect_controlnet_type(&names);
 
     // Count control outputs
-    let num_zero_convs = names.iter()
-        .filter(|k| k.contains("zero_conv"))
-        .count();
+    let num_zero_convs = names.iter().filter(|k| k.contains("zero_conv")).count();
 
     Ok(ControlNetInfo {
         model_type,
@@ -42,9 +40,9 @@ pub fn load_controlnet_info(path: impl AsRef<Path>) -> Result<ControlNetInfo, Co
 /// Detects the ControlNet model type from tensor key names
 fn detect_controlnet_type(names: &[String]) -> ControlNetType {
     // Check for SDXL-specific patterns
-    let has_sdxl_patterns = names.iter().any(|k| {
-        k.contains("add_embedding") || k.contains("transformer_blocks.1")
-    });
+    let has_sdxl_patterns = names
+        .iter()
+        .any(|k| k.contains("add_embedding") || k.contains("transformer_blocks.1"));
 
     if has_sdxl_patterns {
         ControlNetType::Sdxl

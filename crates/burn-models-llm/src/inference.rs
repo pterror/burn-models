@@ -113,7 +113,6 @@ impl std::str::FromStr for ModelType {
 }
 
 impl ModelType {
-
     /// Get the model type name as a string
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -229,8 +228,9 @@ impl<B: Backend> LlmInstance<B> {
 
         // Load tokenizer
         let tokenizer_path = path.join("tokenizer.json");
-        let tokenizer = Tokenizer::from_file(&tokenizer_path)
-            .map_err(|e| LlmError::TokenizerError(format!("{}: {}", tokenizer_path.display(), e)))?;
+        let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|e| {
+            LlmError::TokenizerError(format!("{}: {}", tokenizer_path.display(), e))
+        })?;
 
         // Load config and model based on type
         let model = Self::load_model_instance(model_type, path, device)?;
@@ -477,8 +477,8 @@ impl<B: Backend> LlmInstance<B> {
 // Config parsing helpers - extract from HuggingFace config.json format
 
 fn parse_llama_config(json: &str) -> Result<LlamaConfig, LlmError> {
-    let v: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| LlmError::ConfigError(e.to_string()))?;
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| LlmError::ConfigError(e.to_string()))?;
 
     Ok(LlamaConfig {
         vocab_size: v["vocab_size"].as_u64().unwrap_or(32000) as usize,
@@ -494,8 +494,8 @@ fn parse_llama_config(json: &str) -> Result<LlamaConfig, LlmError> {
 }
 
 fn parse_mistral_config(json: &str) -> Result<MistralConfig, LlmError> {
-    let v: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| LlmError::ConfigError(e.to_string()))?;
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| LlmError::ConfigError(e.to_string()))?;
 
     Ok(MistralConfig {
         vocab_size: v["vocab_size"].as_u64().unwrap_or(32000) as usize,
@@ -512,8 +512,8 @@ fn parse_mistral_config(json: &str) -> Result<MistralConfig, LlmError> {
 }
 
 fn parse_mixtral_config(json: &str) -> Result<MixtralConfig, LlmError> {
-    let v: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| LlmError::ConfigError(e.to_string()))?;
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| LlmError::ConfigError(e.to_string()))?;
 
     Ok(MixtralConfig {
         vocab_size: v["vocab_size"].as_u64().unwrap_or(32000) as usize,
@@ -531,8 +531,8 @@ fn parse_mixtral_config(json: &str) -> Result<MixtralConfig, LlmError> {
 }
 
 fn parse_gemma_config(json: &str) -> Result<GemmaConfig, LlmError> {
-    let v: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| LlmError::ConfigError(e.to_string()))?;
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| LlmError::ConfigError(e.to_string()))?;
 
     Ok(GemmaConfig {
         vocab_size: v["vocab_size"].as_u64().unwrap_or(256000) as usize,
@@ -551,8 +551,8 @@ fn parse_gemma_config(json: &str) -> Result<GemmaConfig, LlmError> {
 }
 
 fn parse_phi_config(json: &str) -> Result<PhiConfig, LlmError> {
-    let v: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| LlmError::ConfigError(e.to_string()))?;
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| LlmError::ConfigError(e.to_string()))?;
 
     Ok(PhiConfig {
         vocab_size: v["vocab_size"].as_u64().unwrap_or(51200) as usize,
@@ -569,8 +569,8 @@ fn parse_phi_config(json: &str) -> Result<PhiConfig, LlmError> {
 }
 
 fn parse_qwen_config(json: &str) -> Result<QwenConfig, LlmError> {
-    let v: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| LlmError::ConfigError(e.to_string()))?;
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| LlmError::ConfigError(e.to_string()))?;
 
     Ok(QwenConfig {
         vocab_size: v["vocab_size"].as_u64().unwrap_or(151936) as usize,
@@ -587,8 +587,8 @@ fn parse_qwen_config(json: &str) -> Result<QwenConfig, LlmError> {
 }
 
 fn parse_deepseek_config(json: &str) -> Result<DeepSeekConfig, LlmError> {
-    let v: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| LlmError::ConfigError(e.to_string()))?;
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| LlmError::ConfigError(e.to_string()))?;
 
     let hidden_size = v["hidden_size"].as_u64().unwrap_or(4096) as usize;
     let num_heads = v["num_attention_heads"].as_u64().unwrap_or(32) as usize;
@@ -613,8 +613,8 @@ fn parse_deepseek_config(json: &str) -> Result<DeepSeekConfig, LlmError> {
 }
 
 fn parse_rwkv_config(json: &str) -> Result<RwkvConfig, LlmError> {
-    let v: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| LlmError::ConfigError(e.to_string()))?;
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| LlmError::ConfigError(e.to_string()))?;
 
     let hidden_size = v["hidden_size"].as_u64().unwrap_or(768) as usize;
     let head_dim = v["head_size"].as_u64().unwrap_or(64) as usize;
@@ -632,8 +632,8 @@ fn parse_rwkv_config(json: &str) -> Result<RwkvConfig, LlmError> {
 }
 
 fn parse_mamba_config(json: &str) -> Result<MambaConfig, LlmError> {
-    let v: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| LlmError::ConfigError(e.to_string()))?;
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| LlmError::ConfigError(e.to_string()))?;
 
     let d_model = v["d_model"].as_u64().unwrap_or(768) as usize;
 
@@ -644,15 +644,17 @@ fn parse_mamba_config(json: &str) -> Result<MambaConfig, LlmError> {
         d_state: v["d_state"].as_u64().unwrap_or(16) as usize,
         d_conv: v["d_conv"].as_u64().unwrap_or(4) as usize,
         expand: v["expand"].as_u64().unwrap_or(2) as usize,
-        dt_rank: v["dt_rank"].as_u64().map(|x| x as usize)
+        dt_rank: v["dt_rank"]
+            .as_u64()
+            .map(|x| x as usize)
             .unwrap_or_else(|| d_model.div_ceil(16)),
         layer_norm_eps: v["layer_norm_eps"].as_f64().unwrap_or(1e-5),
     })
 }
 
 fn parse_jamba_config(json: &str) -> Result<JambaConfig, LlmError> {
-    let v: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| LlmError::ConfigError(e.to_string()))?;
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| LlmError::ConfigError(e.to_string()))?;
 
     Ok(JambaConfig {
         vocab_size: v["vocab_size"].as_u64().unwrap_or(65536) as usize,

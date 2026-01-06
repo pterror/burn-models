@@ -131,10 +131,7 @@ impl<B: Backend> QuantizedTensor<B> {
 }
 
 /// Quantize a tensor to INT8/INT4
-pub fn quantize<B: Backend>(
-    tensor: Tensor<B, 2>,
-    config: &QuantConfig,
-) -> QuantizedTensor<B> {
+pub fn quantize<B: Backend>(tensor: Tensor<B, 2>, config: &QuantConfig) -> QuantizedTensor<B> {
     let [rows, cols] = tensor.dims();
     let device = tensor.device();
 
@@ -276,10 +273,7 @@ impl<B: Backend> QuantizedLinear<B> {
 }
 
 /// Calculate memory usage for quantized vs original
-pub fn memory_savings(
-    num_params: usize,
-    config: &QuantConfig,
-) -> QuantMemoryStats {
+pub fn memory_savings(num_params: usize, config: &QuantConfig) -> QuantMemoryStats {
     let original_bytes = num_params * 4; // f32 = 4 bytes
     let quantized_bytes = num_params * config.bits / 8;
 
@@ -459,7 +453,11 @@ fn quantize_fp8_scalar(value: f32, format: Fp8Format) -> f32 {
         return f32::NAN;
     }
     if value.is_infinite() {
-        return if value > 0.0 { format.max_value() } else { -format.max_value() };
+        return if value > 0.0 {
+            format.max_value()
+        } else {
+            -format.max_value()
+        };
     }
 
     let sign = value.signum();
@@ -494,10 +492,7 @@ fn quantize_fp8_scalar(value: f32, format: Fp8Format) -> f32 {
 }
 
 /// Quantize a tensor to FP8
-pub fn quantize_fp8<B: Backend>(
-    tensor: Tensor<B, 2>,
-    config: &Fp8Config,
-) -> Fp8Tensor<B> {
+pub fn quantize_fp8<B: Backend>(tensor: Tensor<B, 2>, config: &Fp8Config) -> Fp8Tensor<B> {
     let [rows, cols] = tensor.dims();
     let device = tensor.device();
     let format = config.format;
@@ -524,15 +519,14 @@ pub fn quantize_fp8<B: Backend>(
 
             // Apply FP8 quantization to each element
             let data: Vec<f32> = scaled.to_data().to_vec().unwrap();
-            let quantized_data: Vec<f32> = data.iter()
+            let quantized_data: Vec<f32> = data
+                .iter()
                 .map(|&v| quantize_fp8_scalar(v, format))
                 .collect();
 
             // Create 1D tensor then reshape to 2D
-            let quantized_row = Tensor::<B, 1>::from_floats(
-                quantized_data.as_slice(),
-                &device,
-            ).reshape([1, cols]);
+            let quantized_row =
+                Tensor::<B, 1>::from_floats(quantized_data.as_slice(), &device).reshape([1, cols]);
 
             quantized_rows.push(quantized_row);
         }
@@ -562,15 +556,14 @@ pub fn quantize_fp8<B: Backend>(
 
         // Apply FP8 quantization
         let data: Vec<f32> = scaled.to_data().to_vec().unwrap();
-        let quantized_data: Vec<f32> = data.iter()
+        let quantized_data: Vec<f32> = data
+            .iter()
             .map(|&v| quantize_fp8_scalar(v, format))
             .collect();
 
         // Create 1D tensor then reshape to 2D
-        let quantized = Tensor::<B, 1>::from_floats(
-            quantized_data.as_slice(),
-            &device,
-        ).reshape([rows, cols]);
+        let quantized =
+            Tensor::<B, 1>::from_floats(quantized_data.as_slice(), &device).reshape([rows, cols]);
 
         let scale_tensor = Tensor::<B, 1>::from_floats([scale], &device);
 
@@ -737,7 +730,11 @@ mod tests {
 
         // Create weight [out_features, in_features] = [3, 4]
         let weight = Tensor::<TestBackend, 2>::from_floats(
-            [[1.0, 2.0, 3.0, 4.0], [0.1, 0.2, 0.3, 0.4], [-1.0, -2.0, -3.0, -4.0]],
+            [
+                [1.0, 2.0, 3.0, 4.0],
+                [0.1, 0.2, 0.3, 0.4],
+                [-1.0, -2.0, -3.0, -4.0],
+            ],
             &device,
         );
 
@@ -839,10 +836,7 @@ mod tests {
         let config = Fp8Config::e4m3().with_per_channel(true);
 
         // Different scales per row
-        let tensor = Tensor::<TestBackend, 2>::from_floats(
-            [[1.0, 2.0], [100.0, 200.0]],
-            &device,
-        );
+        let tensor = Tensor::<TestBackend, 2>::from_floats([[1.0, 2.0], [100.0, 200.0]], &device);
 
         let quantized = quantize_fp8(tensor.clone(), &config);
         assert_eq!(quantized.scale.dims(), [2]); // One scale per row
@@ -859,7 +853,11 @@ mod tests {
         let config = Fp8Config::e4m3();
 
         let weight = Tensor::<TestBackend, 2>::from_floats(
-            [[1.0, 2.0, 3.0, 4.0], [0.1, 0.2, 0.3, 0.4], [-1.0, -2.0, -3.0, -4.0]],
+            [
+                [1.0, 2.0, 3.0, 4.0],
+                [0.1, 0.2, 0.3, 0.4],
+                [-1.0, -2.0, -3.0, -4.0],
+            ],
             &device,
         );
 
@@ -887,10 +885,8 @@ mod tests {
         let config = Fp8Config::e5m2();
 
         // E5M2 has larger range, test with bigger values
-        let tensor = Tensor::<TestBackend, 2>::from_floats(
-            [[100.0, 500.0, 1000.0, 5000.0]],
-            &device,
-        );
+        let tensor =
+            Tensor::<TestBackend, 2>::from_floats([[100.0, 500.0, 1000.0, 5000.0]], &device);
 
         let quantized = quantize_fp8(tensor.clone(), &config);
         let dequantized = quantized.dequantize();

@@ -134,7 +134,10 @@ impl ModelComponent {
 
     /// Whether this component is needed during the diffusion loop
     pub fn needed_during_diffusion(&self) -> bool {
-        matches!(self, ModelComponent::UNet | ModelComponent::ControlNet | ModelComponent::Lora)
+        matches!(
+            self,
+            ModelComponent::UNet | ModelComponent::ControlNet | ModelComponent::Lora
+        )
     }
 }
 
@@ -230,7 +233,11 @@ impl PipelinePhase {
                 vec![ModelComponent::VaeEncoder]
             }
             PipelinePhase::Diffusion => {
-                vec![ModelComponent::UNet, ModelComponent::ControlNet, ModelComponent::Lora]
+                vec![
+                    ModelComponent::UNet,
+                    ModelComponent::ControlNet,
+                    ModelComponent::Lora,
+                ]
             }
             PipelinePhase::Decoding => {
                 vec![ModelComponent::VaeDecoder]

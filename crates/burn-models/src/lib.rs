@@ -52,36 +52,46 @@
 //! let output = model.forward(input_ids, &runtime, None);
 //! ```
 
-pub use burn_models_core as core;
 pub use burn_models_clip as clip;
-pub use burn_models_vae as vae;
-pub use burn_models_unet as unet;
-pub use burn_models_samplers as samplers;
 pub use burn_models_convert as convert;
+pub use burn_models_core as core;
 pub use burn_models_llm as llm;
+pub use burn_models_samplers as samplers;
+pub use burn_models_unet as unet;
+pub use burn_models_vae as vae;
 
 // Re-export LoRA types for convenience
-pub use burn_models_core::lora::{LoraModel, LoraWeight, LoraConvWeight, LoraWeightType};
-pub use burn_models_convert::lora_loader::{load_lora, LoraFormat, LoraLoadError};
+pub use burn_models_convert::lora_loader::{LoraFormat, LoraLoadError, load_lora};
+pub use burn_models_core::lora::{LoraConvWeight, LoraModel, LoraWeight, LoraWeightType};
 
 // Re-export ControlNet types
-pub use burn_models_unet::controlnet::{ControlNet, ControlNetConfig, ControlNetOutput, ControlNetPreprocessor};
-pub use burn_models_convert::controlnet_loader::{load_controlnet_info, ControlNetInfo, ControlNetLoadError, ControlNetType};
+pub use burn_models_convert::controlnet_loader::{
+    ControlNetInfo, ControlNetLoadError, ControlNetType, load_controlnet_info,
+};
+pub use burn_models_unet::controlnet::{
+    ControlNet, ControlNetConfig, ControlNetOutput, ControlNetPreprocessor,
+};
 
 // Re-export IP-Adapter types
-pub use burn_models_unet::ip_adapter::{IpAdapter, IpAdapterConfig, ImageProjection, combine_embeddings};
+pub use burn_models_unet::ip_adapter::{
+    ImageProjection, IpAdapter, IpAdapterConfig, combine_embeddings,
+};
 
 // Re-export T2I-Adapter types
-pub use burn_models_unet::t2i_adapter::{T2IAdapter, T2IAdapterConfig, T2IAdapterOutput, T2IAdapterType};
+pub use burn_models_unet::t2i_adapter::{
+    T2IAdapter, T2IAdapterConfig, T2IAdapterOutput, T2IAdapterType,
+};
 
 // Re-export textual inversion / embedding types
-pub use burn_models_core::textual_inversion::{
-    TextualInversionEmbedding, EmbeddingManager, EmbeddingError, find_placeholder_tokens
+pub use burn_models_convert::embedding_loader::{
+    EmbeddingFormat, EmbeddingLoadError, load_embedding,
 };
-pub use burn_models_convert::embedding_loader::{load_embedding, EmbeddingFormat, EmbeddingLoadError};
+pub use burn_models_core::textual_inversion::{
+    EmbeddingError, EmbeddingManager, TextualInversionEmbedding, find_placeholder_tokens,
+};
 
 // Re-export precision types (configuration only - see precision module docs)
-pub use burn_models_core::precision::{PrecisionMode, PrecisionConfig};
+pub use burn_models_core::precision::{PrecisionConfig, PrecisionMode};
 
 pub mod backends;
 pub mod batch;
@@ -90,24 +100,39 @@ pub mod offload;
 pub mod pipeline;
 
 pub use batch::{BatchConfig, BatchResult};
-pub use offload::{OffloadStrategy, OffloadConfig, ModelComponent, OffloadState, PipelinePhase};
+pub use offload::{ModelComponent, OffloadConfig, OffloadState, OffloadStrategy, PipelinePhase};
 
 pub use pipeline::{
-    DiffusionPipeline, Img2ImgConfig, SampleConfig, Sd1xConditioning,
-    StableDiffusion1x, StableDiffusion1xImg2Img, tensor_to_rgb,
-    // Step callback types
-    StepOutput, StepInfo, LatentFormat, latent_to_preview,
-    // Inpainting
-    InpaintConfig, StableDiffusion1xInpaint,
-    // SDXL
-    SdxlConditioning, SdxlSampleConfig, StableDiffusionXL,
-    SdxlImg2ImgConfig, StableDiffusionXLImg2Img,
-    // SDXL Inpainting
-    SdxlInpaintConfig, StableDiffusionXLInpaint,
-    // SDXL Refiner
-    RefinerConfig, StableDiffusionXLRefiner,
     // SDXL Base + Refiner Workflow
-    BaseRefinerConfig, StableDiffusionXLWithRefiner,
+    BaseRefinerConfig,
+    DiffusionPipeline,
+    Img2ImgConfig,
+    // Inpainting
+    InpaintConfig,
+    LatentFormat,
+    // SDXL Refiner
+    RefinerConfig,
+    SampleConfig,
+    Sd1xConditioning,
+    // SDXL
+    SdxlConditioning,
+    SdxlImg2ImgConfig,
+    // SDXL Inpainting
+    SdxlInpaintConfig,
+    SdxlSampleConfig,
+    StableDiffusion1x,
+    StableDiffusion1xImg2Img,
+    StableDiffusion1xInpaint,
+    StableDiffusionXL,
+    StableDiffusionXLImg2Img,
+    StableDiffusionXLInpaint,
+    StableDiffusionXLRefiner,
+    StableDiffusionXLWithRefiner,
+    StepInfo,
+    // Step callback types
+    StepOutput,
+    latent_to_preview,
+    tensor_to_rgb,
 };
 
 pub use memory::{MemoryConfig, TiledVae};

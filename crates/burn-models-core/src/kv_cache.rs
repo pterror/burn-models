@@ -48,11 +48,7 @@ impl<B: Backend> KvCache<B> {
     /// # Returns
     ///
     /// Tuple of (full_keys, full_values) including cached content
-    pub fn update(
-        &mut self,
-        k: Tensor<B, 4>,
-        v: Tensor<B, 4>,
-    ) -> (Tensor<B, 4>, Tensor<B, 4>) {
+    pub fn update(&mut self, k: Tensor<B, 4>, v: Tensor<B, 4>) -> (Tensor<B, 4>, Tensor<B, 4>) {
         let [_batch, _heads, new_len, _dim] = k.dims();
 
         let (full_k, full_v) = match (&self.k, &self.v) {
@@ -113,9 +109,7 @@ impl<B: Backend> ModelKvCache<B> {
     /// * `num_layers` - Number of transformer layers
     /// * `max_seq_len` - Maximum sequence length to cache
     pub fn new(num_layers: usize, max_seq_len: usize) -> Self {
-        let layers = (0..num_layers)
-            .map(|_| KvCache::new(max_seq_len))
-            .collect();
+        let layers = (0..num_layers).map(|_| KvCache::new(max_seq_len)).collect();
 
         Self {
             layers,
@@ -193,11 +187,7 @@ impl<B: Backend> StaticKvCache<B> {
     /// # Returns
     ///
     /// Slices of the full keys/values up to current position
-    pub fn update(
-        &mut self,
-        k: Tensor<B, 4>,
-        v: Tensor<B, 4>,
-    ) -> (Tensor<B, 4>, Tensor<B, 4>) {
+    pub fn update(&mut self, k: Tensor<B, 4>, v: Tensor<B, 4>) -> (Tensor<B, 4>, Tensor<B, 4>) {
         let [batch, heads, new_len, head_dim] = k.dims();
         let start = self.current_pos;
         let end = start + new_len;
@@ -205,20 +195,26 @@ impl<B: Backend> StaticKvCache<B> {
         assert!(end <= self.max_seq_len, "KV cache overflow");
 
         // Update the cache in place using slice assignment
-        self.k = self.k.clone().slice_assign(
-            [0..batch, 0..heads, start..end, 0..head_dim],
-            k,
-        );
-        self.v = self.v.clone().slice_assign(
-            [0..batch, 0..heads, start..end, 0..head_dim],
-            v,
-        );
+        self.k = self
+            .k
+            .clone()
+            .slice_assign([0..batch, 0..heads, start..end, 0..head_dim], k);
+        self.v = self
+            .v
+            .clone()
+            .slice_assign([0..batch, 0..heads, start..end, 0..head_dim], v);
 
         self.current_pos = end;
 
         // Return the valid portion of the cache
-        let full_k = self.k.clone().slice([0..batch, 0..heads, 0..end, 0..head_dim]);
-        let full_v = self.v.clone().slice([0..batch, 0..heads, 0..end, 0..head_dim]);
+        let full_k = self
+            .k
+            .clone()
+            .slice([0..batch, 0..heads, 0..end, 0..head_dim]);
+        let full_v = self
+            .v
+            .clone()
+            .slice([0..batch, 0..heads, 0..end, 0..head_dim]);
 
         (full_k, full_v)
     }

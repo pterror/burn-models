@@ -48,7 +48,10 @@ pub type DefaultBackend = LibTorch;
 pub type DefaultBackend = Wgpu;
 
 /// Type alias for the default backend when using cuda feature
-#[cfg(all(feature = "cuda", not(any(feature = "ndarray", feature = "tch", feature = "wgpu"))))]
+#[cfg(all(
+    feature = "cuda",
+    not(any(feature = "ndarray", feature = "tch", feature = "wgpu"))
+))]
 pub type DefaultBackend = Cuda;
 
 /// Get the default device for the enabled backend
@@ -75,18 +78,31 @@ pub fn default_device() -> WgpuDevice {
 }
 
 /// Get the default device for the enabled backend
-#[cfg(all(feature = "cuda", not(any(feature = "ndarray", feature = "tch", feature = "wgpu"))))]
+#[cfg(all(
+    feature = "cuda",
+    not(any(feature = "ndarray", feature = "tch", feature = "wgpu"))
+))]
 pub fn default_device() -> CudaDevice {
     CudaDevice::default()
 }
 
 #[cfg(test)]
 mod tests {
-    #[cfg(any(feature = "ndarray", feature = "tch", feature = "wgpu", feature = "cuda"))]
+    #[cfg(any(
+        feature = "ndarray",
+        feature = "tch",
+        feature = "wgpu",
+        feature = "cuda"
+    ))]
     use super::*;
 
     #[test]
-    #[cfg(any(feature = "ndarray", feature = "tch", feature = "wgpu", feature = "cuda"))]
+    #[cfg(any(
+        feature = "ndarray",
+        feature = "tch",
+        feature = "wgpu",
+        feature = "cuda"
+    ))]
     fn test_default_device() {
         let _device = default_device();
     }

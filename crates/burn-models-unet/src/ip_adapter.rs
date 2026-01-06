@@ -167,9 +167,7 @@ impl<B: Backend> Resampler<B> {
         let num_tokens = self.queries.dims()[0];
 
         // Expand queries for batch
-        let queries = self.queries.clone()
-            .unsqueeze::<3>()
-            .repeat_dim(0, batch);
+        let queries = self.queries.clone().unsqueeze::<3>().repeat_dim(0, batch);
 
         // Project queries
         let q = self.q_proj.forward(queries);
@@ -182,11 +180,14 @@ impl<B: Backend> Resampler<B> {
         let v = kv.slice([0..batch, 0..seq_len, half_dim..kv_dim]);
 
         // Reshape for multi-head attention
-        let q = q.reshape([batch, num_tokens, self.num_heads, self.head_dim])
+        let q = q
+            .reshape([batch, num_tokens, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let k = k.reshape([batch, seq_len, self.num_heads, self.head_dim])
+        let k = k
+            .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = v.reshape([batch, seq_len, self.num_heads, self.head_dim])
+        let v = v
+            .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
         // Attention
@@ -196,7 +197,8 @@ impl<B: Backend> Resampler<B> {
         let out = attn.matmul(v);
 
         // Reshape back
-        let out = out.swap_dims(1, 2)
+        let out = out
+            .swap_dims(1, 2)
             .reshape([batch, num_tokens, self.num_heads * self.head_dim]);
 
         self.out_proj.forward(out)

@@ -100,7 +100,6 @@ impl PrecisionConfig {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

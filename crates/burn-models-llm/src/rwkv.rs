@@ -18,9 +18,9 @@
 //! - No attention mechanism - uses linear recurrence
 //! - State is updated recurrently, not stored in KV cache
 
-use burn::prelude::*;
 use burn::module::Param;
-use burn::nn::{Embedding, EmbeddingConfig, Linear, LinearConfig, LayerNorm, LayerNormConfig};
+use burn::nn::{Embedding, EmbeddingConfig, LayerNorm, LayerNormConfig, Linear, LinearConfig};
+use burn::prelude::*;
 
 /// RWKV-7 Model Configuration
 #[derive(Debug, Clone)]
@@ -208,11 +208,21 @@ impl<B: Backend> RwkvTimeMix<B> {
             time_maa_g: Param::from_tensor(Tensor::zeros([hidden], device)),
             time_decay: Param::from_tensor(Tensor::zeros([inner_dim], device)),
             time_faaaa: Param::from_tensor(Tensor::zeros([num_heads, head_dim], device)),
-            receptance: LinearConfig::new(hidden, inner_dim).with_bias(false).init(device),
-            key: LinearConfig::new(hidden, inner_dim).with_bias(false).init(device),
-            value: LinearConfig::new(hidden, inner_dim).with_bias(false).init(device),
-            gate: LinearConfig::new(hidden, inner_dim).with_bias(false).init(device),
-            output: LinearConfig::new(inner_dim, hidden).with_bias(false).init(device),
+            receptance: LinearConfig::new(hidden, inner_dim)
+                .with_bias(false)
+                .init(device),
+            key: LinearConfig::new(hidden, inner_dim)
+                .with_bias(false)
+                .init(device),
+            value: LinearConfig::new(hidden, inner_dim)
+                .with_bias(false)
+                .init(device),
+            gate: LinearConfig::new(hidden, inner_dim)
+                .with_bias(false)
+                .init(device),
+            output: LinearConfig::new(inner_dim, hidden)
+                .with_bias(false)
+                .init(device),
             // Low-rank projections
             time_maa_w1: Param::from_tensor(Tensor::zeros([hidden, lora_dim * 5], device)),
             time_maa_w2: Param::from_tensor(Tensor::zeros([5, lora_dim, hidden], device)),
@@ -243,11 +253,7 @@ impl<B: Backend> RwkvTimeMix<B> {
         }
     }
 
-    pub fn forward(
-        &self,
-        x: Tensor<B, 3>,
-        mut state: Option<&mut RwkvState<B>>,
-    ) -> Tensor<B, 3> {
+    pub fn forward(&self, x: Tensor<B, 3>, mut state: Option<&mut RwkvState<B>>) -> Tensor<B, 3> {
         let [batch, seq_len, _] = x.dims();
 
         // Layer norm
@@ -261,14 +267,17 @@ impl<B: Backend> RwkvTimeMix<B> {
 
         // Update state with last token
         if let Some(ref mut s) = state {
-            let last_token = x.clone().slice([0..batch, seq_len - 1..seq_len, 0..self.num_heads * self.head_dim]);
+            let last_token = x.clone().slice([
+                0..batch,
+                seq_len - 1..seq_len,
+                0..self.num_heads * self.head_dim,
+            ]);
             s.time_mix_x = last_token.squeeze_dim::<2>(1);
         }
 
         // Helper to unsqueeze [hidden] -> [1, 1, hidden] for broadcasting with [batch, seq, hidden]
-        let unsqueeze_1d = |t: Tensor<B, 1>| -> Tensor<B, 3> {
-            t.unsqueeze_dim::<2>(0).unsqueeze_dim::<3>(0)
-        };
+        let unsqueeze_1d =
+            |t: Tensor<B, 1>| -> Tensor<B, 3> { t.unsqueeze_dim::<2>(0).unsqueeze_dim::<3>(0) };
 
         // Compute time-mixed inputs using learnable mixing ratios
         let diff = x_shifted.clone() - x.clone();
@@ -276,7 +285,14 @@ impl<B: Backend> RwkvTimeMix<B> {
 
         // Check if RWKV-7 dynamic mixing weights are present (non-zero)
         // RWKV-6 models won't have these, so we fall back to static mixing
-        let w1_sum: f32 = self.time_maa_w1.val().clone().abs().sum().into_scalar().elem();
+        let w1_sum: f32 = self
+            .time_maa_w1
+            .val()
+            .clone()
+            .abs()
+            .sum()
+            .into_scalar()
+            .elem();
         let use_dynamic_mixing = w1_sum > 1e-6;
 
         let (xr, xw, xk, xv, xg) = if use_dynamic_mixing {
@@ -299,7 +315,10 @@ impl<B: Backend> RwkvTimeMix<B> {
             let w2 = self.time_maa_w2.val();
             let dynamic_mix = |i: usize| -> Tensor<B, 3> {
                 // Extract [batch, seq, lora_dim] for component i
-                let component = maa_proj.clone().slice([0..batch, 0..seq_len, i..i + 1, 0..lora_dim]);
+                let component =
+                    maa_proj
+                        .clone()
+                        .slice([0..batch, 0..seq_len, i..i + 1, 0..lora_dim]);
                 let component = component.reshape([batch * seq_len, lora_dim]);
                 // Extract [lora_dim, hidden] for W2[i]
                 let w2_i = w2.clone().slice([i..i + 1, 0..lora_dim, 0..hidden]);
@@ -335,7 +354,11 @@ impl<B: Backend> RwkvTimeMix<B> {
         let g = burn::tensor::activation::sigmoid(self.gate.forward(xg));
 
         // Compute decay weight - unsqueeze [inner_dim] -> [1, 1, inner_dim]
-        let w = self.time_decay.val().unsqueeze_dim::<2>(0).unsqueeze_dim::<3>(0)
+        let w = self
+            .time_decay
+            .val()
+            .unsqueeze_dim::<2>(0)
+            .unsqueeze_dim::<3>(0)
             .expand([batch, seq_len, self.num_heads * self.head_dim]);
         let w = (-w.exp()).exp(); // time decay
 
@@ -376,7 +399,10 @@ impl<B: Backend> RwkvTimeMix<B> {
         let (mut wkv_state, wkv_scale) = match &state {
             Some(s) => (s.wkv_state.clone(), s.wkv_scale.clone()),
             None => (
-                Tensor::zeros([batch, self.num_heads, self.head_dim, self.head_dim], &device),
+                Tensor::zeros(
+                    [batch, self.num_heads, self.head_dim, self.head_dim],
+                    &device,
+                ),
                 Tensor::zeros([batch, self.num_heads, self.head_dim], &device),
             ),
         };
@@ -385,22 +411,36 @@ impl<B: Backend> RwkvTimeMix<B> {
         let mut outputs = Vec::with_capacity(seq_len);
 
         for t in 0..seq_len {
-            let r_t = r.clone().slice([0..batch, t..t + 1, 0..self.num_heads, 0..self.head_dim])
+            let r_t = r
+                .clone()
+                .slice([0..batch, t..t + 1, 0..self.num_heads, 0..self.head_dim])
                 .squeeze_dim::<3>(1);
-            let k_t = k.clone().slice([0..batch, t..t + 1, 0..self.num_heads, 0..self.head_dim])
+            let k_t = k
+                .clone()
+                .slice([0..batch, t..t + 1, 0..self.num_heads, 0..self.head_dim])
                 .squeeze_dim::<3>(1);
-            let v_t = v.clone().slice([0..batch, t..t + 1, 0..self.num_heads, 0..self.head_dim])
+            let v_t = v
+                .clone()
+                .slice([0..batch, t..t + 1, 0..self.num_heads, 0..self.head_dim])
                 .squeeze_dim::<3>(1);
-            let w_t = w.clone().slice([0..batch, t..t + 1, 0..self.num_heads, 0..self.head_dim])
+            let w_t = w
+                .clone()
+                .slice([0..batch, t..t + 1, 0..self.num_heads, 0..self.head_dim])
                 .squeeze_dim::<3>(1);
 
             // Update state: S_t = w * S_{t-1} + k^T @ v (outer product)
-            let kv = k_t.clone().unsqueeze_dim::<4>(3).matmul(v_t.clone().unsqueeze_dim::<4>(2));
+            let kv = k_t
+                .clone()
+                .unsqueeze_dim::<4>(3)
+                .matmul(v_t.clone().unsqueeze_dim::<4>(2));
             let w_expanded = w_t.clone().unsqueeze_dim::<4>(3);
             wkv_state = wkv_state * w_expanded + kv;
 
             // Compute output: r @ S_t
-            let out_t = r_t.unsqueeze_dim::<4>(2).matmul(wkv_state.clone()).squeeze_dim::<3>(2);
+            let out_t = r_t
+                .unsqueeze_dim::<4>(2)
+                .matmul(wkv_state.clone())
+                .squeeze_dim::<3>(2);
             outputs.push(out_t.unsqueeze_dim::<4>(1));
         }
 
@@ -441,8 +481,12 @@ impl<B: Backend> RwkvChannelMix<B> {
                 .with_epsilon(config.layer_norm_eps)
                 .init(device),
             time_maa_k: Param::from_tensor(Tensor::zeros([hidden], device)),
-            key: LinearConfig::new(hidden, intermediate).with_bias(false).init(device),
-            value: LinearConfig::new(intermediate, hidden).with_bias(false).init(device),
+            key: LinearConfig::new(hidden, intermediate)
+                .with_bias(false)
+                .init(device),
+            value: LinearConfig::new(intermediate, hidden)
+                .with_bias(false)
+                .init(device),
         }
     }
 
@@ -463,11 +507,7 @@ impl<B: Backend> RwkvChannelMix<B> {
         }
     }
 
-    pub fn forward(
-        &self,
-        x: Tensor<B, 3>,
-        state: Option<&mut RwkvState<B>>,
-    ) -> Tensor<B, 3> {
+    pub fn forward(&self, x: Tensor<B, 3>, state: Option<&mut RwkvState<B>>) -> Tensor<B, 3> {
         let [batch, seq_len, hidden] = x.dims();
 
         // Layer norm
@@ -486,7 +526,11 @@ impl<B: Backend> RwkvChannelMix<B> {
         }
 
         // Mixed input - unsqueeze [hidden] -> [1, 1, hidden] for broadcasting
-        let time_maa = self.time_maa_k.val().unsqueeze_dim::<2>(0).unsqueeze_dim::<3>(0);
+        let time_maa = self
+            .time_maa_k
+            .val()
+            .unsqueeze_dim::<2>(0)
+            .unsqueeze_dim::<3>(0);
         let xk = x.clone() + (x_shifted - x) * time_maa;
 
         // FFN: key -> squared_relu -> value
@@ -513,11 +557,7 @@ impl<B: Backend> RwkvBlock<B> {
         }
     }
 
-    pub fn forward(
-        &self,
-        x: Tensor<B, 3>,
-        state: Option<&mut RwkvState<B>>,
-    ) -> Tensor<B, 3> {
+    pub fn forward(&self, x: Tensor<B, 3>, state: Option<&mut RwkvState<B>>) -> Tensor<B, 3> {
         // Split the mutable borrow for time_mix and channel_mix
         let (time_state, channel_state) = match state {
             Some(s) => {
@@ -556,7 +596,10 @@ impl<B: Backend> RwkvState<B> {
         Self {
             time_mix_x: Tensor::zeros([batch, inner_dim], device),
             channel_mix_x: Tensor::zeros([batch, config.hidden_size], device),
-            wkv_state: Tensor::zeros([batch, config.num_heads, config.head_dim, config.head_dim], device),
+            wkv_state: Tensor::zeros(
+                [batch, config.num_heads, config.head_dim, config.head_dim],
+                device,
+            ),
             wkv_scale: Tensor::zeros([batch, config.num_heads, config.head_dim], device),
         }
     }
@@ -618,7 +661,12 @@ impl<B: Backend> Rwkv<B> {
     }
 
     /// Initialize fresh states for recurrent inference
-    pub fn init_states(&self, runtime: &RwkvRuntime<B>, batch: usize, device: &B::Device) -> Vec<RwkvState<B>> {
+    pub fn init_states(
+        &self,
+        runtime: &RwkvRuntime<B>,
+        batch: usize,
+        device: &B::Device,
+    ) -> Vec<RwkvState<B>> {
         (0..runtime.config.num_layers)
             .map(|_| RwkvState::new(&runtime.config, batch, device))
             .collect()
@@ -643,7 +691,9 @@ impl<B: Backend> Rwkv<B> {
 
         // Get last token prediction
         let [_, seq_len, vocab_size] = output.logits.dims();
-        let mut last_logits = output.logits.slice([0..batch, seq_len - 1..seq_len, 0..vocab_size])
+        let mut last_logits = output
+            .logits
+            .slice([0..batch, seq_len - 1..seq_len, 0..vocab_size])
             .squeeze_dim::<2>(1);
 
         let mut all_tokens = input_ids;

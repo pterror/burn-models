@@ -20,8 +20,8 @@
 //! - **Flow matching**: Rectified flow objective
 //! - **Efficient**: Smaller model with good quality
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 use burn_models_core::glu::SwiGluFfn;
 use burn_models_core::layernorm::LayerNorm;
@@ -58,13 +58,13 @@ impl LtxVideoConfig {
     /// LTX-Video base configuration
     pub fn base() -> Self {
         Self {
-            in_channels: 128,  // High channel count from 3D VAE
+            in_channels: 128, // High channel count from 3D VAE
             patch_size: 1,
             temporal_patch_size: 1,
             hidden_size: 2048,
             num_heads: 32,
             num_blocks: 28,
-            text_dim: 4096,  // T5-XXL
+            text_dim: 4096, // T5-XXL
             time_embed_dim: 256,
             mlp_ratio: 4.0,
             max_spatial_len: 4096,
@@ -100,7 +100,8 @@ impl LtxVideoConfig {
     /// Initialize the model
     pub fn init<B: Backend>(&self, device: &B::Device) -> (LtxVideo<B>, LtxVideoRuntime<B>) {
         // Video patch embedding
-        let patch_dim = self.in_channels * self.patch_size * self.patch_size * self.temporal_patch_size;
+        let patch_dim =
+            self.in_channels * self.patch_size * self.patch_size * self.temporal_patch_size;
         let video_embed = LinearConfig::new(patch_dim, self.hidden_size)
             .with_bias(true)
             .init(device);
@@ -124,11 +125,8 @@ impl LtxVideoConfig {
         // DiT blocks
         let blocks: Vec<LtxBlock<B>> = (0..self.num_blocks)
             .map(|_| {
-                LtxBlockConfig::new(
-                    self.hidden_size,
-                    self.num_heads,
-                    self.intermediate_size(),
-                ).init(device)
+                LtxBlockConfig::new(self.hidden_size, self.num_heads, self.intermediate_size())
+                    .init(device)
             })
             .collect();
 
@@ -224,7 +222,11 @@ struct LtxBlockConfig {
 
 impl LtxBlockConfig {
     fn new(hidden_size: usize, num_heads: usize, intermediate_size: usize) -> Self {
-        Self { hidden_size, num_heads, intermediate_size }
+        Self {
+            hidden_size,
+            num_heads,
+            intermediate_size,
+        }
     }
 
     fn init<B: Backend>(&self, device: &B::Device) -> LtxBlock<B> {
@@ -297,13 +299,36 @@ impl<B: Backend> LtxAttention<B> {
         let qkv = self.to_qkv.forward(x);
         let qkv = qkv.reshape([batch, seq_len, 3, self.num_heads, self.head_dim]);
 
-        let q = qkv.clone().slice([0..batch, 0..seq_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let q = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let k = qkv.clone().slice([0..batch, 0..seq_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let k = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = qkv.slice([0..batch, 0..seq_len, 2..3, 0..self.num_heads, 0..self.head_dim])
+        let v = qkv
+            .slice([
+                0..batch,
+                0..seq_len,
+                2..3,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
@@ -315,7 +340,9 @@ impl<B: Backend> LtxAttention<B> {
         let attn = burn::tensor::activation::softmax(attn, 3);
         let out = attn.matmul(v);
 
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.to_out.forward(out)
     }
 }
@@ -346,13 +373,36 @@ impl<B: Backend> LtxCausalAttention<B> {
         let qkv = self.to_qkv.forward(x);
         let qkv = qkv.reshape([batch, seq_len, 3, self.num_heads, self.head_dim]);
 
-        let q = qkv.clone().slice([0..batch, 0..seq_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let q = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let k = qkv.clone().slice([0..batch, 0..seq_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let k = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = qkv.slice([0..batch, 0..seq_len, 2..3, 0..self.num_heads, 0..self.head_dim])
+        let v = qkv
+            .slice([
+                0..batch,
+                0..seq_len,
+                2..3,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
@@ -369,7 +419,9 @@ impl<B: Backend> LtxCausalAttention<B> {
         let attn = burn::tensor::activation::softmax(attn, 3);
         let out = attn.matmul(v);
 
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.to_out.forward(out)
     }
 }
@@ -392,15 +444,32 @@ impl<B: Backend> LtxCrossAttention<B> {
         let [_, ctx_len, _] = context.dims();
 
         let q = self.to_q.forward(x);
-        let q = q.reshape([batch, seq_len, self.num_heads, self.head_dim]).swap_dims(1, 2);
+        let q = q
+            .reshape([batch, seq_len, self.num_heads, self.head_dim])
+            .swap_dims(1, 2);
 
         let kv = self.to_kv.forward(context);
         let kv = kv.reshape([batch, ctx_len, 2, self.num_heads, self.head_dim]);
 
-        let k = kv.clone().slice([0..batch, 0..ctx_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let k = kv
+            .clone()
+            .slice([
+                0..batch,
+                0..ctx_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, ctx_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = kv.slice([0..batch, 0..ctx_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let v = kv
+            .slice([
+                0..batch,
+                0..ctx_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, ctx_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
@@ -409,7 +478,9 @@ impl<B: Backend> LtxCrossAttention<B> {
         let attn = burn::tensor::activation::softmax(attn, 3);
         let out = attn.matmul(v);
 
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.to_out.forward(out)
     }
 }
@@ -451,14 +522,37 @@ impl<B: Backend> LtxBlock<B> {
         let mod_params = self.modulation.forward(cond);
         let mod_params = mod_params.reshape([batch, 8, hidden]);
 
-        let shift1 = mod_params.clone().slice([0..batch, 0..1, 0..hidden]).reshape([batch, 1, hidden]);
-        let scale1 = mod_params.clone().slice([0..batch, 1..2, 0..hidden]).reshape([batch, 1, hidden]);
-        let shift2 = mod_params.clone().slice([0..batch, 2..3, 0..hidden]).reshape([batch, 1, hidden]);
-        let scale2 = mod_params.clone().slice([0..batch, 3..4, 0..hidden]).reshape([batch, 1, hidden]);
-        let shift3 = mod_params.clone().slice([0..batch, 4..5, 0..hidden]).reshape([batch, 1, hidden]);
-        let scale3 = mod_params.clone().slice([0..batch, 5..6, 0..hidden]).reshape([batch, 1, hidden]);
-        let shift4 = mod_params.clone().slice([0..batch, 6..7, 0..hidden]).reshape([batch, 1, hidden]);
-        let scale4 = mod_params.slice([0..batch, 7..8, 0..hidden]).reshape([batch, 1, hidden]);
+        let shift1 = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let scale1 = mod_params
+            .clone()
+            .slice([0..batch, 1..2, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let shift2 = mod_params
+            .clone()
+            .slice([0..batch, 2..3, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let scale2 = mod_params
+            .clone()
+            .slice([0..batch, 3..4, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let shift3 = mod_params
+            .clone()
+            .slice([0..batch, 4..5, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let scale3 = mod_params
+            .clone()
+            .slice([0..batch, 5..6, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let shift4 = mod_params
+            .clone()
+            .slice([0..batch, 6..7, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let scale4 = mod_params
+            .slice([0..batch, 7..8, 0..hidden])
+            .reshape([batch, 1, hidden]);
 
         // Spatial attention: [B, T*H*W, D] -> [B*T, H*W, D]
         let x_norm = self.norm1.forward(x.clone());
@@ -472,9 +566,15 @@ impl<B: Backend> LtxBlock<B> {
         let x_norm = self.norm2.forward(x.clone());
         let x_norm = (Tensor::ones_like(&scale2) + scale2) * x_norm + shift2;
         let x_reshaped = x_norm.reshape([batch, temporal_len, spatial_len, hidden]);
-        let x_temporal = x_reshaped.swap_dims(1, 2).reshape([batch * spatial_len, temporal_len, hidden]);
-        let temporal_out = self.temporal_attn.forward(x_temporal, temporal_rope, temporal_causal_mask);
-        let temporal_out = temporal_out.reshape([batch, spatial_len, temporal_len, hidden])
+        let x_temporal =
+            x_reshaped
+                .swap_dims(1, 2)
+                .reshape([batch * spatial_len, temporal_len, hidden]);
+        let temporal_out =
+            self.temporal_attn
+                .forward(x_temporal, temporal_rope, temporal_causal_mask);
+        let temporal_out = temporal_out
+            .reshape([batch, spatial_len, temporal_len, hidden])
             .swap_dims(1, 2)
             .reshape([batch, seq_len, hidden]);
         let x = x + temporal_out;
@@ -603,7 +703,14 @@ impl<B: Backend> LtxVideo<B> {
     }
 
     /// Unpatchify video (6D-safe)
-    fn unpatchify(&self, x: Tensor<B, 3>, nt: usize, nh: usize, nw: usize, channels: usize) -> Tensor<B, 5> {
+    fn unpatchify(
+        &self,
+        x: Tensor<B, 3>,
+        nt: usize,
+        nh: usize,
+        nw: usize,
+        channels: usize,
+    ) -> Tensor<B, 5> {
         let [batch, _seq_len, _hidden] = x.dims();
         let ps = self.patch_size;
         let time = nt;
@@ -742,7 +849,17 @@ mod tests {
         let cond = Tensor::zeros([2, 256], &device);
         let ctx = Tensor::zeros([2, 8, 256], &device);
 
-        let out = block.forward(x, cond, ctx, 4, 4, 4, &spatial_rope, &temporal_rope, &temporal_mask);
+        let out = block.forward(
+            x,
+            cond,
+            ctx,
+            4,
+            4,
+            4,
+            &spatial_rope,
+            &temporal_rope,
+            &temporal_mask,
+        );
         assert_eq!(out.dims(), [2, 64, 256]);
     }
 

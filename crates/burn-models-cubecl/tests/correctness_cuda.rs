@@ -5,13 +5,11 @@
 #![cfg(feature = "cuda")]
 
 use burn::prelude::*;
-use burn_cubecl::{tensor::CubeTensor, CubeBackend};
+use burn_cubecl::{CubeBackend, tensor::CubeTensor};
 use burn_cuda::CudaDevice;
 use burn_models_cubecl::{
-    conv3d, avg_pool3d, max_pool3d,
-    flash_attention, FlashAttentionOptions,
-    groupnorm, groupnorm_silu, GroupNormSiLuOptions,
-    Conv3dOptions, Pool3dOptions, Layout,
+    Conv3dOptions, FlashAttentionOptions, GroupNormSiLuOptions, Layout, Pool3dOptions, avg_pool3d,
+    conv3d, flash_attention, groupnorm, groupnorm_silu, max_pool3d,
 };
 use cubecl::cuda::CudaRuntime;
 
@@ -119,9 +117,11 @@ mod reference {
 
         let cols = im2col_3d(x_padded, [k_t, k_h, k_w], stride, [out_t, out_h, out_w]);
 
-        let weight_expanded = weight_2d
-            .unsqueeze_dim::<3>(0)
-            .expand([batch, out_ch, in_ch_per_group * kernel_elements]);
+        let weight_expanded = weight_2d.unsqueeze_dim::<3>(0).expand([
+            batch,
+            out_ch,
+            in_ch_per_group * kernel_elements,
+        ]);
 
         let out = weight_expanded.matmul(cols);
 
@@ -136,18 +136,14 @@ mod reference {
     }
 }
 
-fn to_cube_tensor<const D: usize>(
-    tensor: Tensor<TestBackend, D>,
-) -> CubeTensor<CudaRuntime> {
+fn to_cube_tensor<const D: usize>(tensor: Tensor<TestBackend, D>) -> CubeTensor<CudaRuntime> {
     match tensor.into_primitive() {
         burn::tensor::TensorPrimitive::Float(t) => t,
         _ => panic!("Expected float tensor"),
     }
 }
 
-fn from_cube_tensor<const D: usize>(
-    tensor: CubeTensor<CudaRuntime>,
-) -> Tensor<TestBackend, D> {
+fn from_cube_tensor<const D: usize>(tensor: CubeTensor<CudaRuntime>) -> Tensor<TestBackend, D> {
     Tensor::from_primitive(burn::tensor::TensorPrimitive::Float(tensor))
 }
 
@@ -244,21 +240,11 @@ fn test_cuda_conv3d_1x1x1_kernel() {
         layout: Layout::NCTHW,
     };
 
-    let cubecl_output = run_cubecl_conv3d(
-        input.clone(),
-        weight.clone(),
-        Some(bias.clone()),
-        options,
-    );
+    let cubecl_output =
+        run_cubecl_conv3d(input.clone(), weight.clone(), Some(bias.clone()), options);
 
-    let reference_output = reference::conv3d_reference(
-        input,
-        weight,
-        Some(bias),
-        [1, 1, 1],
-        [0, 0, 0],
-        [1, 1, 1],
-    );
+    let reference_output =
+        reference::conv3d_reference(input, weight, Some(bias), [1, 1, 1], [0, 0, 0], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), reference_output.dims());
     assert_tensors_approx_eq(cubecl_output, reference_output, 1e-5, "1x1x1 kernel (CUDA)");
@@ -293,8 +279,10 @@ fn test_cuda_conv3d_3x3x3_same_padding() {
         layout: Layout::NCTHW,
     };
 
-    let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), Some(bias.clone()), options);
-    let reference_output = reference::conv3d_reference(input, weight, Some(bias), [1, 1, 1], [1, 1, 1], [1, 1, 1]);
+    let cubecl_output =
+        run_cubecl_conv3d(input.clone(), weight.clone(), Some(bias.clone()), options);
+    let reference_output =
+        reference::conv3d_reference(input, weight, Some(bias), [1, 1, 1], [1, 1, 1], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [1, 8, 8, 8, 8]);
     assert_tensors_approx_eq(cubecl_output, reference_output, 1e-4, "3x3x3 same padding");
@@ -325,7 +313,8 @@ fn test_cuda_conv3d_3x3x3_no_padding() {
     };
 
     let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
-    let reference_output = reference::conv3d_reference(input, weight, None, [1, 1, 1], [0, 0, 0], [1, 1, 1]);
+    let reference_output =
+        reference::conv3d_reference(input, weight, None, [1, 1, 1], [0, 0, 0], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [1, 4, 4, 4, 4]);
     assert_tensors_approx_eq(cubecl_output, reference_output, 1e-4, "3x3x3 no padding");
@@ -356,7 +345,8 @@ fn test_cuda_conv3d_stride_2() {
     };
 
     let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
-    let reference_output = reference::conv3d_reference(input, weight, None, [2, 2, 2], [1, 1, 1], [1, 1, 1]);
+    let reference_output =
+        reference::conv3d_reference(input, weight, None, [2, 2, 2], [1, 1, 1], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [1, 4, 4, 4, 4]);
     assert_tensors_approx_eq(cubecl_output, reference_output, 1e-4, "stride 2");
@@ -391,8 +381,10 @@ fn test_cuda_conv3d_batch_2() {
         layout: Layout::NCTHW,
     };
 
-    let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), Some(bias.clone()), options);
-    let reference_output = reference::conv3d_reference(input, weight, Some(bias), [1, 1, 1], [1, 1, 1], [1, 1, 1]);
+    let cubecl_output =
+        run_cubecl_conv3d(input.clone(), weight.clone(), Some(bias.clone()), options);
+    let reference_output =
+        reference::conv3d_reference(input, weight, Some(bias), [1, 1, 1], [1, 1, 1], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [2, 3, 4, 4, 4]);
     assert_tensors_approx_eq(cubecl_output, reference_output, 1e-4, "batch 2");
@@ -424,7 +416,8 @@ fn test_cuda_conv3d_asymmetric() {
     };
 
     let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
-    let reference_output = reference::conv3d_reference(input, weight, None, [1, 1, 1], [0, 1, 1], [1, 1, 1]);
+    let reference_output =
+        reference::conv3d_reference(input, weight, None, [1, 1, 1], [0, 1, 1], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [1, 4, 4, 8, 6]);
     assert_tensors_approx_eq(cubecl_output, reference_output, 1e-4, "asymmetric");
@@ -455,7 +448,8 @@ fn test_cuda_conv3d_deep_channels() {
     };
 
     let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
-    let reference_output = reference::conv3d_reference(input, weight, None, [1, 1, 1], [1, 1, 1], [1, 1, 1]);
+    let reference_output =
+        reference::conv3d_reference(input, weight, None, [1, 1, 1], [1, 1, 1], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [1, 64, 4, 4, 4]);
     assert_tensors_approx_eq(cubecl_output, reference_output, 1e-3, "deep channels");
@@ -508,16 +502,29 @@ fn test_cuda_conv3d_nthwc_3x3x3_same_padding() {
         layout: Layout::NTHWC,
     };
 
-    let cubecl_output_nthwc = run_cubecl_conv3d(input_nthwc, weight.clone(), Some(bias.clone()), options);
+    let cubecl_output_nthwc =
+        run_cubecl_conv3d(input_nthwc, weight.clone(), Some(bias.clone()), options);
 
     // Output should be NTHWC: [1, 8, 8, 8, 8] -> batch, time, height, width, channels
     assert_eq!(cubecl_output_nthwc.dims(), [1, 8, 8, 8, 8]);
 
     // Convert back to NCTHW for comparison with reference
     let cubecl_output_ncthw = nthwc_to_ncthw(cubecl_output_nthwc);
-    let ref_output = reference::conv3d_reference(input_ncthw, weight, Some(bias), [1, 1, 1], [1, 1, 1], [1, 1, 1]);
+    let ref_output = reference::conv3d_reference(
+        input_ncthw,
+        weight,
+        Some(bias),
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 1],
+    );
 
-    assert_tensors_approx_eq(cubecl_output_ncthw, ref_output, 1e-4, "NTHWC 3x3x3 same padding (CUDA)");
+    assert_tensors_approx_eq(
+        cubecl_output_ncthw,
+        ref_output,
+        1e-4,
+        "NTHWC 3x3x3 same padding (CUDA)",
+    );
 }
 
 // ============================================================================
@@ -555,13 +562,20 @@ mod pool_reference {
                             for kt in 0..kernel_size[0] {
                                 for kh in 0..kernel_size[1] {
                                     for kw in 0..kernel_size[2] {
-                                        let it = (ot * stride[0] + kt) as isize - padding[0] as isize;
-                                        let ih = (oh * stride[1] + kh) as isize - padding[1] as isize;
-                                        let iw = (ow * stride[2] + kw) as isize - padding[2] as isize;
+                                        let it =
+                                            (ot * stride[0] + kt) as isize - padding[0] as isize;
+                                        let ih =
+                                            (oh * stride[1] + kh) as isize - padding[1] as isize;
+                                        let iw =
+                                            (ow * stride[2] + kw) as isize - padding[2] as isize;
 
-                                        if it >= 0 && (it as usize) < in_t &&
-                                           ih >= 0 && (ih as usize) < in_h &&
-                                           iw >= 0 && (iw as usize) < in_w {
+                                        if it >= 0
+                                            && (it as usize) < in_t
+                                            && ih >= 0
+                                            && (ih as usize) < in_h
+                                            && iw >= 0
+                                            && (iw as usize) < in_w
+                                        {
                                             let in_idx = b * channels * in_t * in_h * in_w
                                                 + c * in_t * in_h * in_w
                                                 + (it as usize) * in_h * in_w
@@ -618,13 +632,20 @@ mod pool_reference {
                             for kt in 0..kernel_size[0] {
                                 for kh in 0..kernel_size[1] {
                                     for kw in 0..kernel_size[2] {
-                                        let it = (ot * stride[0] + kt) as isize - padding[0] as isize;
-                                        let ih = (oh * stride[1] + kh) as isize - padding[1] as isize;
-                                        let iw = (ow * stride[2] + kw) as isize - padding[2] as isize;
+                                        let it =
+                                            (ot * stride[0] + kt) as isize - padding[0] as isize;
+                                        let ih =
+                                            (oh * stride[1] + kh) as isize - padding[1] as isize;
+                                        let iw =
+                                            (ow * stride[2] + kw) as isize - padding[2] as isize;
 
-                                        if it >= 0 && (it as usize) < in_t &&
-                                           ih >= 0 && (ih as usize) < in_h &&
-                                           iw >= 0 && (iw as usize) < in_w {
+                                        if it >= 0
+                                            && (it as usize) < in_t
+                                            && ih >= 0
+                                            && (ih as usize) < in_h
+                                            && iw >= 0
+                                            && (iw as usize) < in_w
+                                        {
                                             let in_idx = b * channels * in_t * in_h * in_w
                                                 + c * in_t * in_h * in_w
                                                 + (it as usize) * in_h * in_w
@@ -720,7 +741,12 @@ fn test_cuda_avg_pool3d_with_padding() {
     let ref_output = pool_reference::avg_pool3d_reference(input, [3, 3, 3], [2, 2, 2], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [1, 3, 3, 3, 3]);
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-5, "avg_pool3d with padding (CUDA)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-5,
+        "avg_pool3d with padding (CUDA)",
+    );
 }
 
 #[test]
@@ -768,7 +794,12 @@ fn test_cuda_max_pool3d_with_padding() {
     let ref_output = pool_reference::max_pool3d_reference(input, [3, 3, 3], [2, 2, 2], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [2, 4, 4, 4, 4]);
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-5, "max_pool3d with padding (CUDA)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-5,
+        "max_pool3d with padding (CUDA)",
+    );
 }
 
 // ============================================================================
@@ -781,9 +812,9 @@ mod attention_reference {
 
     /// Standard causal attention: softmax(Q @ K^T / sqrt(d) + causal_mask) @ V
     pub fn causal_attention_reference<B: Backend>(
-        q: Tensor<B, 4>,  // [batch, heads, seq_q, head_dim]
-        k: Tensor<B, 4>,  // [batch, heads, seq_k, head_dim]
-        v: Tensor<B, 4>,  // [batch, heads, seq_k, val_dim]
+        q: Tensor<B, 4>, // [batch, heads, seq_q, head_dim]
+        k: Tensor<B, 4>, // [batch, heads, seq_k, head_dim]
+        v: Tensor<B, 4>, // [batch, heads, seq_k, val_dim]
     ) -> Tensor<B, 4> {
         let [batch, heads, seq_q, head_dim] = q.dims();
         let [_, _, seq_k, _] = k.dims();
@@ -862,7 +893,12 @@ fn test_cuda_flash_attention_basic() {
     let ref_output = attention_reference::causal_attention_reference(q, k, v);
 
     assert_eq!(flash_output.dims(), ref_output.dims());
-    assert_tensors_approx_eq(flash_output, ref_output, 1e-3, "flash attention basic (CUDA)");
+    assert_tensors_approx_eq(
+        flash_output,
+        ref_output,
+        1e-3,
+        "flash attention basic (CUDA)",
+    );
 }
 
 #[test]
@@ -895,7 +931,12 @@ fn test_cuda_flash_attention_longer_sequence() {
     let ref_output = attention_reference::causal_attention_reference(q, k, v);
 
     assert_eq!(flash_output.dims(), ref_output.dims());
-    assert_tensors_approx_eq(flash_output, ref_output, 5e-3, "flash attention longer seq (CUDA)");
+    assert_tensors_approx_eq(
+        flash_output,
+        ref_output,
+        5e-3,
+        "flash attention longer seq (CUDA)",
+    );
 }
 
 // ============================================================================
@@ -1012,7 +1053,8 @@ fn test_cuda_groupnorm_basic() {
     let options = GroupNormSiLuOptions::with_groups(num_groups);
 
     let cubecl_output = run_cubecl_groupnorm(input.clone(), weight.clone(), bias.clone(), options);
-    let ref_output = groupnorm_reference::groupnorm_reference(input, weight, bias, num_groups, 1e-5);
+    let ref_output =
+        groupnorm_reference::groupnorm_reference(input, weight, bias, num_groups, 1e-5);
 
     assert_eq!(cubecl_output.dims(), ref_output.dims());
     // Tolerance accounts for variance calculation differences (biased vs unbiased)
@@ -1048,12 +1090,19 @@ fn test_cuda_groupnorm_silu_basic() {
 
     let options = GroupNormSiLuOptions::with_groups(num_groups);
 
-    let cubecl_output = run_cubecl_groupnorm_silu(input.clone(), weight.clone(), bias.clone(), options);
-    let ref_output = groupnorm_reference::groupnorm_silu_reference(input, weight, bias, num_groups, 1e-5);
+    let cubecl_output =
+        run_cubecl_groupnorm_silu(input.clone(), weight.clone(), bias.clone(), options);
+    let ref_output =
+        groupnorm_reference::groupnorm_silu_reference(input, weight, bias, num_groups, 1e-5);
 
     assert_eq!(cubecl_output.dims(), ref_output.dims());
     // Tolerance accounts for variance calculation differences (biased vs unbiased)
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-2, "groupnorm_silu basic (CUDA)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-2,
+        "groupnorm_silu basic (CUDA)",
+    );
 }
 
 #[test]
@@ -1085,12 +1134,19 @@ fn test_cuda_groupnorm_silu_batch() {
 
     let options = GroupNormSiLuOptions::with_groups(num_groups);
 
-    let cubecl_output = run_cubecl_groupnorm_silu(input.clone(), weight.clone(), bias.clone(), options);
-    let ref_output = groupnorm_reference::groupnorm_silu_reference(input, weight, bias, num_groups, 1e-5);
+    let cubecl_output =
+        run_cubecl_groupnorm_silu(input.clone(), weight.clone(), bias.clone(), options);
+    let ref_output =
+        groupnorm_reference::groupnorm_silu_reference(input, weight, bias, num_groups, 1e-5);
 
     assert_eq!(cubecl_output.dims(), ref_output.dims());
     // Tolerance accounts for variance calculation differences (biased vs unbiased)
-    assert_tensors_approx_eq(cubecl_output, ref_output, 1e-2, "groupnorm_silu batch (CUDA)");
+    assert_tensors_approx_eq(
+        cubecl_output,
+        ref_output,
+        1e-2,
+        "groupnorm_silu batch (CUDA)",
+    );
 }
 
 // =============================================================================
@@ -1108,7 +1164,8 @@ fn test_cuda_resblock_cubecl_shape() {
     let out_channels = 512;
     let time_emb_dim = 1024;
 
-    let block = ResBlockCubeCL::<CudaRuntime>::new(in_channels, out_channels, time_emb_dim, &device);
+    let block =
+        ResBlockCubeCL::<CudaRuntime>::new(in_channels, out_channels, time_emb_dim, &device);
 
     let batch = 2;
     let height = 32;
@@ -1144,7 +1201,11 @@ fn test_cuda_crossattention_cubecl() {
     let head_dim = 40;
 
     let attn = CrossAttentionCubeCL::<CudaRuntime>::new(
-        query_dim, num_heads, head_dim, Some(context_dim), &device
+        query_dim,
+        num_heads,
+        head_dim,
+        Some(context_dim),
+        &device,
     );
 
     let batch = 2;
@@ -1165,7 +1226,10 @@ fn test_cuda_crossattention_cubecl() {
     let output = attn.forward(query, Some(context));
 
     assert_eq!(output.dims(), [batch, seq_len, query_dim]);
-    println!("CrossAttentionCubeCL (CUDA) output shape: {:?}", output.dims());
+    println!(
+        "CrossAttentionCubeCL (CUDA) output shape: {:?}",
+        output.dims()
+    );
 }
 
 // =============================================================================
@@ -1235,7 +1299,10 @@ fn test_cuda_vae3d_encoder_tiny() {
 
     let output = encoder.forward(input);
 
-    println!("Vae3dEncoderCubeCL (CUDA) mean shape: {:?}", output.mean.dims());
+    println!(
+        "Vae3dEncoderCubeCL (CUDA) mean shape: {:?}",
+        output.mean.dims()
+    );
     assert_eq!(output.mean.dims()[0], batch);
     assert_eq!(output.mean.dims()[1], config.latent_channels);
 }
@@ -1265,14 +1332,23 @@ fn test_cuda_vae3d_decoder_tiny() {
     let lat_width = 8;
 
     let latent = Tensor::<TestBackend, 5>::random(
-        [batch, config.latent_channels, lat_time, lat_height, lat_width],
+        [
+            batch,
+            config.latent_channels,
+            lat_time,
+            lat_height,
+            lat_width,
+        ],
         burn::tensor::Distribution::Uniform(-1.0, 1.0),
         &device,
     );
 
     let output = decoder.forward(latent);
 
-    println!("Vae3dDecoderCubeCL (CUDA) output shape: {:?}", output.dims());
+    println!(
+        "Vae3dDecoderCubeCL (CUDA) output shape: {:?}",
+        output.dims()
+    );
     assert_eq!(output.dims()[0], batch);
     assert_eq!(output.dims()[1], config.in_channels);
 }

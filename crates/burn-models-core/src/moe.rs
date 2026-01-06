@@ -5,8 +5,8 @@
 //! proportionally scaling compute by activating only a subset of experts
 //! for each token.
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 use crate::glu::{SwiGluFfn, SwiGluFfnConfig};
 
@@ -165,13 +165,11 @@ impl SparseMoeFfnConfig {
 
     /// Initializes the MoE layer
     pub fn init<B: Backend>(&self, device: &B::Device) -> SparseMoeFfn<B> {
-        let router = MoeRouterConfig::new(self.hidden_size, self.num_experts, self.top_k)
-            .init(device);
+        let router =
+            MoeRouterConfig::new(self.hidden_size, self.num_experts, self.top_k).init(device);
 
         let experts = (0..self.num_experts)
-            .map(|_| {
-                SwiGluFfnConfig::new(self.hidden_size, self.intermediate_size).init(device)
-            })
+            .map(|_| SwiGluFfnConfig::new(self.hidden_size, self.intermediate_size).init(device))
             .collect();
 
         SparseMoeFfn {
@@ -210,12 +208,8 @@ impl<B: Backend> SparseMoeFfn<B> {
         // Process each expert
         for expert_idx in 0..self.num_experts {
             // Find tokens assigned to this expert
-            let expert_mask = self.compute_expert_mask(
-                &routing.expert_indices,
-                expert_idx,
-                num_tokens,
-                &device,
-            );
+            let expert_mask =
+                self.compute_expert_mask(&routing.expert_indices, expert_idx, num_tokens, &device);
 
             // Skip if no tokens assigned
             if !self.has_assigned_tokens(&expert_mask) {
@@ -253,10 +247,9 @@ impl<B: Backend> SparseMoeFfn<B> {
         device: &B::Device,
     ) -> Tensor<B, 1, Bool> {
         // Check if expert_idx appears in any of the top-k slots
-        let expert_tensor = Tensor::<B, 2, Int>::from_ints(
-            [[expert_idx as i32; 1]; 1],
-            device
-        ).repeat_dim(0, num_tokens).repeat_dim(1, self.top_k);
+        let expert_tensor = Tensor::<B, 2, Int>::from_ints([[expert_idx as i32; 1]; 1], device)
+            .repeat_dim(0, num_tokens)
+            .repeat_dim(1, self.top_k);
 
         let matches = expert_indices.clone().equal(expert_tensor);
         matches.any_dim(1).squeeze_dim::<1>(1)
@@ -278,17 +271,18 @@ impl<B: Backend> SparseMoeFfn<B> {
         num_tokens: usize,
         device: &B::Device,
     ) -> Tensor<B, 1> {
-        let expert_tensor = Tensor::<B, 2, Int>::from_ints(
-            [[expert_idx as i32; 1]; 1],
-            device
-        ).repeat_dim(0, num_tokens).repeat_dim(1, self.top_k);
+        let expert_tensor = Tensor::<B, 2, Int>::from_ints([[expert_idx as i32; 1]; 1], device)
+            .repeat_dim(0, num_tokens)
+            .repeat_dim(1, self.top_k);
 
         // Create mask where expert matches
         let matches = expert_indices.clone().equal(expert_tensor);
         let matches_float = matches.float();
 
         // Extract weights where expert matches (sum across top_k dimension)
-        (routing_weights.clone() * matches_float).sum_dim(1).squeeze_dim::<1>(1)
+        (routing_weights.clone() * matches_float)
+            .sum_dim(1)
+            .squeeze_dim::<1>(1)
     }
 }
 
@@ -321,7 +315,8 @@ mod tests {
         let x = Tensor::ones([1, 8, 128], &device);
         let routing = router.forward(x);
 
-        let sums: Vec<f32> = routing.routing_weights
+        let sums: Vec<f32> = routing
+            .routing_weights
             .sum_dim(1)
             .squeeze_dim::<1>(1)
             .into_data()

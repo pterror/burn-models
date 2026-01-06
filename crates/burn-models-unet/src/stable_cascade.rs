@@ -22,8 +22,8 @@
 //! - **Fast inference**: Stage C enables fewer steps at high compression
 
 use burn::nn::{
-    conv::{Conv2d, Conv2dConfig},
     Linear, LinearConfig, PaddingConfig2d,
+    conv::{Conv2d, Conv2dConfig},
 };
 use burn::prelude::*;
 
@@ -60,13 +60,13 @@ impl StageCConfig {
     /// Default Stage C configuration
     pub fn default_c() -> Self {
         Self {
-            in_channels: 16,  // Stage C latents
+            in_channels: 16, // Stage C latents
             out_channels: 16,
             model_channels: 1536,
             channel_mult: vec![1, 1, 1, 1],
             num_heads: 24,
             head_dim: 64,
-            context_dim: 1280,  // CLIP embedding
+            context_dim: 1280, // CLIP embedding
             num_res_blocks: 3,
             compression: 16,
         }
@@ -115,7 +115,7 @@ impl StageBConfig {
     /// Default Stage B configuration
     pub fn default_b() -> Self {
         Self {
-            in_channels: 4,   // Standard VAE latent channels
+            in_channels: 4, // Standard VAE latent channels
             out_channels: 4,
             cond_channels: 16, // Stage C output channels
             model_channels: 640,
@@ -161,7 +161,11 @@ impl<B: Backend> CascadeTimestepEmbed<B> {
     }
 
     pub fn forward(&self, timesteps: Tensor<B, 1>) -> Tensor<B, 2> {
-        let t_emb = timestep_embedding(timesteps, self.model_channels, &self.linear1.weight.device());
+        let t_emb = timestep_embedding(
+            timesteps,
+            self.model_channels,
+            &self.linear1.weight.device(),
+        );
         let t_emb = silu(self.linear1.forward(t_emb));
         self.linear2.forward(t_emb)
     }
@@ -184,8 +188,12 @@ impl<B: Backend> CascadeAttention<B> {
         let inner_dim = num_heads * head_dim;
         Self {
             norm: LayerNorm::new(channels, device),
-            to_qkv: LinearConfig::new(channels, 3 * inner_dim).with_bias(true).init(device),
-            to_out: LinearConfig::new(inner_dim, channels).with_bias(true).init(device),
+            to_qkv: LinearConfig::new(channels, 3 * inner_dim)
+                .with_bias(true)
+                .init(device),
+            to_out: LinearConfig::new(inner_dim, channels)
+                .with_bias(true)
+                .init(device),
             num_heads,
             head_dim,
         }
@@ -196,20 +204,46 @@ impl<B: Backend> CascadeAttention<B> {
         let seq_len = height * width;
 
         // Reshape to [B, H*W, C]
-        let x_flat = x.clone().permute([0, 2, 3, 1]).reshape([batch, seq_len, channels]);
+        let x_flat = x
+            .clone()
+            .permute([0, 2, 3, 1])
+            .reshape([batch, seq_len, channels]);
         let x_norm = self.norm.forward(x_flat);
 
         // Compute Q, K, V
         let qkv = self.to_qkv.forward(x_norm);
         let qkv = qkv.reshape([batch, seq_len, 3, self.num_heads, self.head_dim]);
 
-        let q = qkv.clone().slice([0..batch, 0..seq_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let q = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let k = qkv.clone().slice([0..batch, 0..seq_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let k = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = qkv.slice([0..batch, 0..seq_len, 2..3, 0..self.num_heads, 0..self.head_dim])
+        let v = qkv
+            .slice([
+                0..batch,
+                0..seq_len,
+                2..3,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
@@ -220,11 +254,15 @@ impl<B: Backend> CascadeAttention<B> {
         let out = attn.matmul(v);
 
         // Reshape back
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         let out = self.to_out.forward(out);
 
         // Back to spatial: [B, H, W, C] -> [B, C, H, W]
-        let out = out.reshape([batch, height, width, channels]).permute([0, 3, 1, 2]);
+        let out = out
+            .reshape([batch, height, width, channels])
+            .permute([0, 3, 1, 2]);
 
         x + out
     }
@@ -244,13 +282,25 @@ pub struct CascadeCrossAttention<B: Backend> {
 }
 
 impl<B: Backend> CascadeCrossAttention<B> {
-    pub fn new(channels: usize, context_dim: usize, num_heads: usize, head_dim: usize, device: &B::Device) -> Self {
+    pub fn new(
+        channels: usize,
+        context_dim: usize,
+        num_heads: usize,
+        head_dim: usize,
+        device: &B::Device,
+    ) -> Self {
         let inner_dim = num_heads * head_dim;
         Self {
             norm: LayerNorm::new(channels, device),
-            to_q: LinearConfig::new(channels, inner_dim).with_bias(true).init(device),
-            to_kv: LinearConfig::new(context_dim, 2 * inner_dim).with_bias(true).init(device),
-            to_out: LinearConfig::new(inner_dim, channels).with_bias(true).init(device),
+            to_q: LinearConfig::new(channels, inner_dim)
+                .with_bias(true)
+                .init(device),
+            to_kv: LinearConfig::new(context_dim, 2 * inner_dim)
+                .with_bias(true)
+                .init(device),
+            to_out: LinearConfig::new(inner_dim, channels)
+                .with_bias(true)
+                .init(device),
             num_heads,
             head_dim,
         }
@@ -262,20 +312,40 @@ impl<B: Backend> CascadeCrossAttention<B> {
         let seq_len = height * width;
 
         // Reshape to [B, H*W, C]
-        let x_flat = x.clone().permute([0, 2, 3, 1]).reshape([batch, seq_len, channels]);
+        let x_flat = x
+            .clone()
+            .permute([0, 2, 3, 1])
+            .reshape([batch, seq_len, channels]);
         let x_norm = self.norm.forward(x_flat);
 
         // Q from image, K/V from context
         let q = self.to_q.forward(x_norm);
-        let q = q.reshape([batch, seq_len, self.num_heads, self.head_dim]).swap_dims(1, 2);
+        let q = q
+            .reshape([batch, seq_len, self.num_heads, self.head_dim])
+            .swap_dims(1, 2);
 
         let kv = self.to_kv.forward(context);
         let kv = kv.reshape([batch, ctx_len, 2, self.num_heads, self.head_dim]);
 
-        let k = kv.clone().slice([0..batch, 0..ctx_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let k = kv
+            .clone()
+            .slice([
+                0..batch,
+                0..ctx_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, ctx_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
-        let v = kv.slice([0..batch, 0..ctx_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let v = kv
+            .slice([
+                0..batch,
+                0..ctx_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, ctx_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
@@ -286,11 +356,15 @@ impl<B: Backend> CascadeCrossAttention<B> {
         let out = attn.matmul(v);
 
         // Reshape back
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         let out = self.to_out.forward(out);
 
         // Back to spatial
-        let out = out.reshape([batch, height, width, channels]).permute([0, 3, 1, 2]);
+        let out = out
+            .reshape([batch, height, width, channels])
+            .permute([0, 3, 1, 2]);
 
         x + out
     }
@@ -389,21 +463,34 @@ impl<B: Backend> CascadeDownBlock<B> {
         };
 
         let cross_attn = if has_attention {
-            Some(CascadeCrossAttention::new(out_ch, context_dim, num_heads, head_dim, device))
+            Some(CascadeCrossAttention::new(
+                out_ch,
+                context_dim,
+                num_heads,
+                head_dim,
+                device,
+            ))
         } else {
             None
         };
 
         let downsample = if has_downsample {
-            Some(Conv2dConfig::new([out_ch, out_ch], [3, 3])
-                .with_stride([2, 2])
-                .with_padding(PaddingConfig2d::Explicit(1, 1))
-                .init(device))
+            Some(
+                Conv2dConfig::new([out_ch, out_ch], [3, 3])
+                    .with_stride([2, 2])
+                    .with_padding(PaddingConfig2d::Explicit(1, 1))
+                    .init(device),
+            )
         } else {
             None
         };
 
-        Self { res_blocks, self_attn, cross_attn, downsample }
+        Self {
+            res_blocks,
+            self_attn,
+            cross_attn,
+            downsample,
+        }
     }
 
     pub fn forward(
@@ -476,20 +563,34 @@ impl<B: Backend> CascadeUpBlock<B> {
         };
 
         let cross_attn = if has_attention {
-            Some(CascadeCrossAttention::new(out_ch, context_dim, num_heads, head_dim, device))
+            Some(CascadeCrossAttention::new(
+                out_ch,
+                context_dim,
+                num_heads,
+                head_dim,
+                device,
+            ))
         } else {
             None
         };
 
         let upsample = if has_upsample {
-            Some(Conv2dConfig::new([out_ch, out_ch], [3, 3])
-                .with_padding(PaddingConfig2d::Explicit(1, 1))
-                .init(device))
+            Some(
+                Conv2dConfig::new([out_ch, out_ch], [3, 3])
+                    .with_padding(PaddingConfig2d::Explicit(1, 1))
+                    .init(device),
+            )
         } else {
             None
         };
 
-        Self { res_blocks, self_attn, cross_attn, upsample, has_upsample }
+        Self {
+            res_blocks,
+            self_attn,
+            cross_attn,
+            upsample,
+            has_upsample,
+        }
     }
 
     pub fn forward(
@@ -517,7 +618,8 @@ impl<B: Backend> CascadeUpBlock<B> {
         // Upsample AFTER processing (to match next level's skip resolution)
         if self.has_upsample {
             let [batch, channels, height, width] = h.dims();
-            h = h.reshape([batch, channels, height, 1, width, 1])
+            h = h
+                .reshape([batch, channels, height, 1, width, 1])
                 .repeat_dim(3, 2)
                 .repeat_dim(5, 2)
                 .reshape([batch, channels, height * 2, width * 2]);
@@ -569,9 +671,16 @@ impl<B: Backend> StageC<B> {
             let ch_out = ch * mult;
             let is_last = level == config.channel_mult.len() - 1;
             down_blocks.push(CascadeDownBlock::new(
-                ch_in, ch_out, time_embed_dim,
-                config.num_res_blocks, config.num_heads, config.head_dim,
-                config.context_dim, true, !is_last, device,
+                ch_in,
+                ch_out,
+                time_embed_dim,
+                config.num_res_blocks,
+                config.num_heads,
+                config.head_dim,
+                config.context_dim,
+                true,
+                !is_last,
+                device,
             ));
             ch_in = ch_out;
         }
@@ -579,7 +688,13 @@ impl<B: Backend> StageC<B> {
         // Mid block (ch_in is the final channel count after the loop)
         let mid_res1 = CascadeResBlock::new(ch_in, ch_in, time_embed_dim, device);
         let mid_attn = CascadeAttention::new(ch_in, config.num_heads, config.head_dim, device);
-        let mid_cross = CascadeCrossAttention::new(ch_in, config.context_dim, config.num_heads, config.head_dim, device);
+        let mid_cross = CascadeCrossAttention::new(
+            ch_in,
+            config.context_dim,
+            config.num_heads,
+            config.head_dim,
+            device,
+        );
         let mid_res2 = CascadeResBlock::new(ch_in, ch_in, time_embed_dim, device);
 
         // Build up blocks (reverse order)
@@ -595,9 +710,16 @@ impl<B: Backend> StageC<B> {
             let block_in = ch * prev_mult;
 
             up_blocks.push(CascadeUpBlock::new(
-                block_in, ch_out, time_embed_dim,
-                config.num_res_blocks, config.num_heads, config.head_dim,
-                config.context_dim, true, !is_last, device,
+                block_in,
+                ch_out,
+                time_embed_dim,
+                config.num_res_blocks,
+                config.num_heads,
+                config.head_dim,
+                config.context_dim,
+                true,
+                !is_last,
+                device,
             ));
         }
 
@@ -693,8 +815,7 @@ impl<B: Backend> StageB<B> {
             .init(device);
 
         // Conditioning from Stage C (upscaled to match spatial dimensions)
-        let cond_embed = Conv2dConfig::new([config.cond_channels, ch], [1, 1])
-            .init(device);
+        let cond_embed = Conv2dConfig::new([config.cond_channels, ch], [1, 1]).init(device);
 
         let time_embed = CascadeTimestepEmbed::new(ch, time_embed_dim, device);
 
@@ -705,9 +826,16 @@ impl<B: Backend> StageB<B> {
             let ch_out = ch * mult;
             let is_last = level == config.channel_mult.len() - 1;
             down_blocks.push(CascadeDownBlock::new(
-                ch_in, ch_out, time_embed_dim,
-                config.num_res_blocks, config.num_heads, config.head_dim,
-                config.context_dim, level >= 2, !is_last, device,
+                ch_in,
+                ch_out,
+                time_embed_dim,
+                config.num_res_blocks,
+                config.num_heads,
+                config.head_dim,
+                config.context_dim,
+                level >= 2,
+                !is_last,
+                device,
             ));
             ch_in = ch_out;
         }
@@ -730,9 +858,16 @@ impl<B: Backend> StageB<B> {
             let block_in = ch * prev_mult;
 
             up_blocks.push(CascadeUpBlock::new(
-                block_in, ch_out, time_embed_dim,
-                config.num_res_blocks, config.num_heads, config.head_dim,
-                config.context_dim, level < 2, !is_last, device,
+                block_in,
+                ch_out,
+                time_embed_dim,
+                config.num_res_blocks,
+                config.num_heads,
+                config.head_dim,
+                config.context_dim,
+                level < 2,
+                !is_last,
+                device,
             ));
         }
 
@@ -879,7 +1014,7 @@ mod tests {
 
         let x = Tensor::<TestBackend, 4>::zeros([1, 4, 16, 16], &device);
         let timesteps = Tensor::from_floats([500.0], &device);
-        let stage_c = Tensor::zeros([1, 4, 4, 4], &device);  // 4x smaller
+        let stage_c = Tensor::zeros([1, 4, 4, 4], &device); // 4x smaller
         let context = Tensor::zeros([1, 4, 64], &device);
 
         let output = model.forward(x, timesteps, stage_c, context);

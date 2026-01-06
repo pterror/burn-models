@@ -31,13 +31,15 @@
 //! let embeddings = encoder.forward(token_ids);
 //! ```
 
-pub mod tokenizer;
 pub mod attention;
 pub mod clip;
-pub mod open_clip;
 pub mod embedder;
+pub mod open_clip;
+pub mod tokenizer;
 
-pub use tokenizer::{ClipTokenizer, TokenizerError, START_OF_TEXT, END_OF_TEXT};
 pub use attention::{create_causal_mask, scaled_dot_product_attention};
-pub use clip::{ClipConfig, ClipTextEncoder, TransformerBlock, MultiHeadSelfAttention, FeedForward};
+pub use clip::{
+    ClipConfig, ClipTextEncoder, FeedForward, MultiHeadSelfAttention, TransformerBlock,
+};
 pub use open_clip::{OpenClipConfig, OpenClipTextEncoder};
+pub use tokenizer::{ClipTokenizer, END_OF_TEXT, START_OF_TEXT, TokenizerError};

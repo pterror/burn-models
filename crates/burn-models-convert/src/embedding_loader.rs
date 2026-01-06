@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use burn::prelude::*;
-use burn_models_core::textual_inversion::{TextualInversionEmbedding, EmbeddingError};
+use burn_models_core::textual_inversion::{EmbeddingError, TextualInversionEmbedding};
 
 use crate::loader::SafeTensorFile;
 
@@ -51,31 +51,30 @@ fn load_safetensors_embedding<B: Backend>(
     path: &Path,
     device: &B::Device,
 ) -> Result<TextualInversionEmbedding<B>, EmbeddingLoadError> {
-    let file = SafeTensorFile::open(path)
-        .map_err(|e| EmbeddingLoadError::FileError(e.to_string()))?;
+    let file =
+        SafeTensorFile::open(path).map_err(|e| EmbeddingLoadError::FileError(e.to_string()))?;
 
     let names: Vec<String> = file.names().map(|s| s.to_string()).collect();
 
     // Find the embedding tensor
     // Common patterns: "emb_params", "string_to_param.*", "<token>"
-    let emb_key = find_embedding_key(&names)
-        .ok_or_else(|| EmbeddingLoadError::ParseError(
-            "Could not find embedding tensor in file".to_string()
-        ))?;
+    let emb_key = find_embedding_key(&names).ok_or_else(|| {
+        EmbeddingLoadError::ParseError("Could not find embedding tensor in file".to_string())
+    })?;
 
     // Determine token name
     let token = extract_token_name(&emb_key, path);
 
     // Load the embedding tensor
-    let shape = file.shape(&emb_key)
-        .ok_or_else(|| EmbeddingLoadError::ParseError(
-            format!("Could not get shape for key: {}", emb_key)
-        ))?;
+    let shape = file.shape(&emb_key).ok_or_else(|| {
+        EmbeddingLoadError::ParseError(format!("Could not get shape for key: {}", emb_key))
+    })?;
 
     let vectors = match shape.len() {
         1 => {
             // Single vector: reshape to [1, dim]
-            let vec: Tensor<B, 1> = file.load_f32(&emb_key, device)
+            let vec: Tensor<B, 1> = file
+                .load_f32(&emb_key, device)
                 .map_err(|e| EmbeddingLoadError::TensorError(e.to_string()))?;
             let dim = vec.dims()[0];
             vec.reshape([1, dim])
@@ -86,9 +85,10 @@ fn load_safetensors_embedding<B: Backend>(
                 .map_err(|e| EmbeddingLoadError::TensorError(e.to_string()))?
         }
         _ => {
-            return Err(EmbeddingLoadError::ParseError(
-                format!("Unexpected embedding shape: {:?}", shape)
-            ));
+            return Err(EmbeddingLoadError::ParseError(format!(
+                "Unexpected embedding shape: {:?}",
+                shape
+            )));
         }
     };
 
@@ -117,12 +117,9 @@ fn find_embedding_key(names: &[String]) -> Option<String> {
     }
 
     // Look for common embedding-like keys
-    names.iter()
-        .find(|k| {
-            k.starts_with('<') ||
-            k.contains("embedding") ||
-            k.contains("token")
-        })
+    names
+        .iter()
+        .find(|k| k.starts_with('<') || k.contains("embedding") || k.contains("token"))
         .cloned()
 }
 
@@ -141,7 +138,8 @@ fn extract_token_name(key: &str, path: &Path) -> String {
     }
 
     // Fall back to filename
-    let filename = path.file_stem()
+    let filename = path
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("embedding");
 

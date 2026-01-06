@@ -14,8 +14,8 @@
 //!
 //! This allows each spatial position to attend across all frames.
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 /// Configuration for temporal attention
 #[derive(Debug, Clone)]
@@ -139,10 +139,7 @@ impl<B: Backend> TemporalAttention<B> {
         // Apply RoPE if enabled
         let (q, k) = if let Some(ref freqs) = self.rope_freqs {
             let freqs = freqs.clone().slice([0..seq_len]);
-            (
-                apply_rope(q, freqs.clone()),
-                apply_rope(k, freqs),
-            )
+            (apply_rope(q, freqs.clone()), apply_rope(k, freqs))
         } else {
             (q, k)
         };
@@ -199,9 +196,10 @@ impl<B: Backend> TemporalAttention<B> {
 
         // Concatenate with cache
         let (k, v) = match (k_cache, v_cache) {
-            (Some(kc), Some(vc)) => {
-                (Tensor::cat(vec![kc, k.clone()], 2), Tensor::cat(vec![vc, v.clone()], 2))
-            }
+            (Some(kc), Some(vc)) => (
+                Tensor::cat(vec![kc, k.clone()], 2),
+                Tensor::cat(vec![vc, v.clone()], 2),
+            ),
             _ => (k.clone(), v.clone()),
         };
 
@@ -263,8 +261,8 @@ fn compute_rope_freqs<B: Backend>(
 
 /// Apply rotary position embeddings
 fn apply_rope<B: Backend>(
-    x: Tensor<B, 4>,  // [batch, seq, heads, head_dim]
-    freqs: Tensor<B, 3>,  // [seq, head_dim/2, 2]
+    x: Tensor<B, 4>,     // [batch, seq, heads, head_dim]
+    freqs: Tensor<B, 3>, // [seq, head_dim/2, 2]
 ) -> Tensor<B, 4> {
     let [batch, seq_len, heads, head_dim] = x.dims();
     let half_dim = head_dim / 2;
@@ -272,7 +270,9 @@ fn apply_rope<B: Backend>(
     // Split x into even and odd indices
     // x_even = x[:, :, :, 0::2], x_odd = x[:, :, :, 1::2]
     let x_reshaped = x.reshape([batch, seq_len, heads, half_dim, 2]);
-    let x_even = x_reshaped.clone().slice([0..batch, 0..seq_len, 0..heads, 0..half_dim, 0..1]);
+    let x_even = x_reshaped
+        .clone()
+        .slice([0..batch, 0..seq_len, 0..heads, 0..half_dim, 0..1]);
     let x_odd = x_reshaped.slice([0..batch, 0..seq_len, 0..heads, 0..half_dim, 1..2]);
     let x_even = x_even.reshape([batch, seq_len, heads, half_dim]);
     let x_odd = x_odd.reshape([batch, seq_len, heads, half_dim]);
@@ -306,7 +306,16 @@ pub fn reshape_for_temporal<B: Backend>(x: Tensor<B, 5>) -> (Tensor<B, 3>, Video
     // Reshape to [batch * height * width, time, channels]
     let x = x.reshape([batch * height * width, time, channels]);
 
-    (x, VideoShape { batch, channels, time, height, width })
+    (
+        x,
+        VideoShape {
+            batch,
+            channels,
+            time,
+            height,
+            width,
+        },
+    )
 }
 
 /// Reshape back from temporal attention format
@@ -314,7 +323,13 @@ pub fn reshape_for_temporal<B: Backend>(x: Tensor<B, 5>) -> (Tensor<B, 3>, Video
 /// Input: [batch * height * width, time, channels]
 /// Output: [batch, channels, time, height, width]
 pub fn reshape_from_temporal<B: Backend>(x: Tensor<B, 3>, shape: &VideoShape) -> Tensor<B, 5> {
-    let VideoShape { batch, channels, time, height, width } = *shape;
+    let VideoShape {
+        batch,
+        channels,
+        time,
+        height,
+        width,
+    } = *shape;
 
     // Reshape to [batch, height, width, time, channels]
     let x = x.reshape([batch, height, width, time, channels]);

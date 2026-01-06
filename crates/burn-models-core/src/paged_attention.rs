@@ -241,8 +241,16 @@ impl<B: Backend> PagedKvCache<B> {
             let slot = block_table.get_slot(pos);
 
             // Extract single position KV
-            let k_pos = k.clone().slice([0..self.config.num_kv_heads, i..i+1, 0..self.config.head_dim]);
-            let v_pos = v.clone().slice([0..self.config.num_kv_heads, i..i+1, 0..self.config.head_dim]);
+            let k_pos = k.clone().slice([
+                0..self.config.num_kv_heads,
+                i..i + 1,
+                0..self.config.head_dim,
+            ]);
+            let v_pos = v.clone().slice([
+                0..self.config.num_kv_heads,
+                i..i + 1,
+                0..self.config.head_dim,
+            ]);
 
             // Reshape to [num_kv_heads, head_dim]
             let k_pos = k_pos.reshape([self.config.num_kv_heads, self.config.head_dim]);
@@ -266,8 +274,8 @@ impl<B: Backend> PagedKvCache<B> {
         // Target slice: [block_idx, layer_idx, :, slot, :]
         // Values shape: [num_kv_heads, head_dim] -> reshape to [1, 1, num_kv_heads, 1, head_dim]
         let k_expanded = k
-            .unsqueeze_dim::<3>(0)  // [1, num_kv_heads, head_dim]
-            .unsqueeze_dim::<4>(0)  // [1, 1, num_kv_heads, head_dim]
+            .unsqueeze_dim::<3>(0) // [1, num_kv_heads, head_dim]
+            .unsqueeze_dim::<4>(0) // [1, 1, num_kv_heads, head_dim]
             .unsqueeze_dim::<5>(3); // [1, 1, num_kv_heads, 1, head_dim]
 
         let v_expanded = v
@@ -343,8 +351,10 @@ impl<B: Backend> PagedKvCache<B> {
                 ]);
 
                 // Reshape to [num_kv_heads, num_tokens, head_dim]
-                let k_block = k_block.reshape([self.config.num_kv_heads, num_tokens, self.config.head_dim]);
-                let v_block = v_block.reshape([self.config.num_kv_heads, num_tokens, self.config.head_dim]);
+                let k_block =
+                    k_block.reshape([self.config.num_kv_heads, num_tokens, self.config.head_dim]);
+                let v_block =
+                    v_block.reshape([self.config.num_kv_heads, num_tokens, self.config.head_dim]);
 
                 k_parts.push(k_block);
                 v_parts.push(v_block);
@@ -422,7 +432,8 @@ impl<B: Backend> PagedScheduler<B> {
     /// Add a new sequence
     pub fn add_sequence(&mut self) -> Result<usize, &'static str> {
         let seq_id = self.sequences.len();
-        self.sequences.push(PagedSequence::new(self.cache.block_size()));
+        self.sequences
+            .push(PagedSequence::new(self.cache.block_size()));
         Ok(seq_id)
     }
 
@@ -439,7 +450,10 @@ impl<B: Backend> PagedScheduler<B> {
     /// Allocate memory for new tokens in a sequence
     pub fn allocate(&mut self, seq_id: usize, num_tokens: usize) -> Result<(), &'static str> {
         let cache = &mut self.cache;
-        let seq = self.sequences.get_mut(seq_id).ok_or("Invalid sequence ID")?;
+        let seq = self
+            .sequences
+            .get_mut(seq_id)
+            .ok_or("Invalid sequence ID")?;
         seq.allocate_for_tokens(num_tokens, cache)
     }
 
@@ -553,10 +567,10 @@ mod tests {
         // 1GB budget
         let config = PagedKvCacheConfig::from_memory_budget(
             1024 * 1024 * 1024, // 1GB
-            8,                   // num_kv_heads
-            128,                 // head_dim
-            32,                  // num_layers
-            16,                  // block_size
+            8,                  // num_kv_heads
+            128,                // head_dim
+            32,                 // num_layers
+            16,                 // block_size
         );
 
         // Each block = 2 * 32 * 8 * 128 * 16 * 4 = 4,194,304 bytes = 4MB

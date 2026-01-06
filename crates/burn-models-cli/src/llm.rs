@@ -147,7 +147,9 @@ pub fn run_generate<B: Backend>(
         .with_temperature(temperature)
         .with_top_p(top_p);
 
-    let output = llm.generate(&prompt, &config).context("Generation failed")?;
+    let output = llm
+        .generate(&prompt, &config)
+        .context("Generation failed")?;
 
     println!("{}", output);
 

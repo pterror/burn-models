@@ -15,9 +15,9 @@
 
 use burn::module::{Module, Param};
 use burn::nn::conv::{Conv1d, Conv1dConfig};
-use burn::nn::{Embedding, EmbeddingConfig, Linear, LinearConfig, LayerNorm, LayerNormConfig};
+use burn::nn::{Embedding, EmbeddingConfig, LayerNorm, LayerNormConfig, Linear, LinearConfig};
 use burn::prelude::*;
-use burn::tensor::{activation, Int};
+use burn::tensor::{Int, activation};
 
 /// Mamba model configuration
 #[derive(Clone, Debug)]
@@ -232,7 +232,12 @@ impl<B: Backend> Mamba<B> {
     }
 
     /// Initialize fresh states for recurrent inference
-    pub fn init_states(&self, runtime: &MambaRuntime<B>, batch: usize, device: &B::Device) -> Vec<MambaState<B>> {
+    pub fn init_states(
+        &self,
+        runtime: &MambaRuntime<B>,
+        batch: usize,
+        device: &B::Device,
+    ) -> Vec<MambaState<B>> {
         (0..runtime.config.n_layer)
             .map(|_| MambaState::new(&runtime.config, batch, device))
             .collect()
@@ -257,7 +262,9 @@ impl<B: Backend> Mamba<B> {
 
         // Get last token prediction
         let [_, seq_len, vocab_size] = output.logits.dims();
-        let mut last_logits = output.logits.slice([0..batch, seq_len - 1..seq_len, 0..vocab_size])
+        let mut last_logits = output
+            .logits
+            .slice([0..batch, seq_len - 1..seq_len, 0..vocab_size])
             .squeeze_dim::<2>(1);
 
         let mut all_tokens = input_ids;
@@ -301,11 +308,7 @@ impl<B: Backend> MambaBlock<B> {
         }
     }
 
-    pub fn forward(
-        &self,
-        x: Tensor<B, 3>,
-        state: Option<&mut MambaState<B>>,
-    ) -> Tensor<B, 3> {
+    pub fn forward(&self, x: Tensor<B, 3>, state: Option<&mut MambaState<B>>) -> Tensor<B, 3> {
         let residual = x.clone();
         let x = self.ln.forward(x);
         let x = self.mixer.forward(x, state);
@@ -351,7 +354,8 @@ impl<B: Backend> MambaMixer<B> {
         let a_log_data: Vec<f32> = (0..d_inner)
             .flat_map(|_| (1..=d_state).map(|i| (i as f32).ln()))
             .collect();
-        let a_log: Tensor<B, 2> = Tensor::<B, 1>::from_floats(&a_log_data[..], device).reshape([d_inner, d_state]);
+        let a_log: Tensor<B, 2> =
+            Tensor::<B, 1>::from_floats(&a_log_data[..], device).reshape([d_inner, d_state]);
 
         Self {
             in_proj: LinearConfig::new(config.d_model, d_inner * 2)
@@ -380,11 +384,7 @@ impl<B: Backend> MambaMixer<B> {
         }
     }
 
-    pub fn forward(
-        &self,
-        x: Tensor<B, 3>,
-        mut state: Option<&mut MambaState<B>>,
-    ) -> Tensor<B, 3> {
+    pub fn forward(&self, x: Tensor<B, 3>, mut state: Option<&mut MambaState<B>>) -> Tensor<B, 3> {
         let [batch, seq_len, _] = x.dims();
 
         // Project to inner dimension (x and gate branches)
@@ -404,7 +404,10 @@ impl<B: Backend> MambaMixer<B> {
                 // Update state with last d_conv-1 elements
                 let total_len = conv_in.dims()[2];
                 let state_start = total_len - (self.d_conv - 1);
-                s.conv_state = conv_in.clone().slice([0..batch, 0..self.d_inner, state_start..total_len]);
+                s.conv_state =
+                    conv_in
+                        .clone()
+                        .slice([0..batch, 0..self.d_inner, state_start..total_len]);
                 // Apply conv1d
                 let x = self.conv1d.forward(conv_in);
                 // Take only the last position
@@ -431,9 +434,19 @@ impl<B: Backend> MambaMixer<B> {
         let x_proj = self.x_proj.forward(x.clone());
 
         // Split into dt, B, C
-        let dt_low = x_proj.clone().slice([0..batch, 0..seq_len, 0..self.dt_rank]);
-        let b = x_proj.clone().slice([0..batch, 0..seq_len, self.dt_rank..self.dt_rank + self.d_state]);
-        let c = x_proj.slice([0..batch, 0..seq_len, self.dt_rank + self.d_state..self.dt_rank + self.d_state * 2]);
+        let dt_low = x_proj
+            .clone()
+            .slice([0..batch, 0..seq_len, 0..self.dt_rank]);
+        let b = x_proj.clone().slice([
+            0..batch,
+            0..seq_len,
+            self.dt_rank..self.dt_rank + self.d_state,
+        ]);
+        let c = x_proj.slice([
+            0..batch,
+            0..seq_len,
+            self.dt_rank + self.d_state..self.dt_rank + self.d_state * 2,
+        ]);
 
         // Project dt from low-rank to full d_inner and apply softplus
         let dt = self.dt_proj.forward(dt_low);
@@ -456,11 +469,11 @@ impl<B: Backend> MambaMixer<B> {
     /// Run the selective state space model
     fn ssm_forward(
         &self,
-        x: Tensor<B, 3>,      // [batch, seq, d_inner]
-        dt: Tensor<B, 3>,     // [batch, seq, d_inner]
-        a: Tensor<B, 2>,      // [d_inner, d_state]
-        b: Tensor<B, 3>,      // [batch, seq, d_state]
-        c: Tensor<B, 3>,      // [batch, seq, d_state]
+        x: Tensor<B, 3>,  // [batch, seq, d_inner]
+        dt: Tensor<B, 3>, // [batch, seq, d_inner]
+        a: Tensor<B, 2>,  // [d_inner, d_state]
+        b: Tensor<B, 3>,  // [batch, seq, d_state]
+        c: Tensor<B, 3>,  // [batch, seq, d_state]
         state: &mut Option<&mut MambaState<B>>,
     ) -> Tensor<B, 3> {
         let [batch, seq_len, _] = x.dims();
@@ -480,29 +493,56 @@ impl<B: Backend> MambaMixer<B> {
 
         for t in 0..seq_len {
             // Extract time step values
-            let x_t = x.clone().slice([0..batch, t..t + 1, 0..self.d_inner]).squeeze_dim::<2>(1);
-            let dt_t = dt.clone().slice([0..batch, t..t + 1, 0..self.d_inner]).squeeze_dim::<2>(1);
-            let b_t = b.clone().slice([0..batch, t..t + 1, 0..self.d_state]).squeeze_dim::<2>(1);
-            let c_t = c.clone().slice([0..batch, t..t + 1, 0..self.d_state]).squeeze_dim::<2>(1);
+            let x_t = x
+                .clone()
+                .slice([0..batch, t..t + 1, 0..self.d_inner])
+                .squeeze_dim::<2>(1);
+            let dt_t = dt
+                .clone()
+                .slice([0..batch, t..t + 1, 0..self.d_inner])
+                .squeeze_dim::<2>(1);
+            let b_t = b
+                .clone()
+                .slice([0..batch, t..t + 1, 0..self.d_state])
+                .squeeze_dim::<2>(1);
+            let c_t = c
+                .clone()
+                .slice([0..batch, t..t + 1, 0..self.d_state])
+                .squeeze_dim::<2>(1);
 
             // Discretize: dA = exp(dt * A), dB = dt * B
             // A is [d_inner, d_state], dt_t is [batch, d_inner]
-            let dt_expanded = dt_t.clone().unsqueeze_dim::<3>(2)
-                .expand([batch, self.d_inner, self.d_state]);
-            let a_expanded = a.clone().unsqueeze_dim::<3>(0).expand([batch, self.d_inner, self.d_state]);
+            let dt_expanded =
+                dt_t.clone()
+                    .unsqueeze_dim::<3>(2)
+                    .expand([batch, self.d_inner, self.d_state]);
+            let a_expanded =
+                a.clone()
+                    .unsqueeze_dim::<3>(0)
+                    .expand([batch, self.d_inner, self.d_state]);
             let d_a = (dt_expanded.clone() * a_expanded).exp();
 
-            let b_expanded = b_t.unsqueeze_dim::<3>(1).expand([batch, self.d_inner, self.d_state]);
+            let b_expanded = b_t
+                .unsqueeze_dim::<3>(1)
+                .expand([batch, self.d_inner, self.d_state]);
             let d_b = dt_expanded * b_expanded;
 
             // Update hidden state: h = dA * h + dB * x
-            let x_expanded = x_t.clone().unsqueeze_dim::<3>(2).expand([batch, self.d_inner, self.d_state]);
+            let x_expanded =
+                x_t.clone()
+                    .unsqueeze_dim::<3>(2)
+                    .expand([batch, self.d_inner, self.d_state]);
             h = d_a * h + d_b * x_expanded;
 
             // Compute output: y = (C @ h) + D * x
-            let c_expanded = c_t.unsqueeze_dim::<3>(1).expand([batch, self.d_inner, self.d_state]);
+            let c_expanded = c_t
+                .unsqueeze_dim::<3>(1)
+                .expand([batch, self.d_inner, self.d_state]);
             let y_t = (h.clone() * c_expanded).sum_dim(2).squeeze_dim::<2>(2);
-            let d_expanded = d.clone().unsqueeze_dim::<2>(0).expand([batch, self.d_inner]);
+            let d_expanded = d
+                .clone()
+                .unsqueeze_dim::<2>(0)
+                .expand([batch, self.d_inner]);
             let y_t = y_t + d_expanded * x_t;
 
             outputs.push(y_t.unsqueeze_dim::<3>(1));

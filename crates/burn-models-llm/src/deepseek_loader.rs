@@ -5,13 +5,15 @@
 
 use std::path::Path;
 
-use burn::prelude::*;
 use burn::module::Param;
 use burn::nn::{EmbeddingConfig, LinearConfig};
+use burn::prelude::*;
 use burn_models_convert::loader::SafeTensorFile;
 use thiserror::Error;
 
-use crate::deepseek::{DeepSeek, DeepSeekConfig, DeepSeekRuntime, DeepSeekLayer, DeepSeekAttention};
+use crate::deepseek::{
+    DeepSeek, DeepSeekAttention, DeepSeekConfig, DeepSeekLayer, DeepSeekRuntime,
+};
 use burn_models_core::glu::SwiGluFfn;
 use burn_models_core::rmsnorm::RmsNorm;
 use burn_models_core::rope::RotaryEmbedding;
@@ -39,7 +41,13 @@ pub fn load_deepseek<B: Backend, P: AsRef<Path>>(
 ) -> Result<(DeepSeek<B>, DeepSeekRuntime<B>), DeepSeekLoadError> {
     let file = SafeTensorFile::open(path)?;
 
-    let embed_tokens = load_embedding(&file, "model.embed_tokens.weight", config.vocab_size, config.hidden_size, device)?;
+    let embed_tokens = load_embedding(
+        &file,
+        "model.embed_tokens.weight",
+        config.vocab_size,
+        config.hidden_size,
+        device,
+    )?;
 
     let mut layers = Vec::with_capacity(config.num_layers);
     for i in 0..config.num_layers {
@@ -47,9 +55,22 @@ pub fn load_deepseek<B: Backend, P: AsRef<Path>>(
         layers.push(layer);
     }
 
-    let norm = load_rmsnorm(&file, "model.norm.weight", config.hidden_size, config.norm_eps, device)?;
+    let norm = load_rmsnorm(
+        &file,
+        "model.norm.weight",
+        config.hidden_size,
+        config.norm_eps,
+        device,
+    )?;
 
-    let lm_head = load_linear(&file, "lm_head.weight", None, config.hidden_size, config.vocab_size, device)?;
+    let lm_head = load_linear(
+        &file,
+        "lm_head.weight",
+        None,
+        config.hidden_size,
+        config.vocab_size,
+        device,
+    )?;
 
     let model = DeepSeek {
         embed_tokens,

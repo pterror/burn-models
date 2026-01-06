@@ -24,9 +24,9 @@
 //! - **PixArt-α**: Original model (512px, 1024px)
 //! - **PixArt-Σ**: Improved model with better quality
 
-use burn::prelude::*;
 use burn::module::Param;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 use burn_models_core::dit::{PatchEmbed, PatchEmbedConfig, unpatchify};
 use burn_models_core::glu::SwiGluFfn;
@@ -64,10 +64,10 @@ impl PixArtConfig {
             hidden_size: 1152,
             num_heads: 16,
             num_blocks: 28,
-            text_dim: 4096,  // T5-XXL
+            text_dim: 4096, // T5-XXL
             time_embed_dim: 256,
             mlp_ratio: 4.0,
-            max_seq_len: 1024,  // 32x32 patches
+            max_seq_len: 1024, // 32x32 patches
         }
     }
 
@@ -82,7 +82,7 @@ impl PixArtConfig {
             text_dim: 4096,
             time_embed_dim: 256,
             mlp_ratio: 4.0,
-            max_seq_len: 4096,  // 64x64 patches
+            max_seq_len: 4096, // 64x64 patches
         }
     }
 
@@ -127,8 +127,8 @@ impl PixArtConfig {
     /// Initialize the model
     pub fn init<B: Backend>(&self, device: &B::Device) -> (PixArt<B>, PixArtRuntime<B>) {
         // Patch embedding
-        let patch_embed = PatchEmbedConfig::new(self.patch_size, self.in_channels, self.hidden_size)
-            .init(device);
+        let patch_embed =
+            PatchEmbedConfig::new(self.patch_size, self.in_channels, self.hidden_size).init(device);
 
         // Timestep embedding
         let time_embed = PixArtTimestepEmbed {
@@ -152,7 +152,8 @@ impl PixArtConfig {
                     self.num_heads,
                     self.intermediate_size(),
                     self.text_dim,
-                ).init(device)
+                )
+                .init(device)
             })
             .collect();
 
@@ -246,8 +247,18 @@ struct PixArtBlockConfig {
 }
 
 impl PixArtBlockConfig {
-    fn new(hidden_size: usize, num_heads: usize, intermediate_size: usize, text_dim: usize) -> Self {
-        Self { hidden_size, num_heads, intermediate_size, text_dim }
+    fn new(
+        hidden_size: usize,
+        num_heads: usize,
+        intermediate_size: usize,
+        text_dim: usize,
+    ) -> Self {
+        Self {
+            hidden_size,
+            num_heads,
+            intermediate_size,
+            text_dim,
+        }
     }
 
     fn init<B: Backend>(&self, device: &B::Device) -> PixArtBlock<B> {
@@ -310,11 +321,34 @@ impl<B: Backend> PixArtAttention<B> {
         let qkv = self.to_qkv.forward(x);
         let qkv = qkv.reshape([batch, seq_len, 3, self.num_heads, self.head_dim]);
 
-        let q = qkv.clone().slice([0..batch, 0..seq_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let q = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim]);
-        let k = qkv.clone().slice([0..batch, 0..seq_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let k = qkv
+            .clone()
+            .slice([
+                0..batch,
+                0..seq_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim]);
-        let v = qkv.slice([0..batch, 0..seq_len, 2..3, 0..self.num_heads, 0..self.head_dim])
+        let v = qkv
+            .slice([
+                0..batch,
+                0..seq_len,
+                2..3,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, seq_len, self.num_heads, self.head_dim]);
 
         // [batch, heads, seq, dim]
@@ -329,7 +363,9 @@ impl<B: Backend> PixArtAttention<B> {
         let out = attn.matmul(v);
 
         // Reshape and project
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.to_out.forward(out)
     }
 }
@@ -358,9 +394,24 @@ impl<B: Backend> PixArtCrossAttention<B> {
         let kv = self.to_kv.forward(context);
         let kv = kv.reshape([batch, ctx_len, 2, self.num_heads, self.head_dim]);
 
-        let k = kv.clone().slice([0..batch, 0..ctx_len, 0..1, 0..self.num_heads, 0..self.head_dim])
+        let k = kv
+            .clone()
+            .slice([
+                0..batch,
+                0..ctx_len,
+                0..1,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, ctx_len, self.num_heads, self.head_dim]);
-        let v = kv.slice([0..batch, 0..ctx_len, 1..2, 0..self.num_heads, 0..self.head_dim])
+        let v = kv
+            .slice([
+                0..batch,
+                0..ctx_len,
+                1..2,
+                0..self.num_heads,
+                0..self.head_dim,
+            ])
             .reshape([batch, ctx_len, self.num_heads, self.head_dim]);
 
         // [batch, heads, seq, dim]
@@ -375,7 +426,9 @@ impl<B: Backend> PixArtCrossAttention<B> {
         let out = attn.matmul(v);
 
         // Reshape and project
-        let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
+        let out = out
+            .swap_dims(1, 2)
+            .reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.to_out.forward(out)
     }
 }
@@ -396,19 +449,41 @@ pub struct PixArtBlock<B: Backend> {
 
 impl<B: Backend> PixArtBlock<B> {
     /// Forward pass with AdaLN-Zero modulation
-    pub fn forward(&self, x: Tensor<B, 3>, cond: Tensor<B, 2>, context: Tensor<B, 3>) -> Tensor<B, 3> {
+    pub fn forward(
+        &self,
+        x: Tensor<B, 3>,
+        cond: Tensor<B, 2>,
+        context: Tensor<B, 3>,
+    ) -> Tensor<B, 3> {
         let [batch, _seq_len, hidden] = x.dims();
 
         // Get modulation parameters (6 for: shift1, scale1, gate1, shift2, scale2, gate2)
         let mod_params = self.modulation.forward(cond);
         let mod_params = mod_params.reshape([batch, 6, hidden]);
 
-        let shift1 = mod_params.clone().slice([0..batch, 0..1, 0..hidden]).reshape([batch, 1, hidden]);
-        let scale1 = mod_params.clone().slice([0..batch, 1..2, 0..hidden]).reshape([batch, 1, hidden]);
-        let gate1 = mod_params.clone().slice([0..batch, 2..3, 0..hidden]).reshape([batch, 1, hidden]);
-        let shift2 = mod_params.clone().slice([0..batch, 3..4, 0..hidden]).reshape([batch, 1, hidden]);
-        let scale2 = mod_params.clone().slice([0..batch, 4..5, 0..hidden]).reshape([batch, 1, hidden]);
-        let gate2 = mod_params.slice([0..batch, 5..6, 0..hidden]).reshape([batch, 1, hidden]);
+        let shift1 = mod_params
+            .clone()
+            .slice([0..batch, 0..1, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let scale1 = mod_params
+            .clone()
+            .slice([0..batch, 1..2, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let gate1 = mod_params
+            .clone()
+            .slice([0..batch, 2..3, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let shift2 = mod_params
+            .clone()
+            .slice([0..batch, 3..4, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let scale2 = mod_params
+            .clone()
+            .slice([0..batch, 4..5, 0..hidden])
+            .reshape([batch, 1, hidden]);
+        let gate2 = mod_params
+            .slice([0..batch, 5..6, 0..hidden])
+            .reshape([batch, 1, hidden]);
 
         // Self-attention with modulation
         let x_norm = self.norm1.forward(x.clone());
@@ -499,7 +574,10 @@ impl<B: Backend> PixArt<B> {
         let [_, seq_len, _] = x.dims();
 
         // Add position embeddings (truncate if needed)
-        let pos_embed = self.pos_embed.val().slice([0..1, 0..seq_len, 0..self.hidden_size]);
+        let pos_embed = self
+            .pos_embed
+            .val()
+            .slice([0..1, 0..seq_len, 0..self.hidden_size]);
         let pos_embed = pos_embed.repeat_dim(0, batch);
         let x = x + pos_embed;
 
@@ -516,13 +594,7 @@ impl<B: Backend> PixArt<B> {
         let out = self.final_layer.forward(x, cond);
 
         // Unpatchify
-        let prediction = unpatchify(
-            out,
-            self.patch_size,
-            height,
-            width,
-            self.in_channels,
-        );
+        let prediction = unpatchify(out, self.patch_size, height, width, self.in_channels);
 
         PixArtOutput { prediction }
     }
@@ -586,7 +658,7 @@ mod tests {
         };
 
         let x = Tensor::<TestBackend, 3>::zeros([2, 16, 256], &device);
-        let ctx = Tensor::<TestBackend, 3>::zeros([2, 8, 128], &device);  // text context
+        let ctx = Tensor::<TestBackend, 3>::zeros([2, 8, 128], &device); // text context
         let out = attn.forward(x, ctx);
         assert_eq!(out.dims(), [2, 16, 256]);
     }
@@ -612,7 +684,7 @@ mod tests {
 
         // [batch=1, channels=4, height=8, width=8]
         let latents = Tensor::zeros([1, 4, 8, 8], &device);
-        let text = Tensor::zeros([1, 4, 128], &device);  // T5 embeddings
+        let text = Tensor::zeros([1, 4, 128], &device); // T5 embeddings
 
         let output = model.forward(latents, 0.5, text);
 

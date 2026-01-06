@@ -45,8 +45,7 @@ impl ClipTokenizer {
     /// This uses the same BPE merges as OpenAI's CLIP model, which is standard
     /// for all Stable Diffusion 1.x and 2.x models.
     pub fn new() -> Self {
-        Self::from_vocab(CLIP_BPE_MERGES)
-            .expect("embedded CLIP vocabulary should be valid")
+        Self::from_vocab(CLIP_BPE_MERGES).expect("embedded CLIP vocabulary should be valid")
     }
 
     /// Create a new tokenizer from a vocabulary file
@@ -113,7 +112,7 @@ impl ClipTokenizer {
 
         // Regex pattern for tokenization (matches CLIP's pattern)
         let pat = Regex::new(
-            r"(?i)<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+"
+            r"(?i)<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+",
         )?;
 
         Ok(Self {
@@ -246,7 +245,9 @@ impl ClipTokenizer {
         }
 
         let result = word.join(" ");
-        self.cache.borrow_mut().insert(token.to_string(), result.clone());
+        self.cache
+            .borrow_mut()
+            .insert(token.to_string(), result.clone());
         result
     }
 

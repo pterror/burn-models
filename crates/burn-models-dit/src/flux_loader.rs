@@ -9,15 +9,15 @@
 
 use std::path::Path;
 
-use burn::prelude::*;
 use burn::module::Param;
 use burn::nn::LinearConfig;
+use burn::prelude::*;
 use burn_models_convert::loader::SafeTensorFile;
 use thiserror::Error;
 
 use crate::flux::{
-    Flux, FluxConfig, FluxRuntime, FluxDoubleBlock, FluxSingleBlock,
-    FluxAttention, FinalLayer, TimestepEmbedding,
+    FinalLayer, Flux, FluxAttention, FluxConfig, FluxDoubleBlock, FluxRuntime, FluxSingleBlock,
+    TimestepEmbedding,
 };
 use burn_models_core::dit::PatchEmbed;
 use burn_models_core::glu::SwiGluFfn;
@@ -55,14 +55,32 @@ pub fn load_flux<B: Backend, P: AsRef<Path>>(
 
     // Load embeddings
     let img_embed = load_patch_embed(&file, "img_embed", config, device)?;
-    let txt_embed = load_linear(&file, "txt_embed", config.text_dim, config.hidden_size, device)?;
+    let txt_embed = load_linear(
+        &file,
+        "txt_embed",
+        config.text_dim,
+        config.hidden_size,
+        device,
+    )?;
 
     // Load time embedding
-    let time_embed = load_timestep_embedding(&file, "time_embed", config.time_dim, config.hidden_size, device)?;
+    let time_embed = load_timestep_embedding(
+        &file,
+        "time_embed",
+        config.time_dim,
+        config.hidden_size,
+        device,
+    )?;
 
     // Load guidance embedding (optional for schnell)
     let guidance_embed = if file.contains("guidance_embed.linear1.weight") {
-        Some(load_timestep_embedding(&file, "guidance_embed", config.guidance_dim, config.hidden_size, device)?)
+        Some(load_timestep_embedding(
+            &file,
+            "guidance_embed",
+            config.guidance_dim,
+            config.hidden_size,
+            device,
+        )?)
     } else {
         None
     };
@@ -139,7 +157,13 @@ fn load_patch_embed<B: Backend>(
     device: &B::Device,
 ) -> Result<PatchEmbed<B>, FluxLoadError> {
     let patch_dim = config.patch_size * config.patch_size * config.in_channels;
-    let proj = load_linear(file, &format!("{}.proj", prefix), patch_dim, config.hidden_size, device)?;
+    let proj = load_linear(
+        file,
+        &format!("{}.proj", prefix),
+        patch_dim,
+        config.hidden_size,
+        device,
+    )?;
 
     Ok(PatchEmbed {
         proj,
@@ -155,8 +179,20 @@ fn load_timestep_embedding<B: Backend>(
     hidden_size: usize,
     device: &B::Device,
 ) -> Result<TimestepEmbedding<B>, FluxLoadError> {
-    let linear1 = load_linear(file, &format!("{}.linear1", prefix), embed_dim, hidden_size, device)?;
-    let linear2 = load_linear(file, &format!("{}.linear2", prefix), hidden_size, hidden_size, device)?;
+    let linear1 = load_linear(
+        file,
+        &format!("{}.linear1", prefix),
+        embed_dim,
+        hidden_size,
+        device,
+    )?;
+    let linear2 = load_linear(
+        file,
+        &format!("{}.linear2", prefix),
+        hidden_size,
+        hidden_size,
+        device,
+    )?;
 
     Ok(TimestepEmbedding {
         linear1,
@@ -192,8 +228,20 @@ fn load_attention<B: Backend>(
 ) -> Result<FluxAttention<B>, FluxLoadError> {
     let head_dim = config.hidden_size / config.num_heads;
 
-    let qkv = load_linear(file, &format!("{}.qkv", prefix), config.hidden_size, 3 * config.hidden_size, device)?;
-    let proj = load_linear(file, &format!("{}.proj", prefix), config.hidden_size, config.hidden_size, device)?;
+    let qkv = load_linear(
+        file,
+        &format!("{}.qkv", prefix),
+        config.hidden_size,
+        3 * config.hidden_size,
+        device,
+    )?;
+    let proj = load_linear(
+        file,
+        &format!("{}.proj", prefix),
+        config.hidden_size,
+        config.hidden_size,
+        device,
+    )?;
 
     Ok(FluxAttention {
         qkv,
@@ -210,9 +258,27 @@ fn load_swiglu_ffn<B: Backend>(
     intermediate_size: usize,
     device: &B::Device,
 ) -> Result<SwiGluFfn<B>, FluxLoadError> {
-    let gate_proj = load_linear(file, &format!("{}.gate_proj", prefix), hidden_size, intermediate_size, device)?;
-    let up_proj = load_linear(file, &format!("{}.up_proj", prefix), hidden_size, intermediate_size, device)?;
-    let down_proj = load_linear(file, &format!("{}.down_proj", prefix), intermediate_size, hidden_size, device)?;
+    let gate_proj = load_linear(
+        file,
+        &format!("{}.gate_proj", prefix),
+        hidden_size,
+        intermediate_size,
+        device,
+    )?;
+    let up_proj = load_linear(
+        file,
+        &format!("{}.up_proj", prefix),
+        hidden_size,
+        intermediate_size,
+        device,
+    )?;
+    let down_proj = load_linear(
+        file,
+        &format!("{}.down_proj", prefix),
+        intermediate_size,
+        hidden_size,
+        device,
+    )?;
 
     Ok(SwiGluFfn {
         gate_proj,
@@ -231,17 +297,55 @@ fn load_double_block<B: Backend>(
     let intermediate_size = (config.hidden_size as f32 * config.mlp_ratio) as usize;
 
     Ok(FluxDoubleBlock {
-        img_norm1: load_layernorm(file, &format!("{}.img_norm1", prefix), config.hidden_size, device)?,
+        img_norm1: load_layernorm(
+            file,
+            &format!("{}.img_norm1", prefix),
+            config.hidden_size,
+            device,
+        )?,
         img_attn: load_attention(file, &format!("{}.img_attn", prefix), config, device)?,
-        img_norm2: load_layernorm(file, &format!("{}.img_norm2", prefix), config.hidden_size, device)?,
-        img_ffn: load_swiglu_ffn(file, &format!("{}.img_ffn", prefix), config.hidden_size, intermediate_size, device)?,
+        img_norm2: load_layernorm(
+            file,
+            &format!("{}.img_norm2", prefix),
+            config.hidden_size,
+            device,
+        )?,
+        img_ffn: load_swiglu_ffn(
+            file,
+            &format!("{}.img_ffn", prefix),
+            config.hidden_size,
+            intermediate_size,
+            device,
+        )?,
 
-        txt_norm1: load_layernorm(file, &format!("{}.txt_norm1", prefix), config.hidden_size, device)?,
+        txt_norm1: load_layernorm(
+            file,
+            &format!("{}.txt_norm1", prefix),
+            config.hidden_size,
+            device,
+        )?,
         txt_attn: load_attention(file, &format!("{}.txt_attn", prefix), config, device)?,
-        txt_norm2: load_layernorm(file, &format!("{}.txt_norm2", prefix), config.hidden_size, device)?,
-        txt_ffn: load_swiglu_ffn(file, &format!("{}.txt_ffn", prefix), config.hidden_size, intermediate_size, device)?,
+        txt_norm2: load_layernorm(
+            file,
+            &format!("{}.txt_norm2", prefix),
+            config.hidden_size,
+            device,
+        )?,
+        txt_ffn: load_swiglu_ffn(
+            file,
+            &format!("{}.txt_ffn", prefix),
+            config.hidden_size,
+            intermediate_size,
+            device,
+        )?,
 
-        modulation: load_linear(file, &format!("{}.modulation", prefix), config.hidden_size, 6 * config.hidden_size, device)?,
+        modulation: load_linear(
+            file,
+            &format!("{}.modulation", prefix),
+            config.hidden_size,
+            6 * config.hidden_size,
+            device,
+        )?,
     })
 }
 
@@ -255,10 +359,27 @@ fn load_single_block<B: Backend>(
     let intermediate_size = (config.hidden_size as f32 * config.mlp_ratio) as usize;
 
     Ok(FluxSingleBlock {
-        norm: load_layernorm(file, &format!("{}.norm", prefix), config.hidden_size, device)?,
+        norm: load_layernorm(
+            file,
+            &format!("{}.norm", prefix),
+            config.hidden_size,
+            device,
+        )?,
         attn: load_attention(file, &format!("{}.attn", prefix), config, device)?,
-        ffn: load_swiglu_ffn(file, &format!("{}.ffn", prefix), config.hidden_size, intermediate_size, device)?,
-        modulation: load_linear(file, &format!("{}.modulation", prefix), config.hidden_size, 3 * config.hidden_size, device)?,
+        ffn: load_swiglu_ffn(
+            file,
+            &format!("{}.ffn", prefix),
+            config.hidden_size,
+            intermediate_size,
+            device,
+        )?,
+        modulation: load_linear(
+            file,
+            &format!("{}.modulation", prefix),
+            config.hidden_size,
+            3 * config.hidden_size,
+            device,
+        )?,
     })
 }
 
@@ -271,8 +392,20 @@ fn load_final_layer<B: Backend>(
 
     Ok(FinalLayer {
         norm: load_layernorm(file, "final_layer.norm", config.hidden_size, device)?,
-        proj: load_linear(file, "final_layer.proj", config.hidden_size, out_dim, device)?,
-        ada_ln_modulation: load_linear(file, "final_layer.ada_ln_modulation", config.hidden_size, 2 * config.hidden_size, device)?,
+        proj: load_linear(
+            file,
+            "final_layer.proj",
+            config.hidden_size,
+            out_dim,
+            device,
+        )?,
+        ada_ln_modulation: load_linear(
+            file,
+            "final_layer.ada_ln_modulation",
+            config.hidden_size,
+            2 * config.hidden_size,
+            device,
+        )?,
     })
 }
 

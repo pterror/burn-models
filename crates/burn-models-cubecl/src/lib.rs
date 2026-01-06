@@ -32,15 +32,17 @@ mod groupnorm_silu;
 mod pool3d;
 mod utils;
 
-pub use attention::{flash_attention, flash_attention_masked, FlashAttentionOptions, AttentionSetupError};
-pub use conv3d::{conv3d, Conv3dLayer, Conv3dOptions, Layout, from_cube_tensor, to_cube_tensor};
-pub use conv3d_optimized::{conv3d_nthwc, Conv3dOptimizedOptions};
-pub use groupnorm_silu::{
-    groupnorm, groupnorm_silu, GroupNormSiLuOptions, GroupNormSiLuLayer,
-    tensor_to_cube, cube_to_tensor,
+pub use attention::{
+    AttentionSetupError, FlashAttentionOptions, flash_attention, flash_attention_masked,
 };
-pub use pool3d::{avg_pool3d, max_pool3d, Pool3dOptions};
+pub use conv3d::{Conv3dLayer, Conv3dOptions, Layout, conv3d, from_cube_tensor, to_cube_tensor};
+pub use conv3d_optimized::{Conv3dOptimizedOptions, conv3d_nthwc};
+pub use groupnorm_silu::{
+    GroupNormSiLuLayer, GroupNormSiLuOptions, cube_to_tensor, groupnorm, groupnorm_silu,
+    tensor_to_cube,
+};
+pub use pool3d::{Pool3dOptions, avg_pool3d, max_pool3d};
 
 // Re-export key types for consumers
-pub use burn_cubecl::{tensor::CubeTensor, CubeRuntime};
+pub use burn_cubecl::{CubeRuntime, tensor::CubeTensor};
 pub use cubecl::server::LaunchError;

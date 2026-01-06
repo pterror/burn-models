@@ -10,8 +10,8 @@
 //! - Bidirectional attention (no causal mask)
 //! - Often uses modulation (scale/shift) instead of simple conditioning
 
-use burn::prelude::*;
 use burn::nn::{Linear, LinearConfig};
+use burn::prelude::*;
 
 use crate::glu::SwiGluFfn;
 use crate::layernorm::LayerNorm;
@@ -146,7 +146,9 @@ impl<B: Backend> AdaLayerNormZero<B> {
         let modulation = modulation.reshape([batch, 1, hidden_size * 3]);
 
         let scale = modulation.clone().slice([0..batch, 0..1, 0..hidden_size]);
-        let shift = modulation.clone().slice([0..batch, 0..1, hidden_size..(hidden_size * 2)]);
+        let shift = modulation
+            .clone()
+            .slice([0..batch, 0..1, hidden_size..(hidden_size * 2)]);
         let gate = modulation.slice([0..batch, 0..1, (hidden_size * 2)..(hidden_size * 3)]);
 
         let x_norm = self.norm.forward(x);
@@ -191,7 +193,12 @@ pub struct DiTBlockConfig {
 
 impl DiTBlockConfig {
     /// Creates a new config
-    pub fn new(hidden_size: usize, intermediate_size: usize, num_heads: usize, cond_dim: usize) -> Self {
+    pub fn new(
+        hidden_size: usize,
+        intermediate_size: usize,
+        num_heads: usize,
+        cond_dim: usize,
+    ) -> Self {
         Self {
             hidden_size,
             intermediate_size,
@@ -297,7 +304,14 @@ impl<B: Backend> PatchEmbed<B> {
         let num_patches = ph * pw;
 
         // Reshape to patches: [B, C, H, W] -> [B, C, ph, ps, pw, ps]
-        let x = x.reshape([batch, self.in_channels, ph, self.patch_size, pw, self.patch_size]);
+        let x = x.reshape([
+            batch,
+            self.in_channels,
+            ph,
+            self.patch_size,
+            pw,
+            self.patch_size,
+        ]);
         // Permute to [B, ph, pw, C, ps, ps]
         let x = x.swap_dims(2, 4).swap_dims(3, 5);
         // Flatten patches: [B, ph*pw, C*ps*ps]

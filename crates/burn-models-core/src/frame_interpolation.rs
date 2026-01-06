@@ -76,11 +76,7 @@ pub enum InterpolationMethod {
 /// Linear interpolation between two tensors
 ///
 /// `t` should be in [0, 1] where t=0 returns `a` and t=1 returns `b`
-pub fn lerp<B: Backend, const D: usize>(
-    a: Tensor<B, D>,
-    b: Tensor<B, D>,
-    t: f32,
-) -> Tensor<B, D> {
+pub fn lerp<B: Backend, const D: usize>(a: Tensor<B, D>, b: Tensor<B, D>, t: f32) -> Tensor<B, D> {
     a.clone() * (1.0 - t) + b * t
 }
 
@@ -88,7 +84,7 @@ pub fn lerp<B: Backend, const D: usize>(
 ///
 /// Returns a tensor with an extra dimension for the interpolated frames
 pub fn lerp_batch<B: Backend>(
-    a: Tensor<B, 4>,  // [batch, channels, height, width]
+    a: Tensor<B, 4>, // [batch, channels, height, width]
     b: Tensor<B, 4>,
     t_values: &[f32],
 ) -> Tensor<B, 5> {
@@ -106,11 +102,7 @@ pub fn lerp_batch<B: Backend>(
 ///
 /// Better than lerp for interpolating on the unit hypersphere.
 /// Maintains constant speed and stays on the geodesic.
-pub fn slerp<B: Backend, const D: usize>(
-    a: Tensor<B, D>,
-    b: Tensor<B, D>,
-    t: f32,
-) -> Tensor<B, D> {
+pub fn slerp<B: Backend, const D: usize>(a: Tensor<B, D>, b: Tensor<B, D>, t: f32) -> Tensor<B, D> {
     // Normalize inputs
     let a_norm = normalize_tensor(a.clone());
     let b_norm = normalize_tensor(b.clone());
@@ -137,11 +129,7 @@ pub fn slerp<B: Backend, const D: usize>(
 }
 
 /// Batch spherical interpolation
-pub fn slerp_batch<B: Backend>(
-    a: Tensor<B, 4>,
-    b: Tensor<B, 4>,
-    t_values: &[f32],
-) -> Tensor<B, 5> {
+pub fn slerp_batch<B: Backend>(a: Tensor<B, 4>, b: Tensor<B, 4>, t_values: &[f32]) -> Tensor<B, 5> {
     let frames: Vec<_> = t_values
         .iter()
         .map(|&t| slerp(a.clone(), b.clone(), t))
@@ -167,10 +155,10 @@ pub fn cosine_interp<B: Backend, const D: usize>(
 /// Provides smooth interpolation using two intermediate points and their tangents.
 /// Good for generating multiple frames with smooth motion.
 pub fn cubic_hermite<B: Backend, const D: usize>(
-    p0: Tensor<B, D>,  // Frame before start
-    p1: Tensor<B, D>,  // Start frame
-    p2: Tensor<B, D>,  // End frame
-    p3: Tensor<B, D>,  // Frame after end
+    p0: Tensor<B, D>, // Frame before start
+    p1: Tensor<B, D>, // Start frame
+    p2: Tensor<B, D>, // End frame
+    p3: Tensor<B, D>, // Frame after end
     t: f32,
 ) -> Tensor<B, D> {
     let t2 = t * t;
@@ -245,8 +233,13 @@ pub fn interpolate_video<B: Backend>(
     let mut all_frames = Vec::new();
 
     for t in 0..time - 1 {
-        let frame_a = video.clone().slice([0..batch, 0..channels, t..t + 1, 0..height, 0..width]);
-        let frame_b = video.clone().slice([0..batch, 0..channels, t + 1..t + 2, 0..height, 0..width]);
+        let frame_a = video
+            .clone()
+            .slice([0..batch, 0..channels, t..t + 1, 0..height, 0..width]);
+        let frame_b =
+            video
+                .clone()
+                .slice([0..batch, 0..channels, t + 1..t + 2, 0..height, 0..width]);
 
         // Squeeze time dimension for interpolation
         let frame_a = frame_a.reshape([batch, channels, height, width]);
@@ -263,7 +256,10 @@ pub fn interpolate_video<B: Backend>(
         };
 
         for i in 0..take_frames {
-            let frame = interpolated.clone().slice([0..batch, i..i + 1, 0..channels, 0..height, 0..width]);
+            let frame =
+                interpolated
+                    .clone()
+                    .slice([0..batch, i..i + 1, 0..channels, 0..height, 0..width]);
             let frame = frame.reshape([batch, channels, 1, height, width]);
             all_frames.push(frame);
         }
@@ -277,8 +273,8 @@ pub fn interpolate_video<B: Backend>(
 /// Warps source frame according to flow field.
 /// Flow shape: [batch, 2, height, width] where 2 = (dx, dy)
 pub fn warp_frame<B: Backend>(
-    frame: Tensor<B, 4>,  // [batch, channels, height, width]
-    flow: Tensor<B, 4>,   // [batch, 2, height, width]
+    frame: Tensor<B, 4>, // [batch, channels, height, width]
+    flow: Tensor<B, 4>,  // [batch, 2, height, width]
 ) -> Tensor<B, 4> {
     let [batch, _channels, height, width] = frame.dims();
     let device = frame.device();
@@ -327,9 +323,9 @@ fn create_grid<B: Backend>(
 
 /// Bilinear sampling from image given continuous coordinates
 fn bilinear_sample<B: Backend>(
-    img: Tensor<B, 4>,     // [batch, channels, height, width]
-    x: Tensor<B, 3>,       // [batch, out_h, out_w] normalized coords [-1, 1]
-    y: Tensor<B, 3>,       // [batch, out_h, out_w] normalized coords [-1, 1]
+    img: Tensor<B, 4>, // [batch, channels, height, width]
+    x: Tensor<B, 3>,   // [batch, out_h, out_w] normalized coords [-1, 1]
+    y: Tensor<B, 3>,   // [batch, out_h, out_w] normalized coords [-1, 1]
 ) -> Tensor<B, 4> {
     let [batch, channels, height, width] = img.dims();
     let [_, out_h, out_w] = x.dims();

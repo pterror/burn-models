@@ -7,17 +7,15 @@
 //! - Additional embedding for pooled text + time conditioning
 
 use burn::nn::{
-    conv::{Conv2d, Conv2dConfig},
     Linear, LinearConfig, PaddingConfig2d,
+    conv::{Conv2d, Conv2dConfig},
 };
 use burn::prelude::*;
 
 use burn_models_core::groupnorm::GroupNorm;
 use burn_models_core::silu::silu;
 
-use crate::blocks::{
-    timestep_embedding, Downsample, ResBlock, SpatialTransformer, Upsample,
-};
+use crate::blocks::{Downsample, ResBlock, SpatialTransformer, Upsample, timestep_embedding};
 
 /// SDXL UNet configuration
 #[derive(Debug, Clone)]
@@ -336,13 +334,27 @@ impl<B: Backend> DownBlockXL<B> {
 
         // Only add attention if transformer_depth > 0
         let attn1 = if transformer_depth > 0 {
-            Some(SpatialTransformer::new(out_ch, num_heads, head_dim, context_dim, transformer_depth, device))
+            Some(SpatialTransformer::new(
+                out_ch,
+                num_heads,
+                head_dim,
+                context_dim,
+                transformer_depth,
+                device,
+            ))
         } else {
             None
         };
 
         let attn2 = if transformer_depth > 0 {
-            Some(SpatialTransformer::new(out_ch, num_heads, head_dim, context_dim, transformer_depth, device))
+            Some(SpatialTransformer::new(
+                out_ch,
+                num_heads,
+                head_dim,
+                context_dim,
+                transformer_depth,
+                device,
+            ))
         } else {
             None
         };
@@ -352,7 +364,11 @@ impl<B: Backend> DownBlockXL<B> {
             attn1,
             res2: ResBlock::new(out_ch, out_ch, time_dim, device),
             attn2,
-            downsample: if downsample { Some(Downsample::new(out_ch, device)) } else { None },
+            downsample: if downsample {
+                Some(Downsample::new(out_ch, device))
+            } else {
+                None
+            },
         }
     }
 
@@ -415,7 +431,14 @@ impl<B: Backend> MidBlockXL<B> {
 
         Self {
             res1: ResBlock::new(channels, channels, time_dim, device),
-            attn: SpatialTransformer::new(channels, num_heads, head_dim, context_dim, transformer_depth, device),
+            attn: SpatialTransformer::new(
+                channels,
+                num_heads,
+                head_dim,
+                context_dim,
+                transformer_depth,
+                device,
+            ),
             res2: ResBlock::new(channels, channels, time_dim, device),
         }
     }
@@ -448,10 +471,21 @@ impl<B: Backend> UpBlockXL<B> {
         upsample: bool,
         device: &B::Device,
     ) -> Self {
-        let head_dim = if num_heads > 0 { out_ch / num_heads } else { out_ch };
+        let head_dim = if num_heads > 0 {
+            out_ch / num_heads
+        } else {
+            out_ch
+        };
 
         let attn = if transformer_depth > 0 && num_heads > 0 {
-            Some(SpatialTransformer::new(out_ch, num_heads, head_dim, context_dim, transformer_depth, device))
+            Some(SpatialTransformer::new(
+                out_ch,
+                num_heads,
+                head_dim,
+                context_dim,
+                transformer_depth,
+                device,
+            ))
         } else {
             None
         };
@@ -459,7 +493,11 @@ impl<B: Backend> UpBlockXL<B> {
         Self {
             res: ResBlock::new(in_ch, out_ch, time_dim, device),
             attn,
-            upsample: if upsample { Some(Upsample::new(out_ch, device)) } else { None },
+            upsample: if upsample {
+                Some(Upsample::new(out_ch, device))
+            } else {
+                None
+            },
         }
     }
 
