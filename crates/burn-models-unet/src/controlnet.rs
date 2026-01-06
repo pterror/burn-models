@@ -100,6 +100,7 @@ pub struct ControlNetEncoderBlock<B: Backend> {
 
 impl<B: Backend> ControlNetEncoderBlock<B> {
     /// Creates a new encoder block with res blocks, optional attention, and zero conv output
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         in_channels: usize,
         out_channels: usize,
@@ -424,7 +425,7 @@ impl<B: Backend> ControlNetOutput<B> {
     }
 
     /// Combine with another ControlNet output (for multi-ControlNet)
-    pub fn add(self, other: Self) -> Self {
+    pub fn merge(self, other: Self) -> Self {
         Self {
             controls: self
                 .controls

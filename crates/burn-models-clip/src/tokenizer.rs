@@ -63,7 +63,7 @@ impl ClipTokenizer {
         let lines: Vec<&str> = vocab.lines().collect();
 
         // Skip header line if present (starts with #version)
-        let merges_start = if lines.first().map_or(false, |l| l.starts_with("#version")) {
+        let merges_start = if lines.first().is_some_and(|l| l.starts_with("#version")) {
             1
         } else {
             0
@@ -99,7 +99,7 @@ impl ClipTokenizer {
         }
 
         // Add merged tokens
-        for (pair, _) in &bpe_ranks {
+        for pair in bpe_ranks.keys() {
             encoder.insert(format!("{}{}", pair.0, pair.1), vocab_idx);
             vocab_idx += 1;
         }

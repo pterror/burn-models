@@ -438,6 +438,7 @@ pub struct CascadeDownBlock<B: Backend> {
 }
 
 impl<B: Backend> CascadeDownBlock<B> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         in_ch: usize,
         out_ch: usize,
@@ -536,6 +537,7 @@ pub struct CascadeUpBlock<B: Backend> {
 }
 
 impl<B: Backend> CascadeUpBlock<B> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         in_ch: usize,
         out_ch: usize,

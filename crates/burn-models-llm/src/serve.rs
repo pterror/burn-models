@@ -33,8 +33,8 @@ use burn::prelude::*;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::chat::{ChatMessage, ChatSession, ChatTemplate, Role};
-use crate::inference::{GenerationConfig, LlmError, LlmInstance, ModelType};
+use crate::chat::{ChatMessage, ChatTemplate, Role};
+use crate::inference::{GenerationConfig, LlmError, LlmInstance};
 
 /// Errors that can occur during server operations
 #[derive(Debug)]

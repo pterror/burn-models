@@ -399,7 +399,7 @@ impl PagedSequence {
         cache: &mut PagedKvCache<B>,
     ) -> Result<(), &'static str> {
         let new_len = self.block_table.seq_len() + num_tokens;
-        let blocks_needed = (new_len + cache.block_size() - 1) / cache.block_size();
+        let blocks_needed = new_len.div_ceil(cache.block_size());
         let current_blocks = self.block_table.num_blocks();
 
         for _ in current_blocks..blocks_needed {

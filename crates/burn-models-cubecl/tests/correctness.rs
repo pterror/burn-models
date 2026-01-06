@@ -207,7 +207,7 @@ fn run_cubecl_conv3d(
 ) -> Tensor<TestBackend, 5> {
     let input_cube = to_cube_tensor(input);
     let weight_cube = to_cube_tensor(weight);
-    let bias_cube = bias.map(|b| to_cube_tensor(b));
+    let bias_cube = bias.map(to_cube_tensor);
 
     let output_cube = conv3d::<WgpuRuntime>(input_cube, weight_cube, bias_cube, options)
         .expect("CubeCL conv3d failed");

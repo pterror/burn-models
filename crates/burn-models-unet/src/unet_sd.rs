@@ -289,6 +289,7 @@ pub struct DownBlock<B: Backend> {
 
 impl<B: Backend> DownBlock<B> {
     /// Creates a new down block with residual and optional attention layers
+    #[allow(clippy::too_many_arguments)]
     fn new(
         in_ch: usize,
         out_ch: usize,
@@ -430,6 +431,7 @@ pub struct UpBlock<B: Backend> {
 
 impl<B: Backend> UpBlock<B> {
     /// Creates a new up block
+    #[allow(clippy::too_many_arguments)]
     fn new(
         in_ch: usize,
         out_ch: usize,

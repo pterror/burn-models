@@ -98,7 +98,7 @@ impl<B: Backend> ClipTextEncoder<B> {
         let pos_emb = self
             .position_embedding
             .val()
-            .slice([0..seq_len])
+            .slice(0..seq_len)
             .unsqueeze::<3>();
         let mut x = x + pos_emb;
 
@@ -149,7 +149,7 @@ impl<B: Backend> ClipTextEncoder<B> {
         let pos_emb = self
             .position_embedding
             .val()
-            .slice([0..seq_len])
+            .slice(0..seq_len)
             .unsqueeze::<3>();
         let mut x = x + pos_emb;
 

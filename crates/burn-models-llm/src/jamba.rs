@@ -329,6 +329,7 @@ pub struct JambaBlock<B: Backend> {
 
 /// Core layer type
 #[derive(Module, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum JambaCore<B: Backend> {
     Mamba(JambaMambaMixer<B>),
     Attention(JambaAttention<B>),
@@ -336,6 +337,7 @@ pub enum JambaCore<B: Backend> {
 
 /// FFN type
 #[derive(Module, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum JambaFFN<B: Backend> {
     Dense(JambaDenseFFN<B>),
     MoE(JambaMoEFFN<B>),

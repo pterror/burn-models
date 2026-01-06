@@ -138,7 +138,7 @@ impl<B: Backend> TemporalAttention<B> {
 
         // Apply RoPE if enabled
         let (q, k) = if let Some(ref freqs) = self.rope_freqs {
-            let freqs = freqs.clone().slice([0..seq_len]);
+            let freqs = freqs.clone().slice(0..seq_len);
             (apply_rope(q, freqs.clone()), apply_rope(k, freqs))
         } else {
             (q, k)
@@ -181,7 +181,7 @@ impl<B: Backend> TemporalAttention<B> {
         // Apply RoPE to current Q, K
         let pos_offset = k_cache.as_ref().map_or(0, |c| c.dims()[1]);
         let q = if let Some(ref freqs) = self.rope_freqs {
-            let freqs = freqs.clone().slice([pos_offset..pos_offset + seq_len]);
+            let freqs = freqs.clone().slice(pos_offset..pos_offset + seq_len);
             let q_rope = apply_rope(q.clone(), freqs.clone());
             k = apply_rope(k, freqs);
             q_rope
@@ -236,10 +236,9 @@ fn compute_rope_freqs<B: Backend>(
     let theta = 10000.0f32;
 
     // Compute frequencies: theta^(-2i/d) for i in [0, half_dim)
-    let mut freqs_data = vec![0.0f32; half_dim];
-    for i in 0..half_dim {
-        freqs_data[i] = theta.powf(-2.0 * i as f32 / head_dim as f32);
-    }
+    let freqs_data: Vec<f32> = (0..half_dim)
+        .map(|i| theta.powf(-2.0 * i as f32 / head_dim as f32))
+        .collect();
     let freqs = Tensor::<B, 1>::from_floats(freqs_data.as_slice(), device);
 
     // Compute positions: [0, 1, 2, ..., max_seq_len-1]

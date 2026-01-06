@@ -484,6 +484,7 @@ fn load_group_norm<B: Backend>(
 }
 
 /// Load a Conv2d from safetensors
+#[allow(clippy::too_many_arguments)]
 fn load_conv2d<B: Backend>(
     file: &SafeTensorFile,
     weight_key: &str,
@@ -517,6 +518,7 @@ fn load_conv2d<B: Backend>(
 }
 
 /// Load a Conv2d with stride from safetensors
+#[allow(clippy::too_many_arguments)]
 fn load_conv2d_strided<B: Backend>(
     file: &SafeTensorFile,
     weight_key: &str,
@@ -595,6 +597,7 @@ impl UNetNaming {
 /// - input_blocks.{7,8} = level 2 (1280ch), res+attn each
 /// - input_blocks.9.0.op = downsample
 /// - input_blocks.{10,11} = level 3 (1280ch), res only
+#[allow(dead_code)]
 struct CompVisBlockMap {
     /// Maps (level, block_in_level) to input_blocks index
     down_res_indices: Vec<Vec<usize>>,
@@ -711,7 +714,7 @@ fn load_unet_hf<B: Backend>(
 
         let block = load_down_block(
             file,
-            &prefix,
+            prefix,
             level,
             ch_in,
             ch_out,
@@ -732,7 +735,7 @@ fn load_unet_hf<B: Backend>(
     // Mid block
     let mid_block = load_mid_block(
         file,
-        &prefix,
+        prefix,
         ch_in,
         time_embed_dim,
         config.num_heads,
@@ -778,7 +781,7 @@ fn load_unet_hf<B: Backend>(
 
             let block = load_up_block(
                 file,
-                &prefix,
+                prefix,
                 block_idx,
                 block_in,
                 block_out,
@@ -1033,6 +1036,7 @@ fn load_unet_compvis<B: Backend>(
 }
 
 /// Load a DownBlock
+#[allow(clippy::too_many_arguments)]
 fn load_down_block<B: Backend>(
     file: &SafeTensorFile,
     prefix: &str,
@@ -1116,6 +1120,7 @@ fn load_down_block<B: Backend>(
 }
 
 /// Load a MidBlock
+#[allow(clippy::too_many_arguments)]
 fn load_mid_block<B: Backend>(
     file: &SafeTensorFile,
     prefix: &str,
@@ -1160,6 +1165,7 @@ fn load_mid_block<B: Backend>(
 }
 
 /// Load an UpBlock
+#[allow(clippy::too_many_arguments)]
 fn load_up_block<B: Backend>(
     file: &SafeTensorFile,
     prefix: &str,
@@ -1305,6 +1311,7 @@ fn load_resblock<B: Backend>(
 }
 
 /// Load a SpatialTransformer
+#[allow(clippy::too_many_arguments)]
 fn load_spatial_transformer<B: Backend>(
     file: &SafeTensorFile,
     prefix: &str,
@@ -1572,6 +1579,7 @@ fn load_upsample<B: Backend>(
 // =============================================================================
 
 /// Load a DownBlock using CompVis naming
+#[allow(clippy::too_many_arguments)]
 fn load_down_block_compvis<B: Backend>(
     file: &SafeTensorFile,
     prefix: &str,
@@ -1652,6 +1660,7 @@ fn load_down_block_compvis<B: Backend>(
 }
 
 /// Load a MidBlock using CompVis naming
+#[allow(clippy::too_many_arguments)]
 fn load_mid_block_compvis<B: Backend>(
     file: &SafeTensorFile,
     prefix: &str,
@@ -1702,6 +1711,7 @@ fn load_mid_block_compvis<B: Backend>(
 }
 
 /// Load an UpBlock using CompVis naming
+#[allow(clippy::too_many_arguments)]
 fn load_up_block_compvis<B: Backend>(
     file: &SafeTensorFile,
     prefix: &str,
@@ -1855,6 +1865,7 @@ fn load_resblock_compvis<B: Backend>(
 ///
 /// Note: Some CompVis models store proj_in/proj_out as Conv2d, others as Linear.
 /// We detect which by checking tensor dimensionality.
+#[allow(clippy::too_many_arguments)]
 fn load_spatial_transformer_compvis<B: Backend>(
     file: &SafeTensorFile,
     prefix: &str,
@@ -2147,6 +2158,7 @@ fn detect_vae_decoder_prefix(file: &SafeTensorFile) -> String {
 }
 
 /// Load a VAE decoder block with residual blocks and optional upsampling
+#[allow(clippy::too_many_arguments)]
 fn load_vae_decoder_block<B: Backend>(
     file: &SafeTensorFile,
     vae_prefix: &str,

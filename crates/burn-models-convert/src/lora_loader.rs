@@ -68,7 +68,8 @@ fn load_kohya_lora<B: Backend>(
 ) -> Result<LoraModel<B>, LoraLoadError> {
     let mut model = LoraModel::new(scale);
 
-    // Group keys by base name
+    // Group keys by base name (down_key, up_key, alpha)
+    #[allow(clippy::type_complexity)]
     let mut groups: HashMap<String, (Option<String>, Option<String>, Option<f32>)> = HashMap::new();
 
     for key in names {

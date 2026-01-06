@@ -29,7 +29,7 @@ use cubek::attention::{
 pub use cubek::attention::definition::AttentionSetupError;
 
 /// Options for flash attention
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FlashAttentionOptions {
     /// Output dtype. If None, uses the query dtype.
     pub out_dtype: Option<DType>,
@@ -37,15 +37,6 @@ pub struct FlashAttentionOptions {
     /// - `false` (default): Bidirectional attention - for diffusion models, encoders
     /// - `true`: Causal attention - for autoregressive LLMs
     pub causal: bool,
-}
-
-impl Default for FlashAttentionOptions {
-    fn default() -> Self {
-        Self {
-            out_dtype: None,
-            causal: false, // Non-causal by default (suitable for diffusion models)
-        }
-    }
 }
 
 impl FlashAttentionOptions {

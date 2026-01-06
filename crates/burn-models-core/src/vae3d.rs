@@ -528,6 +528,7 @@ pub mod cubecl {
 
     /// CubeCL-accelerated 3D VAE Encoder
     #[derive(Debug)]
+    #[allow(clippy::type_complexity)]
     pub struct Vae3dEncoderCubeCL<R: CubeRuntime> {
         conv_in: Conv3dLayer<R>,
         down_blocks: Vec<(Vec<ResBlock3dCubeCL<R>>, Option<Downsample3dCubeCL<R>>)>,
@@ -670,6 +671,7 @@ pub mod cubecl {
 
     /// CubeCL-accelerated 3D VAE Decoder
     #[derive(Debug)]
+    #[allow(clippy::type_complexity)]
     pub struct Vae3dDecoderCubeCL<R: CubeRuntime> {
         conv_in: Conv3dLayer<R>,
         mid_block1: ResBlock3dCubeCL<R>,

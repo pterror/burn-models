@@ -320,6 +320,7 @@ struct DownBlockXL<B: Backend> {
 
 impl<B: Backend> DownBlockXL<B> {
     /// Creates a new SDXL down block with optional attention layers
+    #[allow(clippy::too_many_arguments)]
     fn new(
         in_ch: usize,
         out_ch: usize,
@@ -461,6 +462,7 @@ struct UpBlockXL<B: Backend> {
 
 impl<B: Backend> UpBlockXL<B> {
     /// Creates a new SDXL up block with optional attention and upsampling
+    #[allow(clippy::too_many_arguments)]
     fn new(
         in_ch: usize,
         out_ch: usize,

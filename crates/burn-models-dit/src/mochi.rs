@@ -505,6 +505,7 @@ impl<B: Backend> MochiVideoBlock<B> {
     /// * `cond` - Timestep conditioning [batch, hidden]
     /// * `context` - Text context [batch, text_len, hidden]
     /// * `nt, nh, nw` - Video patch dimensions
+    #[allow(clippy::too_many_arguments)]
     pub fn forward(
         &self,
         x: Tensor<B, 3>,

@@ -524,6 +524,7 @@ impl<B: Backend> CogVideoBlock<B> {
     /// * `x` - Combined sequence [B, text_len + T*H*W, D]
     /// * `text_len` - Number of text tokens to skip for video reshaping
     /// * `nt, nh, nw` - Video patch dimensions
+    #[allow(clippy::too_many_arguments)]
     pub fn forward(
         &self,
         x: Tensor<B, 3>,
@@ -770,7 +771,7 @@ mod tests {
     fn test_video_patch_embed() {
         let device = Default::default();
         let embed = VideoPatchEmbed {
-            proj: LinearConfig::new(4 * 2 * 2 * 1, 256)
+            proj: LinearConfig::new(4 * 2 * 2, 256)
                 .with_bias(true)
                 .init(&device),
             patch_size: 2,

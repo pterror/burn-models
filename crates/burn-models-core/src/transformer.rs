@@ -305,12 +305,8 @@ pub fn sliding_window_mask<B: Backend>(
     let mut mask_data = vec![0.0f32; seq_len * seq_len];
     for i in 0..seq_len {
         for j in 0..seq_len {
-            // Mask future positions (causal)
-            if j > i {
-                mask_data[i * seq_len + j] = f32::NEG_INFINITY;
-            }
-            // Mask positions outside sliding window
-            else if i > j + window_size {
+            // Mask future positions (causal) or positions outside sliding window
+            if j > i || i > j + window_size {
                 mask_data[i * seq_len + j] = f32::NEG_INFINITY;
             }
         }

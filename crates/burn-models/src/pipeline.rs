@@ -1,5 +1,8 @@
 //! Diffusion pipeline trait and implementations
 
+// Many sampling loops use step_idx to index timestep_tensors AND pass to sampler.step()
+#![allow(clippy::needless_range_loop)]
+
 use burn::prelude::*;
 use burn::tensor::Int;
 

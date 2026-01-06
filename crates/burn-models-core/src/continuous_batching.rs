@@ -218,7 +218,7 @@ impl ContinuousBatchingScheduler {
     /// Calculate blocks needed for a sequence
     fn blocks_needed(&self, seq: &Sequence) -> usize {
         let total_tokens = seq.total_len() + 1; // +1 for next token
-        (total_tokens + self.config.block_size - 1) / self.config.block_size
+        total_tokens.div_ceil(self.config.block_size)
     }
 
     /// Schedule sequences for the next iteration
@@ -456,8 +456,8 @@ mod tests {
 
         // Add sequences
         let id0 = scheduler.add_sequence(vec![1, 2, 3], 10);
-        let id1 = scheduler.add_sequence(vec![4, 5], 10);
-        let id2 = scheduler.add_sequence(vec![6, 7, 8, 9], 10);
+        let _id1 = scheduler.add_sequence(vec![4, 5], 10);
+        let _id2 = scheduler.add_sequence(vec![6, 7, 8, 9], 10);
 
         assert_eq!(scheduler.num_sequences(), 3);
         assert_eq!(scheduler.num_waiting(), 3);
@@ -526,7 +526,7 @@ mod tests {
         // This should trigger preemption eventually
         let output = scheduler.schedule();
         // Either preempted or running with fewer sequences
-        assert!(output.preempted.len() > 0 || output.running.len() < 10);
+        assert!(!output.preempted.is_empty() || output.running.len() < 10);
     }
 
     #[test]
@@ -540,7 +540,7 @@ mod tests {
         };
         let mut scheduler = ContinuousBatchingScheduler::new(config);
 
-        let long_id = scheduler.add_sequence(vec![1], 100);
+        let _long_id = scheduler.add_sequence(vec![1], 100);
         let short_id = scheduler.add_sequence(vec![2], 10);
 
         let output = scheduler.schedule();

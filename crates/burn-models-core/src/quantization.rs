@@ -114,8 +114,8 @@ impl<B: Backend> QuantizedTensor<B> {
                 let end = (start + group_size).min(cols);
 
                 let group_data = self.data.clone().slice([0..rows, start..end]);
-                let scale = self.params.scale.clone().slice([g..g + 1]);
-                let zero_point = self.params.zero_point.clone().slice([g..g + 1]);
+                let scale = self.params.scale.clone().slice(g..g + 1);
+                let zero_point = self.params.zero_point.clone().slice(g..g + 1);
 
                 let scale = scale.reshape([1, 1]);
                 let zero_point = zero_point.reshape([1, 1]);

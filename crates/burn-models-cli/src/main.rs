@@ -40,7 +40,6 @@ pub enum Device {
     Cpu,
 }
 
-use burn_models::DiffusionPipeline;
 use burn_models_clip::{ClipConfig, ClipTokenizer};
 use burn_models_convert::sd_loader::SdWeightLoader;
 use burn_models_samplers::NoiseSchedule;
@@ -473,7 +472,7 @@ fn run_sd1x_generate(
         #[cfg(feature = "cpu")]
         Device::Cpu => {
             use burn_cpu::{Cpu, CpuDevice};
-            let cpu_device = CpuDevice::default();
+            let cpu_device = CpuDevice;
 
             match precision {
                 Precision::F16 => {
@@ -517,6 +516,7 @@ fn run_sd1x_generate(
 }
 
 /// Debug flags parsed from --debug option
+#[allow(dead_code)]
 struct DebugFlags {
     timing: bool,
     shapes: bool,

@@ -485,6 +485,7 @@ pub struct WanBlock<B: Backend> {
 }
 
 impl<B: Backend> WanBlock<B> {
+    #[allow(clippy::too_many_arguments)]
     pub fn forward(
         &self,
         x: Tensor<B, 3>,

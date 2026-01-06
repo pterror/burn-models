@@ -192,9 +192,11 @@ mod wgpu_bench {
     use burn_cubecl::CubeBackend;
     use burn_wgpu::{WgpuDevice, WgpuRuntime};
 
+    #[allow(dead_code)]
     type BenchBackend = CubeBackend<WgpuRuntime, f32, i32, u32>;
 
     /// Benchmark ResBlock vs ResBlockCubeCL
+    #[allow(dead_code)]
     pub fn bench_resblock(c: &mut Criterion) {
         use burn_models_unet::blocks::ResBlock;
         use burn_models_unet::cubecl::ResBlockCubeCL;
