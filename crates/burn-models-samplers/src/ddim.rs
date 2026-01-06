@@ -82,7 +82,8 @@ impl<B: Backend> DdimSampler<B> {
         // Get alpha values
         let alpha_cumprod_t = self.schedule.alpha_cumprod_at(t);
         let alpha_cumprod_t_prev = if step_index + 1 < self.timesteps.len() {
-            self.schedule.alpha_cumprod_at(self.timesteps[step_index + 1])
+            self.schedule
+                .alpha_cumprod_at(self.timesteps[step_index + 1])
         } else {
             // Final step: alpha = 1.0
             Tensor::ones([1], &latent.device())

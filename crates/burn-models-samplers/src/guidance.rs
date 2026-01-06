@@ -67,7 +67,8 @@ pub fn apply_cfg_plus_plus<B: Backend>(
         let std_guided = compute_tensor_std(&x0_guided);
 
         if std_guided > 1e-6 {
-            let rescale_factor = std_cond / std_guided * guidance_rescale + (1.0 - guidance_rescale);
+            let rescale_factor =
+                std_cond / std_guided * guidance_rescale + (1.0 - guidance_rescale);
             x0_guided * rescale_factor
         } else {
             x0_guided

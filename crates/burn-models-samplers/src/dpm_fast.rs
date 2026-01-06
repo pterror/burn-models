@@ -42,7 +42,8 @@ impl<B: Backend> DpmFastSampler<B> {
     /// Create a new DPM Fast sampler
     pub fn new(config: DpmFastConfig, schedule: &NoiseSchedule<B>) -> Self {
         // DPM Fast uses a specific timestep schedule optimized for speed
-        let timesteps = Self::compute_fast_timesteps(config.num_inference_steps, schedule.num_train_steps);
+        let timesteps =
+            Self::compute_fast_timesteps(config.num_inference_steps, schedule.num_train_steps);
         let mut sigmas = sigmas_from_timesteps(schedule, &timesteps);
         sigmas.push(0.0);
 
@@ -198,9 +199,7 @@ impl<B: Backend> DpmAdaptiveSampler<B> {
         let sigma = self.current_sigma;
 
         // Use proposed sigma or compute from current step size
-        let sigma_next = proposed_sigma_next.unwrap_or_else(|| {
-            (sigma.ln() + self.current_h).exp()
-        });
+        let sigma_next = proposed_sigma_next.unwrap_or_else(|| (sigma.ln() + self.current_h).exp());
         let sigma_next = sigma_next.max(self.sigma_min);
         let h = sigma_next.ln() - sigma.ln();
 
@@ -222,7 +221,8 @@ impl<B: Backend> DpmAdaptiveSampler<B> {
             let error_estimate = (h.abs() * mean_diff).abs();
 
             // Tolerance: atol + rtol * |denoised|
-            let denoised_data: Vec<f32> = denoised.clone().abs().mean().into_data().to_vec().unwrap();
+            let denoised_data: Vec<f32> =
+                denoised.clone().abs().mean().into_data().to_vec().unwrap();
             let tolerance = self.config.atol + self.config.rtol * denoised_data[0];
 
             let ratio = error_estimate / tolerance.max(1e-10);
@@ -249,7 +249,7 @@ impl<B: Backend> DpmAdaptiveSampler<B> {
             // Clamp growth factor
             let factor = factor.clamp(0.5, 2.0);
             self.current_h = (h * factor).clamp(
-                (self.sigma_min.ln() - self.current_sigma.ln()) / 2.0,  // Don't overshoot
+                (self.sigma_min.ln() - self.current_sigma.ln()) / 2.0, // Don't overshoot
                 (self.sigma_min.ln() - sigma.ln()) / (self.config.min_steps as f32),
             );
 

@@ -67,15 +67,29 @@ impl<B: Backend> LmsSampler<B> {
     }
 
     /// Compute LMS coefficients for given order
-    fn get_lms_coefficients(order: usize, _t: f32, t_prev: f32, sigmas: &[f32], step_idx: usize) -> Vec<f32> {
+    fn get_lms_coefficients(
+        order: usize,
+        _t: f32,
+        t_prev: f32,
+        sigmas: &[f32],
+        step_idx: usize,
+    ) -> Vec<f32> {
         let mut coeffs = vec![0.0; order];
 
         for i in 0..order {
             let mut coeff = 1.0;
             for j in 0..order {
                 if i != j {
-                    let sigma_i = if step_idx >= i { sigmas[step_idx - i] } else { sigmas[0] };
-                    let sigma_j = if step_idx >= j { sigmas[step_idx - j] } else { sigmas[0] };
+                    let sigma_i = if step_idx >= i {
+                        sigmas[step_idx - i]
+                    } else {
+                        sigmas[0]
+                    };
+                    let sigma_j = if step_idx >= j {
+                        sigmas[step_idx - j]
+                    } else {
+                        sigmas[0]
+                    };
                     coeff *= (t_prev - sigma_j) / (sigma_i - sigma_j + 1e-8);
                 }
             }
@@ -112,13 +126,8 @@ impl<B: Backend> LmsSampler<B> {
             sample + derivative * (sigma_next - sigma)
         } else {
             // LMS with multiple past derivatives
-            let coeffs = Self::get_lms_coefficients(
-                order,
-                sigma,
-                sigma_next,
-                &self.sigmas,
-                timestep_idx,
-            );
+            let coeffs =
+                Self::get_lms_coefficients(order, sigma, sigma_next, &self.sigmas, timestep_idx);
 
             let mut result = sample;
             for (i, coeff) in coeffs.iter().enumerate().take(order) {

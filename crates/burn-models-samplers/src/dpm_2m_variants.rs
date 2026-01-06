@@ -5,8 +5,8 @@
 use burn::prelude::*;
 use std::collections::VecDeque;
 
-use crate::scheduler::{NoiseSchedule, compute_sigmas, get_ancestral_step, sampler_timesteps};
 use crate::guidance::apply_cfg_plus_plus;
+use crate::scheduler::{NoiseSchedule, compute_sigmas, get_ancestral_step, sampler_timesteps};
 
 /// Configuration for DPM++ 2M CFG++ sampler
 #[derive(Debug, Clone)]
@@ -235,7 +235,8 @@ impl<B: Backend> Dpm2mSdeHeunSampler<B> {
             };
 
             let r = h / h_last;
-            let denoised_d = denoised.clone() + (denoised.clone() - prev_denoised.clone()) * (r / 2.0);
+            let denoised_d =
+                denoised.clone() + (denoised.clone() - prev_denoised.clone()) * (r / 2.0);
 
             let sigma_ratio = sigma_down / sigma;
             sample.clone() * sigma_ratio + denoised_d * (1.0 - sigma_ratio)
@@ -262,11 +263,8 @@ impl<B: Backend> Dpm2mSdeHeunSampler<B> {
         if sigma_up > 0.0 {
             let device = result.device();
             let shape = result.dims();
-            let noise: Tensor<B, 4> = Tensor::random(
-                shape,
-                burn::tensor::Distribution::Normal(0.0, 1.0),
-                &device,
-            );
+            let noise: Tensor<B, 4> =
+                Tensor::random(shape, burn::tensor::Distribution::Normal(0.0, 1.0), &device);
             result + noise * (sigma_up * self.config.s_noise)
         } else {
             result

@@ -5,7 +5,9 @@
 
 use burn::prelude::*;
 
-use crate::scheduler::{NoiseSchedule, sampler_timesteps, sigmas_from_timesteps, init_noise_latent};
+use crate::scheduler::{
+    NoiseSchedule, init_noise_latent, sampler_timesteps, sigmas_from_timesteps,
+};
 
 /// Euler sampler configuration
 #[derive(Debug, Clone)]
@@ -164,7 +166,8 @@ impl<B: Backend> EulerAncestralSampler<B> {
         }
 
         // Compute sigma_up and sigma_down
-        let sigma_up = (sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2)) / sigma.powi(2)).sqrt();
+        let sigma_up =
+            (sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2)) / sigma.powi(2)).sqrt();
         let sigma_down = (sigma_next.powi(2) - sigma_up.powi(2)).sqrt();
 
         // Compute denoised

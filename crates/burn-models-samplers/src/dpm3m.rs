@@ -71,7 +71,6 @@ impl<B: Backend> Dpm3mSdeSampler<B> {
         self.model_outputs.clear();
     }
 
-
     /// Perform one DPM++ 3M SDE step
     pub fn step(
         &mut self,
@@ -147,9 +146,7 @@ impl<B: Backend> Dpm3mSdeSampler<B> {
             let d1_1 = d1.clone() - d2.clone();
             let d2_0 = d1_0.clone() - d1_1.clone() * r0;
 
-            let denoised_d = d0.clone()
-                + d1_0.clone() * (r0 / 2.0)
-                + d2_0 * (r0 * r0 / 6.0);
+            let denoised_d = d0.clone() + d1_0.clone() * (r0 / 2.0) + d2_0 * (r0 * r0 / 6.0);
 
             let derivative = (sample.clone() - denoised_d.clone()) / sigma;
             sample.clone() + derivative * (sigma_down - sigma)
@@ -159,11 +156,8 @@ impl<B: Backend> Dpm3mSdeSampler<B> {
         if sigma_up > 0.0 && self.config.eta > 0.0 {
             let device = result.device();
             let shape = result.dims();
-            let noise: Tensor<B, 4> = Tensor::random(
-                shape,
-                burn::tensor::Distribution::Normal(0.0, 1.0),
-                &device,
-            );
+            let noise: Tensor<B, 4> =
+                Tensor::random(shape, burn::tensor::Distribution::Normal(0.0, 1.0), &device);
             result + noise * (sigma_up * self.config.s_noise)
         } else {
             result

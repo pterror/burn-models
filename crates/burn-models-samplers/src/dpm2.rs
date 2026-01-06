@@ -4,7 +4,7 @@
 
 use burn::prelude::*;
 
-use crate::scheduler::{NoiseSchedule, sampler_timesteps, sigmas_from_timesteps, compute_sigmas};
+use crate::scheduler::{NoiseSchedule, compute_sigmas, sampler_timesteps, sigmas_from_timesteps};
 
 /// Configuration for DPM2 sampler
 #[derive(Debug, Clone)]
@@ -177,7 +177,8 @@ impl<B: Backend> Dpm2AncestralSampler<B> {
         }
 
         // Ancestral sampling adds noise
-        let sigma_up = (sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2)) / sigma.powi(2)).sqrt();
+        let sigma_up =
+            (sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2)) / sigma.powi(2)).sqrt();
         let sigma_down = (sigma_next.powi(2) - sigma_up.powi(2)).sqrt();
 
         // Denoising step
@@ -190,7 +191,8 @@ impl<B: Backend> Dpm2AncestralSampler<B> {
         if sigma_up > 0.0 {
             let device = sample_next.device();
             let shape = sample_next.dims();
-            let noise: Tensor<B, 4> = Tensor::random(shape, burn::tensor::Distribution::Normal(0.0, 1.0), &device);
+            let noise: Tensor<B, 4> =
+                Tensor::random(shape, burn::tensor::Distribution::Normal(0.0, 1.0), &device);
             sample_next + noise * sigma_up
         } else {
             sample_next

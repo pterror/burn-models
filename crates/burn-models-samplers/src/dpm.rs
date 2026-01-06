@@ -5,7 +5,9 @@
 
 use burn::prelude::*;
 
-use crate::scheduler::{NoiseSchedule, sampler_timesteps, sigmas_from_timesteps, init_noise_latent};
+use crate::scheduler::{
+    NoiseSchedule, init_noise_latent, sampler_timesteps, sigmas_from_timesteps,
+};
 
 /// DPM++ configuration
 #[derive(Debug, Clone)]
@@ -170,7 +172,12 @@ pub struct DpmPlusPlusSdeSampler<B: Backend> {
 
 impl<B: Backend> DpmPlusPlusSdeSampler<B> {
     /// Create a new DPM++ SDE sampler
-    pub fn new(schedule: NoiseSchedule<B>, config: DpmConfig, eta: f32, _device: &B::Device) -> Self {
+    pub fn new(
+        schedule: NoiseSchedule<B>,
+        config: DpmConfig,
+        eta: f32,
+        _device: &B::Device,
+    ) -> Self {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
         let mut sigmas = sigmas_from_timesteps(&schedule, &timesteps);
         sigmas.push(0.0);
@@ -210,7 +217,9 @@ impl<B: Backend> DpmPlusPlusSdeSampler<B> {
         }
 
         // Compute noise to inject
-        let sigma_up = (self.eta * sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2)) / sigma.powi(2)).sqrt();
+        let sigma_up = (self.eta * sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2))
+            / sigma.powi(2))
+        .sqrt();
         let sigma_down = (sigma_next.powi(2) - sigma_up.powi(2)).sqrt();
 
         // Compute denoised

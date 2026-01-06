@@ -6,7 +6,9 @@
 use burn::prelude::*;
 use std::collections::VecDeque;
 
-use crate::scheduler::{NoiseSchedule, compute_sigmas, sampler_timesteps, adams_bashforth_coefficients};
+use crate::scheduler::{
+    NoiseSchedule, adams_bashforth_coefficients, compute_sigmas, sampler_timesteps,
+};
 
 /// Configuration for SA-Solver
 #[derive(Debug, Clone)]
@@ -108,12 +110,7 @@ impl<B: Backend> SaSolver<B> {
     }
 
     /// Performs predictor step using Adams-Bashforth method
-    fn predict(
-        &self,
-        sample: &Tensor<B, 4>,
-        sigma: f32,
-        sigma_next: f32,
-    ) -> Tensor<B, 4> {
+    fn predict(&self, sample: &Tensor<B, 4>, sigma: f32, sigma_next: f32) -> Tensor<B, 4> {
         let order = self.model_outputs.len().min(self.config.predictor_order);
         let coeffs = Self::get_ab_coefficients(order);
 
@@ -159,7 +156,8 @@ impl<B: Backend> SaSolver<B> {
         let h = sigma_next - sigma;
 
         // New derivative from predicted point
-        let d_new = (predicted.clone() - model_output_new.clone() * sigma_next) / sigma_next.max(1e-8);
+        let d_new =
+            (predicted.clone() - model_output_new.clone() * sigma_next) / sigma_next.max(1e-8);
 
         let mut derivative = d_new * coeffs[0];
 
@@ -233,7 +231,13 @@ impl<B: Backend> SaSolver<B> {
         let predicted = self.predict(&sample, sigma, sigma_next);
 
         // Corrector step
-        self.correct(&predicted, &model_output_corrector, &sample, sigma, sigma_next)
+        self.correct(
+            &predicted,
+            &model_output_corrector,
+            &sample,
+            sigma,
+            sigma_next,
+        )
     }
 }
 

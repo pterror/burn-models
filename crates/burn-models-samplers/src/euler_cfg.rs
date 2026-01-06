@@ -6,8 +6,10 @@
 
 use burn::prelude::*;
 
-use crate::scheduler::{NoiseSchedule, get_ancestral_step, sampler_timesteps, sigmas_from_timesteps};
 use crate::guidance::apply_cfg_plus_plus;
+use crate::scheduler::{
+    NoiseSchedule, get_ancestral_step, sampler_timesteps, sigmas_from_timesteps,
+};
 
 /// Configuration for Euler CFG++ sampler
 #[derive(Debug, Clone)]
@@ -170,11 +172,8 @@ impl<B: Backend> EulerAncestralCfgPlusPlusSampler<B> {
         // Add noise
         let device = sample_down.device();
         let shape = sample_down.dims();
-        let noise: Tensor<B, 4> = Tensor::random(
-            shape,
-            burn::tensor::Distribution::Normal(0.0, 1.0),
-            &device,
-        );
+        let noise: Tensor<B, 4> =
+            Tensor::random(shape, burn::tensor::Distribution::Normal(0.0, 1.0), &device);
 
         sample_down + noise * sigma_up
     }

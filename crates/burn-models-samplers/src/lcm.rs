@@ -98,10 +98,7 @@ impl<B: Backend> LcmSampler<B> {
 
         // Assuming epsilon prediction
         // x_0 = (x_t - sqrt(1 - alpha_cumprod_t) * epsilon) / sqrt(alpha_cumprod_t)
-        let pred_original = (sample.clone() - model_output.clone() * beta_prod_t.sqrt())
-            / alpha_prod_t.sqrt();
-
-        pred_original
+        (sample.clone() - model_output.clone() * beta_prod_t.sqrt()) / alpha_prod_t.sqrt()
     }
 
     /// Perform one LCM step

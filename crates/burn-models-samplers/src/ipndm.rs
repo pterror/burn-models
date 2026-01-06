@@ -6,7 +6,7 @@
 use burn::prelude::*;
 use std::collections::VecDeque;
 
-use crate::scheduler::{NoiseSchedule, sampler_timesteps, adams_bashforth_coefficients};
+use crate::scheduler::{NoiseSchedule, adams_bashforth_coefficients, sampler_timesteps};
 
 /// Configuration for iPNDM sampler
 #[derive(Debug, Clone)]
@@ -211,10 +211,8 @@ impl<B: Backend> IpndmVSampler<B> {
         // v = sqrt(α) * ε - sqrt(β) * x
         // x0 = sqrt(α) * x - sqrt(β) * v
         // ε = sqrt(α) * v + sqrt(β) * x
-        let pred_original =
-            sample.clone() * alpha_prod_t.sqrt() - v_t.clone() * beta_prod_t.sqrt();
-        let pred_epsilon =
-            v_t.clone() * alpha_prod_t.sqrt() + sample.clone() * beta_prod_t.sqrt();
+        let pred_original = sample.clone() * alpha_prod_t.sqrt() - v_t.clone() * beta_prod_t.sqrt();
+        let pred_epsilon = v_t.clone() * alpha_prod_t.sqrt() + sample.clone() * beta_prod_t.sqrt();
 
         // Standard DDPM update with predicted values
         pred_original * alpha_prod_t_prev.sqrt() + pred_epsilon * beta_prod_t_prev.sqrt()

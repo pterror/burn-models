@@ -127,7 +127,11 @@ impl<B: Backend> DdpmSampler<B> {
     /// Computes variance for a timestep based on variance type
     fn get_variance(&self, t: usize) -> f32 {
         let alpha_prod_t = self.alphas_cumprod[t];
-        let alpha_prod_t_prev = if t > 0 { self.alphas_cumprod[t - 1] } else { 1.0 };
+        let alpha_prod_t_prev = if t > 0 {
+            self.alphas_cumprod[t - 1]
+        } else {
+            1.0
+        };
 
         // β̃_t = (1 - α_{t-1}) / (1 - α_t) * β_t
         let variance = (1.0 - alpha_prod_t_prev) / (1.0 - alpha_prod_t) * self.betas[t];
@@ -149,7 +153,11 @@ impl<B: Backend> DdpmSampler<B> {
         let t = timestep;
 
         let alpha_prod_t = self.alphas_cumprod[t];
-        let alpha_prod_t_prev = if t > 0 { self.alphas_cumprod[t - 1] } else { 1.0 };
+        let alpha_prod_t_prev = if t > 0 {
+            self.alphas_cumprod[t - 1]
+        } else {
+            1.0
+        };
         let beta_prod_t = 1.0 - alpha_prod_t;
         let beta_prod_t_prev = 1.0 - alpha_prod_t_prev;
 
@@ -164,7 +172,10 @@ impl<B: Backend> DdpmSampler<B> {
         };
 
         let pred_original = if self.config.clip_sample {
-            pred_original.clamp(-self.config.clip_sample_range, self.config.clip_sample_range)
+            pred_original.clamp(
+                -self.config.clip_sample_range,
+                self.config.clip_sample_range,
+            )
         } else {
             pred_original
         };
@@ -180,7 +191,8 @@ impl<B: Backend> DdpmSampler<B> {
             let variance = self.get_variance(t);
             let device = pred_prev.device();
             let shape = pred_prev.dims();
-            let noise: Tensor<B, 4> = Tensor::random(shape, burn::tensor::Distribution::Normal(0.0, 1.0), &device);
+            let noise: Tensor<B, 4> =
+                Tensor::random(shape, burn::tensor::Distribution::Normal(0.0, 1.0), &device);
             pred_prev + noise * variance.sqrt()
         } else {
             pred_prev

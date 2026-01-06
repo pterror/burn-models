@@ -209,7 +209,7 @@ impl<B: Backend> NoiseSchedule<B> {
 
     /// Get alpha_cumprod at a specific timestep
     pub fn alpha_cumprod_at(&self, t: usize) -> Tensor<B, 1> {
-        self.alphas_cumprod.clone().slice([t..t + 1])
+        self.alphas_cumprod.clone().slice(t..t + 1)
     }
 
     /// Get sqrt(alpha_cumprod) at timestep
@@ -239,7 +239,10 @@ pub fn inference_timesteps(num_inference_steps: usize, num_train_steps: usize) -
 /// Compute sigmas from timesteps using the noise schedule
 ///
 /// Converts alpha_cumprod values to sigma = sqrt((1 - alpha) / alpha)
-pub fn sigmas_from_timesteps<B: Backend>(schedule: &NoiseSchedule<B>, timesteps: &[usize]) -> Vec<f32> {
+pub fn sigmas_from_timesteps<B: Backend>(
+    schedule: &NoiseSchedule<B>,
+    timesteps: &[usize],
+) -> Vec<f32> {
     timesteps
         .iter()
         .map(|&t| {

@@ -67,7 +67,6 @@ impl<B: Backend> UniPcSampler<B> {
         }
     }
 
-
     /// Get the timesteps
     pub fn timesteps(&self) -> &[usize] {
         &self.timesteps
@@ -114,11 +113,11 @@ impl<B: Backend> UniPcSampler<B> {
         let alpha_t = 1.0 / (1.0 + sigma * sigma).sqrt();
 
         // First order
-        let mut result = (sample.clone() / alpha_t) * alpha_s
-            + x0_pred.clone() * ((-h).exp() - 1.0);
+        let mut result =
+            (sample.clone() / alpha_t) * alpha_s + x0_pred.clone() * ((-h).exp() - 1.0);
 
         // Higher order corrections
-        if order >= 2 && self.model_outputs.len() >= 1 {
+        if order >= 2 && !self.model_outputs.is_empty() {
             if let Some(prev_output) = self.model_outputs.front() {
                 let x0_prev = prev_output.clone();
                 let d1 = (x0_pred.clone() - x0_prev) / h;
@@ -127,13 +126,16 @@ impl<B: Backend> UniPcSampler<B> {
         }
 
         if order >= 3 && self.model_outputs.len() >= 2 {
-            if let (Some(prev1), Some(prev2)) = (self.model_outputs.get(0), self.model_outputs.get(1)) {
+            if let (Some(prev1), Some(prev2)) =
+                (self.model_outputs.front(), self.model_outputs.get(1))
+            {
                 let x0_prev1 = prev1.clone();
                 let x0_prev2 = prev2.clone();
                 let d1 = (x0_pred.clone() - x0_prev1.clone()) / h;
                 let d2 = (x0_prev1 - x0_prev2) / h;
                 let d2_diff = (d1 - d2) / h;
-                result = result + d2_diff * ((-h).exp() * (h * h / 2.0 + h + 1.0) - h - 1.0) / (h * h);
+                result =
+                    result + d2_diff * ((-h).exp() * (h * h / 2.0 + h + 1.0) - h - 1.0) / (h * h);
             }
         }
 
@@ -173,8 +175,7 @@ impl<B: Backend> UniPcSampler<B> {
         let sigma_next = self.sigmas[timestep_idx + 1];
 
         // Determine effective order
-        let order = if self.config.lower_order_final
-            && timestep_idx + 1 >= self.timesteps.len() - 1
+        let order = if self.config.lower_order_final && timestep_idx + 1 >= self.timesteps.len() - 1
         {
             1
         } else {
@@ -182,22 +183,12 @@ impl<B: Backend> UniPcSampler<B> {
         };
 
         // Predictor step
-        let predicted = self.multistep_uni_p_bh_update(
-            &model_output,
-            &sample,
-            sigma,
-            sigma_next,
-            order,
-        );
+        let predicted =
+            self.multistep_uni_p_bh_update(&model_output, &sample, sigma, sigma_next, order);
 
         // Corrector step (if enabled)
-        let result = self.multistep_uni_c_bh_update(
-            &model_output,
-            &sample,
-            &predicted,
-            sigma,
-            sigma_next,
-        );
+        let result =
+            self.multistep_uni_c_bh_update(&model_output, &sample, &predicted, sigma, sigma_next);
 
         // Store x0 prediction for multi-step
         let x0_pred = sample.clone() - model_output * sigma;

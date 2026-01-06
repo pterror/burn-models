@@ -99,11 +99,8 @@ impl<B: Backend> ResMultistepSampler<B> {
 
         let device = sample.device();
         let shape = sample.dims();
-        let noise: Tensor<B, 4> = Tensor::random(
-            shape,
-            burn::tensor::Distribution::Normal(0.0, 1.0),
-            &device,
-        );
+        let noise: Tensor<B, 4> =
+            Tensor::random(shape, burn::tensor::Distribution::Normal(0.0, 1.0), &device);
 
         let noised_sample = sample + noise * noise_level;
 
@@ -175,7 +172,8 @@ impl<B: Backend> ResMultistepSampler<B> {
 
         for (i, coeff) in coeffs.iter().enumerate().take(self.model_outputs.len()) {
             if let Some(output) = self.model_outputs.get(i) {
-                let d = sample.clone() - output.clone() * self.sigmas[timestep_idx - i.min(timestep_idx)];
+                let d = sample.clone()
+                    - output.clone() * self.sigmas[timestep_idx - i.min(timestep_idx)];
                 weighted_denoised = weighted_denoised + d * *coeff;
             }
         }
@@ -256,11 +254,8 @@ impl<B: Backend> ResMultistepSdeSampler<B> {
         if sigma_up > 0.0 {
             let device = result.device();
             let shape = result.dims();
-            let noise: Tensor<B, 4> = Tensor::random(
-                shape,
-                burn::tensor::Distribution::Normal(0.0, 1.0),
-                &device,
-            );
+            let noise: Tensor<B, 4> =
+                Tensor::random(shape, burn::tensor::Distribution::Normal(0.0, 1.0), &device);
             result + noise * sigma_up
         } else {
             result

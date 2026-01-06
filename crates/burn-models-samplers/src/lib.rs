@@ -61,49 +61,52 @@
 //! }
 //! ```
 
-pub mod scheduler;
-pub mod guidance;
 pub mod ddim;
 pub mod ddpm;
-pub mod euler;
-pub mod euler_cfg;
+pub mod deis;
 pub mod dpm;
 pub mod dpm2;
 pub mod dpm3m;
-pub mod dpm_2s;
 pub mod dpm_2m_variants;
+pub mod dpm_2s;
 pub mod dpm_fast;
+pub mod euler;
+pub mod euler_cfg;
+pub mod guidance;
 pub mod heun;
-pub mod lms;
-pub mod lcm;
-pub mod deis;
-pub mod unipc;
 pub mod ipndm;
-pub mod sa_solver;
+pub mod lcm;
+pub mod lms;
 pub mod res_multistep;
+pub mod sa_solver;
+pub mod scheduler;
+pub mod unipc;
 
-pub use scheduler::{
-    NoiseSchedule, ScheduleConfig, PredictionType,
-    compute_sigmas, sigmas_from_timesteps, apply_karras_schedule,
-    get_ancestral_step, sampler_timesteps,
-    to_epsilon, to_sample, v_to_epsilon, epsilon_to_v, v_to_sample, epsilon_to_sample,
+pub use ddim::{DdimConfig, DdimSampler, apply_guidance};
+pub use ddpm::{DdpmConfig, DdpmSampler, VarianceType};
+pub use deis::{DeisConfig, DeisSampler, DeisSolverType};
+pub use dpm::{DpmConfig, DpmPlusPlusSampler, DpmPlusPlusSdeSampler};
+pub use dpm_2m_variants::{
+    Dpm2mCfgPlusPlusConfig, Dpm2mCfgPlusPlusSampler, Dpm2mSdeHeunConfig, Dpm2mSdeHeunSampler,
 };
-pub use guidance::{apply_cfg_plus_plus, compute_tensor_std, CfgPlusPlusConfig};
-pub use ddim::{DdimSampler, DdimConfig, apply_guidance};
-pub use ddpm::{DdpmSampler, DdpmConfig, VarianceType};
-pub use euler::{EulerSampler, EulerAncestralSampler, EulerConfig};
-pub use euler_cfg::{EulerCfgPlusPlusSampler, EulerAncestralCfgPlusPlusSampler, EulerCfgPlusPlusConfig};
-pub use dpm::{DpmPlusPlusSampler, DpmPlusPlusSdeSampler, DpmConfig};
-pub use dpm2::{Dpm2Sampler, Dpm2AncestralSampler, Dpm2Config};
-pub use dpm3m::{Dpm3mSdeSampler, Dpm3mSdeConfig};
-pub use dpm_2s::{Dpm2sAncestralSampler, Dpm2sAncestralCfgPlusPlusSampler, Dpm2sAncestralConfig};
-pub use dpm_2m_variants::{Dpm2mCfgPlusPlusSampler, Dpm2mCfgPlusPlusConfig, Dpm2mSdeHeunSampler, Dpm2mSdeHeunConfig};
-pub use dpm_fast::{DpmFastSampler, DpmFastConfig, DpmAdaptiveSampler, DpmAdaptiveConfig};
-pub use heun::{HeunSampler, HeunPP2Sampler, HeunConfig};
-pub use lms::{LmsSampler, LmsConfig};
-pub use lcm::{LcmSampler, LcmConfig};
-pub use deis::{DeisSampler, DeisConfig, DeisSolverType};
-pub use unipc::{UniPcSampler, UniPcConfig};
-pub use ipndm::{IpndmSampler, IpndmVSampler, IpndmConfig};
+pub use dpm_2s::{Dpm2sAncestralCfgPlusPlusSampler, Dpm2sAncestralConfig, Dpm2sAncestralSampler};
+pub use dpm_fast::{DpmAdaptiveConfig, DpmAdaptiveSampler, DpmFastConfig, DpmFastSampler};
+pub use dpm2::{Dpm2AncestralSampler, Dpm2Config, Dpm2Sampler};
+pub use dpm3m::{Dpm3mSdeConfig, Dpm3mSdeSampler};
+pub use euler::{EulerAncestralSampler, EulerConfig, EulerSampler};
+pub use euler_cfg::{
+    EulerAncestralCfgPlusPlusSampler, EulerCfgPlusPlusConfig, EulerCfgPlusPlusSampler,
+};
+pub use guidance::{CfgPlusPlusConfig, apply_cfg_plus_plus, compute_tensor_std};
+pub use heun::{HeunConfig, HeunPP2Sampler, HeunSampler};
+pub use ipndm::{IpndmConfig, IpndmSampler, IpndmVSampler};
+pub use lcm::{LcmConfig, LcmSampler};
+pub use lms::{LmsConfig, LmsSampler};
+pub use res_multistep::{ResMultistepConfig, ResMultistepSampler, ResMultistepSdeSampler};
 pub use sa_solver::{SaSolver, SaSolverConfig, TauType};
-pub use res_multistep::{ResMultistepSampler, ResMultistepSdeSampler, ResMultistepConfig};
+pub use scheduler::{
+    NoiseSchedule, PredictionType, ScheduleConfig, apply_karras_schedule, compute_sigmas,
+    epsilon_to_sample, epsilon_to_v, get_ancestral_step, sampler_timesteps, sigmas_from_timesteps,
+    to_epsilon, to_sample, v_to_epsilon, v_to_sample,
+};
+pub use unipc::{UniPcConfig, UniPcSampler};

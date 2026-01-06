@@ -5,8 +5,8 @@
 
 use burn::prelude::*;
 
-use crate::scheduler::{NoiseSchedule, compute_sigmas, get_ancestral_step, sampler_timesteps};
 use crate::guidance::apply_cfg_plus_plus;
+use crate::scheduler::{NoiseSchedule, compute_sigmas, get_ancestral_step, sampler_timesteps};
 
 /// Configuration for DPM++ 2S Ancestral sampler
 #[derive(Debug, Clone)]
@@ -98,10 +98,9 @@ impl<B: Backend> Dpm2sAncestralSampler<B> {
             let d1 = denoised_mid;
             let coeff = h / 2.0;
 
-            let x_next = (sample.clone() / sigma) * sigma_down
+            (sample.clone() / sigma) * sigma_down
                 + d0 * (1.0 - sigma_down / sigma) * (1.0 - coeff)
-                + d1 * (1.0 - sigma_down / sigma) * coeff;
-            x_next
+                + d1 * (1.0 - sigma_down / sigma) * coeff
         } else {
             // First-order fallback (Euler)
             let derivative = (sample.clone() - denoised.clone()) / sigma;
@@ -112,11 +111,8 @@ impl<B: Backend> Dpm2sAncestralSampler<B> {
         if sigma_up > 0.0 {
             let device = result.device();
             let shape = result.dims();
-            let noise: Tensor<B, 4> = Tensor::random(
-                shape,
-                burn::tensor::Distribution::Normal(0.0, 1.0),
-                &device,
-            );
+            let noise: Tensor<B, 4> =
+                Tensor::random(shape, burn::tensor::Distribution::Normal(0.0, 1.0), &device);
             result + noise * (sigma_up * self.config.s_noise)
         } else {
             result
@@ -146,7 +142,11 @@ pub struct Dpm2sAncestralCfgPlusPlusSampler<B: Backend> {
 
 impl<B: Backend> Dpm2sAncestralCfgPlusPlusSampler<B> {
     /// Create a new DPM++ 2S Ancestral CFG++ sampler
-    pub fn new(config: Dpm2sAncestralConfig, schedule: &NoiseSchedule<B>, guidance_rescale: f32) -> Self {
+    pub fn new(
+        config: Dpm2sAncestralConfig,
+        schedule: &NoiseSchedule<B>,
+        guidance_rescale: f32,
+    ) -> Self {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
         let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
 
@@ -208,11 +208,8 @@ impl<B: Backend> Dpm2sAncestralCfgPlusPlusSampler<B> {
         if sigma_up > 0.0 {
             let device = result.device();
             let shape = result.dims();
-            let noise: Tensor<B, 4> = Tensor::random(
-                shape,
-                burn::tensor::Distribution::Normal(0.0, 1.0),
-                &device,
-            );
+            let noise: Tensor<B, 4> =
+                Tensor::random(shape, burn::tensor::Distribution::Normal(0.0, 1.0), &device);
             result + noise * (sigma_up * self.config.s_noise)
         } else {
             result
