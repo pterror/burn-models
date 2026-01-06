@@ -209,9 +209,15 @@ Target: CogVideoX, Wan, Mochi video generation.
 
 See `docs/cubecl-guide.md` for implementation details.
 
-### Backend Support
+#### Phase 7: Polish & Usability
 
+- [x] GPU integration tests for CubeCL VAE (WGPU/CUDA)
+  - UNet: ResBlockCubeCL, CrossAttentionCubeCL shape tests
+  - VAE: ResBlock3dCubeCL, Downsample3dCubeCL, Upsample3dCubeCL shape tests
+  - VAE encoder/decoder tiny model integration tests
+- [ ] Benchmark CubeCL integrations (ResBlockCubeCL vs ResBlock, CrossAttentionCubeCL vs CrossAttention)
 - [ ] MLX backend (Apple Silicon) - via [burn-mlx](https://lib.rs/crates/burn-mlx)
+- [ ] Wire up CLI `generate` command (currently outputs placeholder image)
 
 ### Future Architectures
 

@@ -25,7 +25,8 @@ burn-cuda = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
-burn-models-core = { workspace = true }
+burn-models-core = { workspace = true, features = ["cubecl"] }
+burn-models-unet = { workspace = true, features = ["cubecl"] }
 burn-ndarray = { workspace = true }
 
 [[bench]]

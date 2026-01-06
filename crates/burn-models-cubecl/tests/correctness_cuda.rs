@@ -16,7 +16,7 @@ use burn_models_cubecl::{
 use cubecl::cuda::CudaRuntime;
 
 // Use CubeBackend directly to avoid FusionTensor wrapper
-type TestBackend = CubeBackend<CudaRuntime, f32, i32, u8>;
+type TestBackend = CubeBackend<CudaRuntime, f32, i32, u32>;
 
 /// Reference im2col-based 3D convolution
 mod reference {
@@ -1091,4 +1091,188 @@ fn test_cuda_groupnorm_silu_batch() {
     assert_eq!(cubecl_output.dims(), ref_output.dims());
     // Tolerance accounts for variance calculation differences (biased vs unbiased)
     assert_tensors_approx_eq(cubecl_output, ref_output, 1e-2, "groupnorm_silu batch (CUDA)");
+}
+
+// =============================================================================
+// UNet CubeCL Integration Tests (CUDA)
+// =============================================================================
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_resblock_cubecl_shape() {
+    use burn_models_unet::cubecl::ResBlockCubeCL;
+
+    let device = CudaDevice::default();
+
+    let in_channels = 256;
+    let out_channels = 512;
+    let time_emb_dim = 1024;
+
+    let block = ResBlockCubeCL::<CudaRuntime>::new(in_channels, out_channels, time_emb_dim, &device);
+
+    let batch = 2;
+    let height = 32;
+    let width = 32;
+
+    let input = Tensor::<TestBackend, 4>::random(
+        [batch, in_channels, height, width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    let time_emb = Tensor::<TestBackend, 2>::random(
+        [batch, time_emb_dim],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let output = block.forward(input, time_emb);
+
+    assert_eq!(output.dims(), [batch, out_channels, height, width]);
+    println!("ResBlockCubeCL (CUDA) output shape: {:?}", output.dims());
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_crossattention_cubecl() {
+    use burn_models_unet::cubecl::CrossAttentionCubeCL;
+
+    let device = CudaDevice::default();
+
+    let query_dim = 320;
+    let context_dim = 768;
+    let num_heads = 8;
+    let head_dim = 40;
+
+    let attn = CrossAttentionCubeCL::<CudaRuntime>::new(
+        query_dim, num_heads, head_dim, Some(context_dim), &device
+    );
+
+    let batch = 2;
+    let seq_len = 64;
+    let ctx_len = 77;
+
+    let query = Tensor::<TestBackend, 3>::random(
+        [batch, seq_len, query_dim],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    let context = Tensor::<TestBackend, 3>::random(
+        [batch, ctx_len, context_dim],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let output = attn.forward(query, Some(context));
+
+    assert_eq!(output.dims(), [batch, seq_len, query_dim]);
+    println!("CrossAttentionCubeCL (CUDA) output shape: {:?}", output.dims());
+}
+
+// =============================================================================
+// 3D VAE CubeCL Integration Tests (CUDA)
+// =============================================================================
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_vae3d_resblock_shape() {
+    use burn_models_core::vae3d::cubecl::ResBlock3dCubeCL;
+
+    let device = CudaDevice::default();
+
+    let in_channels = 64;
+    let out_channels = 128;
+
+    let block = ResBlock3dCubeCL::<CudaRuntime>::new(in_channels, out_channels, &device);
+
+    let batch = 1;
+    let time = 4;
+    let height = 16;
+    let width = 16;
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [batch, in_channels, time, height, width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let cube_input = burn_models_cubecl::tensor_to_cube(input);
+    let output = block.forward(cube_input);
+    let output: Tensor<TestBackend, 5> = burn_models_cubecl::cube_to_tensor(output);
+
+    assert_eq!(output.dims(), [batch, out_channels, time, height, width]);
+    println!("ResBlock3dCubeCL (CUDA) output shape: {:?}", output.dims());
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_vae3d_encoder_tiny() {
+    use burn_models_core::vae3d::{Vae3dConfig, cubecl::Vae3dEncoderCubeCL};
+
+    let device = CudaDevice::default();
+
+    let config = Vae3dConfig {
+        in_channels: 3,
+        latent_channels: 4,
+        base_channels: 32,
+        channel_mults: vec![1, 2],
+        temporal_compression: 2,
+        spatial_compression: 4,
+        num_res_blocks: 1,
+    };
+
+    let encoder = Vae3dEncoderCubeCL::<CudaRuntime>::new(config.clone(), &device);
+
+    let batch = 1;
+    let time = 4;
+    let height = 32;
+    let width = 32;
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [batch, config.in_channels, time, height, width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let output = encoder.forward(input);
+
+    println!("Vae3dEncoderCubeCL (CUDA) mean shape: {:?}", output.mean.dims());
+    assert_eq!(output.mean.dims()[0], batch);
+    assert_eq!(output.mean.dims()[1], config.latent_channels);
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_vae3d_decoder_tiny() {
+    use burn_models_core::vae3d::{Vae3dConfig, cubecl::Vae3dDecoderCubeCL};
+
+    let device = CudaDevice::default();
+
+    let config = Vae3dConfig {
+        in_channels: 3,
+        latent_channels: 4,
+        base_channels: 32,
+        channel_mults: vec![1, 2],
+        temporal_compression: 2,
+        spatial_compression: 4,
+        num_res_blocks: 1,
+    };
+
+    let decoder = Vae3dDecoderCubeCL::<CudaRuntime>::new(config.clone(), &device);
+
+    let batch = 1;
+    let lat_time = 2;
+    let lat_height = 8;
+    let lat_width = 8;
+
+    let latent = Tensor::<TestBackend, 5>::random(
+        [batch, config.latent_channels, lat_time, lat_height, lat_width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let output = decoder.forward(latent);
+
+    println!("Vae3dDecoderCubeCL (CUDA) output shape: {:?}", output.dims());
+    assert_eq!(output.dims()[0], batch);
+    assert_eq!(output.dims()[1], config.in_channels);
 }

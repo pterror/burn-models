@@ -1182,3 +1182,334 @@ fn test_wgpu_groupnorm_silu_batch() {
     // Tolerance accounts for variance calculation differences (biased vs unbiased)
     assert_tensors_approx_eq(cubecl_output, ref_output, 1e-2, "groupnorm_silu batch (WGPU)");
 }
+
+// =============================================================================
+// UNet CubeCL Integration Tests
+// =============================================================================
+
+#[test]
+#[ignore = "requires GPU"]
+fn test_wgpu_resblock_cubecl_shape() {
+    use burn_models_unet::cubecl::ResBlockCubeCL;
+
+    let device = WgpuDevice::default();
+
+    let in_channels = 256;
+    let out_channels = 512;
+    let time_emb_dim = 1024;
+
+    let block = ResBlockCubeCL::<WgpuRuntime>::new(in_channels, out_channels, time_emb_dim, &device);
+
+    let batch = 2;
+    let height = 32;
+    let width = 32;
+
+    let input = Tensor::<TestBackend, 4>::random(
+        [batch, in_channels, height, width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    let time_emb = Tensor::<TestBackend, 2>::random(
+        [batch, time_emb_dim],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let output = block.forward(input, time_emb);
+
+    assert_eq!(output.dims(), [batch, out_channels, height, width]);
+    println!("ResBlockCubeCL output shape: {:?}", output.dims());
+}
+
+#[test]
+#[ignore = "requires GPU"]
+fn test_wgpu_resblock_cubecl_same_channels() {
+    use burn_models_unet::cubecl::ResBlockCubeCL;
+
+    let device = WgpuDevice::default();
+
+    // Test with same in/out channels (no skip conv)
+    let channels = 256;
+    let time_emb_dim = 512;
+
+    let block = ResBlockCubeCL::<WgpuRuntime>::new(channels, channels, time_emb_dim, &device);
+
+    let batch = 1;
+    let height = 16;
+    let width = 16;
+
+    let input = Tensor::<TestBackend, 4>::random(
+        [batch, channels, height, width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    let time_emb = Tensor::<TestBackend, 2>::random(
+        [batch, time_emb_dim],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let output = block.forward(input, time_emb);
+
+    assert_eq!(output.dims(), [batch, channels, height, width]);
+    println!("ResBlockCubeCL same channels output shape: {:?}", output.dims());
+}
+
+#[test]
+#[ignore = "requires GPU"]
+fn test_wgpu_crossattention_cubecl_self_attention() {
+    use burn_models_unet::cubecl::CrossAttentionCubeCL;
+
+    let device = WgpuDevice::default();
+
+    let dim = 320;
+    let num_heads = 8;
+    let head_dim = 40;
+
+    let attn = CrossAttentionCubeCL::<WgpuRuntime>::new(dim, num_heads, head_dim, None, &device);
+
+    let batch = 2;
+    let seq_len = 64;
+
+    let input = Tensor::<TestBackend, 3>::random(
+        [batch, seq_len, dim],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    // Self-attention (context = None)
+    let output = attn.forward(input.clone(), None);
+
+    assert_eq!(output.dims(), [batch, seq_len, dim]);
+    println!("CrossAttentionCubeCL self-attn output shape: {:?}", output.dims());
+}
+
+#[test]
+#[ignore = "requires GPU"]
+fn test_wgpu_crossattention_cubecl_cross_attention() {
+    use burn_models_unet::cubecl::CrossAttentionCubeCL;
+
+    let device = WgpuDevice::default();
+
+    let query_dim = 320;
+    let context_dim = 768;  // CLIP text embedding dim
+    let num_heads = 8;
+    let head_dim = 40;
+
+    let attn = CrossAttentionCubeCL::<WgpuRuntime>::new(
+        query_dim, num_heads, head_dim, Some(context_dim), &device
+    );
+
+    let batch = 2;
+    let seq_len = 64;    // image tokens
+    let ctx_len = 77;    // text tokens
+
+    let query = Tensor::<TestBackend, 3>::random(
+        [batch, seq_len, query_dim],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    let context = Tensor::<TestBackend, 3>::random(
+        [batch, ctx_len, context_dim],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let output = attn.forward(query, Some(context));
+
+    assert_eq!(output.dims(), [batch, seq_len, query_dim]);
+    println!("CrossAttentionCubeCL cross-attn output shape: {:?}", output.dims());
+}
+
+// =============================================================================
+// 3D VAE CubeCL Integration Tests
+// =============================================================================
+
+#[test]
+#[ignore = "requires GPU"]
+fn test_wgpu_vae3d_resblock_shape() {
+    use burn_models_core::vae3d::cubecl::ResBlock3dCubeCL;
+
+    let device = WgpuDevice::default();
+
+    let in_channels = 64;
+    let out_channels = 128;
+
+    let block = ResBlock3dCubeCL::<WgpuRuntime>::new(in_channels, out_channels, &device);
+
+    let batch = 1;
+    let time = 4;
+    let height = 16;
+    let width = 16;
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [batch, in_channels, time, height, width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let cube_input = burn_models_cubecl::tensor_to_cube(input);
+    let output = block.forward(cube_input);
+    let output: Tensor<TestBackend, 5> = burn_models_cubecl::cube_to_tensor(output);
+
+    assert_eq!(output.dims(), [batch, out_channels, time, height, width]);
+    println!("ResBlock3dCubeCL output shape: {:?}", output.dims());
+}
+
+#[test]
+#[ignore = "requires GPU"]
+fn test_wgpu_vae3d_downsample() {
+    use burn_models_core::vae3d::cubecl::Downsample3dCubeCL;
+
+    let device = WgpuDevice::default();
+
+    let channels = 128;
+    let temporal_stride = 2;
+    let spatial_stride = 2;
+
+    let down = Downsample3dCubeCL::<WgpuRuntime>::new(
+        channels, temporal_stride, spatial_stride, &device
+    );
+
+    let batch = 1;
+    let time = 8;
+    let height = 32;
+    let width = 32;
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [batch, channels, time, height, width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let cube_input = burn_models_cubecl::tensor_to_cube(input);
+    let output = down.forward(cube_input);
+    let output: Tensor<TestBackend, 5> = burn_models_cubecl::cube_to_tensor(output);
+
+    // Strided conv with padding=1, kernel=3, stride=2: out = (in + 2*1 - 3)/2 + 1 = in/2
+    let expected_time = time / temporal_stride;
+    let expected_height = height / spatial_stride;
+    let expected_width = width / spatial_stride;
+
+    assert_eq!(output.dims(), [batch, channels, expected_time, expected_height, expected_width]);
+    println!("Downsample3dCubeCL output shape: {:?}", output.dims());
+}
+
+#[test]
+#[ignore = "requires GPU"]
+fn test_wgpu_vae3d_upsample() {
+    use burn_models_core::vae3d::cubecl::Upsample3dCubeCL;
+
+    let device = WgpuDevice::default();
+
+    let channels = 128;
+    let temporal_factor = 2;
+    let spatial_factor = 2;
+
+    let up = Upsample3dCubeCL::<WgpuRuntime>::new(
+        channels, temporal_factor, spatial_factor, &device
+    );
+
+    let batch = 1;
+    let time = 4;
+    let height = 16;
+    let width = 16;
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [batch, channels, time, height, width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let cube_input = burn_models_cubecl::tensor_to_cube(input);
+    let output = up.forward(cube_input);
+    let output: Tensor<TestBackend, 5> = burn_models_cubecl::cube_to_tensor(output);
+
+    // Upsample then conv (same padding): out = in * factor
+    let expected_time = time * temporal_factor;
+    let expected_height = height * spatial_factor;
+    let expected_width = width * spatial_factor;
+
+    assert_eq!(output.dims(), [batch, channels, expected_time, expected_height, expected_width]);
+    println!("Upsample3dCubeCL output shape: {:?}", output.dims());
+}
+
+#[test]
+#[ignore = "requires GPU - slow, allocates large model"]
+fn test_wgpu_vae3d_encoder_tiny() {
+    use burn_models_core::vae3d::{Vae3dConfig, cubecl::Vae3dEncoderCubeCL};
+
+    let device = WgpuDevice::default();
+
+    // Tiny config for testing
+    let config = Vae3dConfig {
+        in_channels: 3,
+        latent_channels: 4,
+        base_channels: 32,  // Small for testing
+        channel_mults: vec![1, 2],  // Only 2 levels
+        temporal_compression: 2,
+        spatial_compression: 4,
+        num_res_blocks: 1,
+    };
+
+    let encoder = Vae3dEncoderCubeCL::<WgpuRuntime>::new(config.clone(), &device);
+
+    let batch = 1;
+    let time = 4;
+    let height = 32;
+    let width = 32;
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [batch, config.in_channels, time, height, width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let output = encoder.forward(input);
+
+    // Output should be latent_channels * 2 (mean + logvar)
+    println!("Vae3dEncoderCubeCL mean shape: {:?}", output.mean.dims());
+    println!("Vae3dEncoderCubeCL logvar shape: {:?}", output.logvar.dims());
+
+    assert_eq!(output.mean.dims()[0], batch);
+    assert_eq!(output.mean.dims()[1], config.latent_channels);
+}
+
+#[test]
+#[ignore = "requires GPU - slow, allocates large model"]
+fn test_wgpu_vae3d_decoder_tiny() {
+    use burn_models_core::vae3d::{Vae3dConfig, cubecl::Vae3dDecoderCubeCL};
+
+    let device = WgpuDevice::default();
+
+    // Tiny config for testing
+    let config = Vae3dConfig {
+        in_channels: 3,
+        latent_channels: 4,
+        base_channels: 32,
+        channel_mults: vec![1, 2],
+        temporal_compression: 2,
+        spatial_compression: 4,
+        num_res_blocks: 1,
+    };
+
+    let decoder = Vae3dDecoderCubeCL::<WgpuRuntime>::new(config.clone(), &device);
+
+    let batch = 1;
+    let lat_time = 2;
+    let lat_height = 8;
+    let lat_width = 8;
+
+    let latent = Tensor::<TestBackend, 5>::random(
+        [batch, config.latent_channels, lat_time, lat_height, lat_width],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+
+    let output = decoder.forward(latent);
+
+    println!("Vae3dDecoderCubeCL output shape: {:?}", output.dims());
+
+    assert_eq!(output.dims()[0], batch);
+    assert_eq!(output.dims()[1], config.in_channels);
+}

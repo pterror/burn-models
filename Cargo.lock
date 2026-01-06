@@ -877,6 +877,7 @@ dependencies = [
  "burn-cubecl",
  "burn-cuda",
  "burn-models-core",
+ "burn-models-unet",
  "burn-ndarray",
  "burn-wgpu",
  "criterion",
