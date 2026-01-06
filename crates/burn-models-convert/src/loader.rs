@@ -5,7 +5,6 @@ use std::fs::File;
 use std::path::Path;
 
 use burn::prelude::*;
-use bytemuck::cast_slice;
 use half::f16;
 use memmap2::MmapOptions;
 use safetensors::{Dtype, SafeTensors};
@@ -131,17 +130,30 @@ impl SafeTensorFile {
             )
         };
 
+        // Convert to f32, handling potentially unaligned mmap data
         let floats: Vec<f32> = match info.dtype {
-            Dtype::F32 => cast_slice::<u8, f32>(data).to_vec(),
+            Dtype::F32 => {
+                // Read f32 values handling potential unaligned data
+                data.chunks_exact(4)
+                    .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                    .collect()
+            }
             Dtype::F16 => {
-                let f16s: &[u16] = cast_slice(data);
-                f16s.iter().map(|&x| f16::from_bits(x).to_f32()).collect()
+                // Read u16 bits and convert to f32
+                data.chunks_exact(2)
+                    .map(|chunk| {
+                        let bits = u16::from_le_bytes([chunk[0], chunk[1]]);
+                        f16::from_bits(bits).to_f32()
+                    })
+                    .collect()
             }
             Dtype::BF16 => {
-                let bf16s: &[u16] = cast_slice(data);
-                bf16s
-                    .iter()
-                    .map(|&x| half::bf16::from_bits(x).to_f32())
+                // Read u16 bits and convert to f32
+                data.chunks_exact(2)
+                    .map(|chunk| {
+                        let bits = u16::from_le_bytes([chunk[0], chunk[1]]);
+                        half::bf16::from_bits(bits).to_f32()
+                    })
                     .collect()
             }
             dtype => return Err(LoadError::UnsupportedDtype(dtype)),

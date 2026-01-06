@@ -541,11 +541,20 @@ fn load_unet_from_file<B: Backend>(
     let ch = config.model_channels;
     let time_embed_dim = ch * 4;
 
+    // Detect naming convention: HF diffusers uses "linear_1"/"linear_2", original uses "0"/"2"
+    let uses_hf_naming = file.contains(&format!("{}.time_embed.linear_1.weight", prefix));
+
     // Time embedding MLP
+    let (te0_name, te2_name) = if uses_hf_naming {
+        ("linear_1", "linear_2")
+    } else {
+        ("0", "2")
+    };
+
     let time_embed_0 = load_linear(
         file,
-        &format!("{}.time_embed.linear_1.weight", prefix),
-        Some(&format!("{}.time_embed.linear_1.bias", prefix)),
+        &format!("{}.time_embed.{}.weight", prefix, te0_name),
+        Some(&format!("{}.time_embed.{}.bias", prefix, te0_name)),
         ch,
         time_embed_dim,
         device,
@@ -553,8 +562,8 @@ fn load_unet_from_file<B: Backend>(
 
     let time_embed_2 = load_linear(
         file,
-        &format!("{}.time_embed.linear_2.weight", prefix),
-        Some(&format!("{}.time_embed.linear_2.bias", prefix)),
+        &format!("{}.time_embed.{}.weight", prefix, te2_name),
+        Some(&format!("{}.time_embed.{}.bias", prefix, te2_name)),
         time_embed_dim,
         time_embed_dim,
         device,

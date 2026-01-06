@@ -77,11 +77,11 @@ enum Commands {
         #[arg(long)]
         seed: Option<u64>,
 
-        /// Path to vocabulary file
+        /// Path to vocabulary file (uses embedded CLIP vocab if not specified)
         #[arg(long)]
-        vocab: PathBuf,
+        vocab: Option<PathBuf>,
 
-        /// Path to model weights directory
+        /// Path to model weights directory or safetensors file
         #[arg(long)]
         weights: PathBuf,
 
@@ -128,11 +128,11 @@ enum Commands {
         #[arg(long, default_value = "7.5")]
         guidance: f64,
 
-        /// Path to vocabulary file
+        /// Path to vocabulary file (uses embedded CLIP vocab if not specified)
         #[arg(long)]
-        vocab: PathBuf,
+        vocab: Option<PathBuf>,
 
-        /// Path to model weights directory
+        /// Path to model weights directory or safetensors file
         #[arg(long)]
         weights: PathBuf,
     },
@@ -171,11 +171,11 @@ enum Commands {
         #[arg(long, default_value = "7.5")]
         guidance: f64,
 
-        /// Path to vocabulary file
+        /// Path to vocabulary file (uses embedded CLIP vocab if not specified)
         #[arg(long)]
-        vocab: PathBuf,
+        vocab: Option<PathBuf>,
 
-        /// Path to model weights directory
+        /// Path to model weights directory or safetensors file
         #[arg(long)]
         weights: PathBuf,
     },
@@ -262,7 +262,7 @@ fn run_sd1x_generate(
     prompt: &str,
     negative: &str,
     output: &PathBuf,
-    vocab: &PathBuf,
+    vocab: Option<&PathBuf>,
     weights: &PathBuf,
     width: usize,
     height: usize,
@@ -305,7 +305,7 @@ fn run_sd1x_generate_impl<B: Backend>(
     prompt: &str,
     negative: &str,
     output: &PathBuf,
-    vocab: &PathBuf,
+    vocab: Option<&PathBuf>,
     weights: &PathBuf,
     width: usize,
     height: usize,
@@ -320,11 +320,14 @@ fn run_sd1x_generate_impl<B: Backend>(
             .progress_chars("#>-"),
     );
 
-    // Step 1: Load tokenizer
+    // Step 1: Load tokenizer (embedded vocab or from file)
     pb.set_message("Loading tokenizer...");
     pb.set_position(5);
-    let tokenizer = ClipTokenizer::from_file(vocab)
-        .context("Failed to load vocabulary file")?;
+    let tokenizer = match vocab {
+        Some(path) => ClipTokenizer::from_file(path)
+            .context("Failed to load vocabulary file")?,
+        None => ClipTokenizer::new(), // Use embedded CLIP vocabulary
+    };
 
     // Step 2: Open weight loader
     pb.set_message("Opening weights...");
@@ -423,7 +426,7 @@ fn main() -> Result<()> {
             println!("  Size:     {}x{}", width, height);
             println!("  Steps:    {}", steps);
             println!("  Guidance: {}", guidance);
-            println!("  Vocab:    {}", vocab.display());
+            println!("  Vocab:    {}", vocab.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "(embedded)".to_string()));
             println!("  Weights:  {}", weights.display());
             if !loras.is_empty() {
                 println!("  LoRAs:");
@@ -450,7 +453,7 @@ fn main() -> Result<()> {
             match model {
                 ModelType::Sd1x => {
                     run_sd1x_generate(
-                        &prompt, &negative, &output, &vocab, &weights,
+                        &prompt, &negative, &output, vocab.as_ref(), &weights,
                         width, height, steps, guidance,
                         &loras, &lora_scales,
                     )?;

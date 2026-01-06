@@ -25,6 +25,9 @@ pub enum TokenizerError {
 pub const START_OF_TEXT: u32 = 49406;
 pub const END_OF_TEXT: u32 = 49407;
 
+/// Embedded CLIP BPE merges (from OpenAI's CLIP)
+const CLIP_BPE_MERGES: &str = include_str!("../data/bpe_merges.txt");
+
 /// CLIP BPE Tokenizer
 pub struct ClipTokenizer {
     byte_encoder: HashMap<u8, char>,
@@ -37,6 +40,15 @@ pub struct ClipTokenizer {
 }
 
 impl ClipTokenizer {
+    /// Create a new tokenizer with the standard CLIP vocabulary (embedded)
+    ///
+    /// This uses the same BPE merges as OpenAI's CLIP model, which is standard
+    /// for all Stable Diffusion 1.x and 2.x models.
+    pub fn new() -> Self {
+        Self::from_vocab(CLIP_BPE_MERGES)
+            .expect("embedded CLIP vocabulary should be valid")
+    }
+
     /// Create a new tokenizer from a vocabulary file
     pub fn from_file<P: AsRef<Path>>(vocab_path: P) -> Result<Self, TokenizerError> {
         let vocab_content = fs::read_to_string(vocab_path)?;
@@ -241,6 +253,12 @@ impl ClipTokenizer {
     /// Get vocabulary size
     pub fn vocab_size(&self) -> usize {
         self.encoder.len()
+    }
+}
+
+impl Default for ClipTokenizer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
