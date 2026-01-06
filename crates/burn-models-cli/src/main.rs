@@ -7,10 +7,18 @@
 //! - LLM text generation
 
 use anyhow::{Context, Result};
+use burn::prelude::*;
 use clap::{Parser, Subcommand, ValueEnum};
 use image::{ImageBuffer, Rgb};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
+
+use burn_models::DiffusionPipeline;
+use burn_models_clip::{ClipConfig, ClipTokenizer};
+use burn_models_convert::sd_loader::SdWeightLoader;
+use burn_models_samplers::NoiseSchedule;
+use burn_models_unet::UNetConfig;
+use burn_models_vae::DecoderConfig;
 
 mod llm;
 
@@ -248,6 +256,145 @@ fn run_llm_command_with_backend<B: burn::prelude::Backend>(
     }
 }
 
+/// Run SD 1.x generation with the default backend
+#[allow(clippy::too_many_arguments)]
+fn run_sd1x_generate(
+    prompt: &str,
+    negative: &str,
+    output: &PathBuf,
+    vocab: &PathBuf,
+    weights: &PathBuf,
+    width: usize,
+    height: usize,
+    steps: usize,
+    guidance: f64,
+    _loras: &[PathBuf],
+    _lora_scales: &[f64],
+) -> Result<()> {
+    #[cfg(feature = "wgpu")]
+    {
+        use burn_wgpu::{Wgpu, WgpuDevice};
+        type Backend = Wgpu<f32>;
+        let device = WgpuDevice::default();
+        run_sd1x_generate_impl::<Backend>(
+            prompt, negative, output, vocab, weights,
+            width, height, steps, guidance, &device,
+        )
+    }
+
+    #[cfg(all(feature = "ndarray", not(feature = "wgpu")))]
+    {
+        use burn_ndarray::NdArray;
+        type Backend = NdArray<f32>;
+        let device = Default::default();
+        run_sd1x_generate_impl::<Backend>(
+            prompt, negative, output, vocab, weights,
+            width, height, steps, guidance, &device,
+        )
+    }
+
+    #[cfg(not(any(feature = "wgpu", feature = "ndarray")))]
+    {
+        anyhow::bail!("No backend enabled. Enable 'wgpu' or 'ndarray' feature.")
+    }
+}
+
+/// SD 1.x generation implementation with a specific backend
+#[allow(clippy::too_many_arguments)]
+fn run_sd1x_generate_impl<B: Backend>(
+    prompt: &str,
+    negative: &str,
+    output: &PathBuf,
+    vocab: &PathBuf,
+    weights: &PathBuf,
+    width: usize,
+    height: usize,
+    steps: usize,
+    guidance: f64,
+    device: &B::Device,
+) -> Result<()> {
+    let pb = ProgressBar::new(100);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}% {msg}")?
+            .progress_chars("#>-"),
+    );
+
+    // Step 1: Load tokenizer
+    pb.set_message("Loading tokenizer...");
+    pb.set_position(5);
+    let tokenizer = ClipTokenizer::from_file(vocab)
+        .context("Failed to load vocabulary file")?;
+
+    // Step 2: Open weight loader
+    pb.set_message("Opening weights...");
+    pb.set_position(10);
+    let mut loader = SdWeightLoader::open(weights)
+        .context("Failed to open weights")?;
+
+    // Step 3: Load CLIP text encoder
+    pb.set_message("Loading CLIP text encoder...");
+    pb.set_position(15);
+    let clip_config = ClipConfig::sd1x();
+    let text_encoder = loader.load_clip_text_encoder::<B>(&clip_config, device)
+        .context("Failed to load CLIP text encoder")?;
+
+    // Step 4: Load UNet
+    pb.set_message("Loading UNet...");
+    pb.set_position(30);
+    let unet_config = UNetConfig::sd1x();
+    let unet = loader.load_unet::<B>(&unet_config, device)
+        .context("Failed to load UNet")?;
+
+    // Step 5: Load VAE decoder
+    pb.set_message("Loading VAE decoder...");
+    pb.set_position(50);
+    let vae_config = DecoderConfig::sd();
+    let vae_decoder = loader.load_vae_decoder::<B>(&vae_config, device)
+        .context("Failed to load VAE decoder")?;
+
+    // Step 6: Create pipeline
+    pb.set_message("Initializing pipeline...");
+    pb.set_position(55);
+    let pipeline = burn_models::StableDiffusion1x {
+        tokenizer,
+        text_encoder,
+        unet,
+        vae_decoder,
+        scheduler: NoiseSchedule::sd1x(device),
+        device: device.clone(),
+    };
+
+    // Step 7: Generate image
+    pb.set_message("Generating image...");
+    pb.set_position(60);
+    let config = burn_models::SampleConfig {
+        width,
+        height,
+        steps,
+        guidance_scale: guidance,
+        seed: None,
+    };
+
+    let image_tensor = pipeline.generate(prompt, negative, &config);
+
+    // Step 8: Convert to image and save
+    pb.set_message("Saving image...");
+    pb.set_position(95);
+    let rgb_data = burn_models::tensor_to_rgb(image_tensor.clone());
+    let [_, _, h, w] = image_tensor.dims();
+
+    let img: ImageBuffer<Rgb<u8>, Vec<u8>> =
+        ImageBuffer::from_raw(w as u32, h as u32, rgb_data)
+            .context("Failed to create image buffer")?;
+    img.save(output)?;
+
+    pb.finish_and_clear();
+    println!("Image saved to: {}", output.display());
+
+    Ok(())
+}
+
 /// Application entry point
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -287,132 +434,35 @@ fn main() -> Result<()> {
             }
             println!();
 
-            let pb = ProgressBar::new(100);
-            pb.set_style(
-                ProgressStyle::default_bar()
-                    .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}% {msg}")?
-                    .progress_chars("#>-"),
-            );
-
-            pb.set_message("Loading tokenizer...");
-            pb.set_position(5);
-
-            // Load tokenizer
-            let _tokenizer = burn_models::clip::ClipTokenizer::from_file(&vocab)
-                .context("Failed to load vocabulary file")?;
-
-            pb.set_message("Validating weights path...");
-            pb.set_position(20);
-
-            // Check if weights path exists and what format it is
+            // Check if weights path exists
             if !weights.exists() {
                 anyhow::bail!(
                     "Weights path does not exist: {}\n\n\
                     Please provide a path to model weights.\n\
                     Supported formats:\n\
                     - Directory with .safetensors files (HuggingFace format)\n\
-                    - Single .safetensors file\n\
-                    - Burn .bin record file (pre-converted)",
+                    - Single .safetensors file",
                     weights.display()
                 );
             }
 
-            // Determine weights format
-            let is_safetensors = weights.is_file()
-                && weights.extension().map_or(false, |e| e == "safetensors");
-            let is_burn_record = weights.is_file()
-                && weights.extension().map_or(false, |e| e == "bin" || e == "mpk");
-            let is_hf_dir = weights.is_dir();
-
-            pb.set_position(25);
-
-            if is_burn_record {
-                pb.set_message("Burn record format detected...");
-                // TODO: Implement Burn record loading
-                // Would use: model.load_file(path, &recorder, &device)
-                anyhow::bail!(
-                    "Burn record loading is not yet implemented.\n\n\
-                    The weights file appears to be a Burn record (.bin/.mpk).\n\
-                    This feature is planned but not yet available."
-                );
-            } else if is_safetensors || is_hf_dir {
-                pb.set_message("Safetensors format detected...");
-                // This is the expected format for most users
-                // But we need WeightLoader to actually load the weights
-                pb.finish_and_clear();
-
-                println!("\n⚠️  Weight loading is partially implemented.\n");
-                println!("Current status:");
-                println!("  ✓ CLIP text encoder loader - implemented");
-                println!("  ✗ UNet loader - not yet implemented");
-                println!("  ✗ VAE decoder loader - not yet implemented\n");
-
-                println!("The pipeline requires all three components to generate images.");
-                println!("CLIP is done, UNet and VAE loaders are needed next.\n");
-
-                println!("Current usage:");
-                println!("  let mut loader = SdWeightLoader::open(\"{}\");", weights.display());
-                match model {
-                    ModelType::Sd1x => {
-                        println!("  let mut pipeline = StableDiffusion1x::new(tokenizer, &device);");
-                        println!("  loader.load_text_encoder(&mut pipeline.text_encoder)?;");
-                        println!("  loader.load_unet(&mut pipeline.unet)?;");
-                        println!("  loader.load_vae(&mut pipeline.vae_decoder)?;");
-                        println!("\n  let config = SampleConfig {{ width: {}, height: {}, steps: {}, guidance_scale: {}, .. }};", width, height, steps, guidance);
-                    }
-                    ModelType::Sdxl => {
-                        println!("  let mut pipeline = StableDiffusionXL::new(tokenizer, &device);");
-                        println!("  loader.load_clip(&mut pipeline.clip_encoder)?;");
-                        println!("  loader.load_openclip(&mut pipeline.open_clip_encoder)?;");
-                        println!("  loader.load_unet(&mut pipeline.unet)?;");
-                        println!("  loader.load_vae(&mut pipeline.vae_decoder)?;");
-                        println!("\n  let config = SdxlSampleConfig {{ width: {}, height: {}, steps: {}, guidance_scale: {}, .. }};", width, height, steps, guidance);
-                    }
-                    ModelType::SdxlRefiner => {
-                        println!("  // SDXL + Refiner requires loading two models");
-                        println!("  let base_loader = WeightLoader::open(\"base/\")?;");
-                        println!("  let refiner_loader = WeightLoader::open(\"refiner/\")?;");
-                    }
+            // Dispatch to backend-specific implementation
+            match model {
+                ModelType::Sd1x => {
+                    run_sd1x_generate(
+                        &prompt, &negative, &output, &vocab, &weights,
+                        width, height, steps, guidance,
+                        &loras, &lora_scales,
+                    )?;
                 }
-
-                // Show LoRA note
-                if !loras.is_empty() {
-                    println!("\n  // LoRA loading (this part IS implemented):");
-                    for (i, lora_path) in loras.iter().enumerate() {
-                        let scale = lora_scales.get(i).copied().unwrap_or(1.0);
-                        println!("  let _lora{} = burn_models::load_lora::<Backend>(\"{}\", {}, LoraFormat::Auto, &device)?;",
-                                 i, lora_path.display(), scale);
-                    }
+                ModelType::Sdxl | ModelType::SdxlRefiner => {
+                    anyhow::bail!(
+                        "SDXL generation is not yet implemented.\n\n\
+                        Currently only SD 1.x models are supported.\n\
+                        Use --model sd1x with a Stable Diffusion 1.x model."
+                    );
                 }
-
-                println!("\n  let image = pipeline.generate(\"{}\", \"{}\", &config);", prompt, negative);
-
-                println!("\n📋 To complete this feature, implement UNet and VAE loaders in");
-                println!("   crates/burn-models-convert/src/sd_loader.rs");
-                println!("   (CLIP loader is already done)");
-
-                // Create a placeholder image so the command produces output
-                let img: ImageBuffer<Rgb<u8>, Vec<u8>> =
-                    ImageBuffer::from_fn(width as u32, height as u32, |x, y| {
-                        let r = (x as f32 / width as f32 * 255.0) as u8;
-                        let g = (y as f32 / height as f32 * 255.0) as u8;
-                        let b = 128;
-                        Rgb([r, g, b])
-                    });
-                img.save(&output)?;
-                println!("\n🖼️  Placeholder image saved to: {}", output.display());
-            } else {
-                anyhow::bail!(
-                    "Unknown weights format: {}\n\n\
-                    Expected one of:\n\
-                    - Directory with .safetensors files\n\
-                    - Single .safetensors file\n\
-                    - Burn record file (.bin or .mpk)",
-                    weights.display()
-                );
             }
-
-            pb.finish_and_clear();
 
             Ok(())
         }

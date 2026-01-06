@@ -82,7 +82,7 @@ pub struct StableDiffusion1x<B: Backend> {
     pub unet: UNet<B>,
     pub vae_decoder: Decoder<B>,
     pub scheduler: NoiseSchedule<B>,
-    device: B::Device,
+    pub device: B::Device,
 }
 
 impl<B: Backend> StableDiffusion1x<B> {

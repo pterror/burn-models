@@ -384,8 +384,8 @@ Found during dead code audit. These are stubs or broken implementations that nee
 
 #### Intentional Simplifications (not bugs)
 
-- [x] `main.rs:304-415` CLI generate - Now validates weights path and shows helpful messages.
-  WeightLoader implemented for all SD components (CLIP, UNet, VAE).
+- [x] `main.rs` CLI generate - Fully functional SD 1.x image generation.
+  Loads CLIP, UNet, VAE from safetensors and runs full diffusion pipeline.
 
 - [x] `rwkv.rs:277-290` RWKV-7 dynamic mixing - Now implements full low-rank projection.
   Auto-detects RWKV-6 vs RWKV-7 by checking if `time_maa_w1` weights are present.

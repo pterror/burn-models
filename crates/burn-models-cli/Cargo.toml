@@ -22,6 +22,11 @@ llm-serve = ["burn-models-llm/serve", "tokio"]
 burn = { workspace = true }
 burn-models = { path = "../burn-models" }
 burn-models-llm = { path = "../burn-models-llm" }
+burn-models-convert = { path = "../burn-models-convert" }
+burn-models-clip = { path = "../burn-models-clip" }
+burn-models-unet = { path = "../burn-models-unet" }
+burn-models-vae = { path = "../burn-models-vae" }
+burn-models-samplers = { path = "../burn-models-samplers" }
 clap = { version = "4.5", features = ["derive"] }
 image = "0.25"
 anyhow = "1.0"
