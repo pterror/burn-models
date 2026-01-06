@@ -113,7 +113,7 @@ Decision: Own crate rather than upstream (faster iteration, avoid "vibe code" co
 
 #### Phase 1: Infrastructure
 - [x] Create burn-models-cubecl crate with cubecl dependency
-- [x] Set up feature flags (wgpu, cuda) - delegated to consuming crate
+- [x] Set up feature flags (cpu default, wgpu, cuda)
 - [x] Add benchmark harness for comparing against tensor-ops implementations
 
 #### Phase 2: Conv3d Kernel
@@ -124,10 +124,10 @@ Decision: Own crate rather than upstream (faster iteration, avoid "vibe code" co
 - [x] Benchmark against im2col implementation ✓ **630-40,900× speedup**
   - Run: `cargo bench -p burn-models-cubecl --features cuda --bench conv3d`
   - Results: see `docs/cubecl-guide.md` for full benchmark table
-- [x] Provide CubeCL Conv3d layer as alternative to im2col
-  - `Conv3dLayer<R>` in burn-models-cubecl for GPU backends (CUDA/WGPU)
-  - `Conv3d<B>` in burn-models-core remains for CPU/generic backends
+- [x] Provide CubeCL Conv3d layer (removed im2col from burn-models-core)
+  - `Conv3dLayer<R>` in burn-models-cubecl for all CubeBackends
   - Helper functions `to_cube_tensor`/`from_cube_tensor` for type conversion
+  - Comprehensive test suite (7 CUDA tests, 6 WGPU tests)
 
 #### Phase 3: Conv3d Optimization (if benchmarks justify)
 - [ ] Add Line<E> vectorization

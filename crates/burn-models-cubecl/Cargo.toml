@@ -6,8 +6,9 @@ license.workspace = true
 description = "CubeCL GPU kernels for burn-models"
 
 [features]
-default = []
-# Backend selection (for tests and benchmarks)
+default = ["cpu"]
+# Backend selection
+cpu = ["burn-cpu"]
 wgpu = ["burn-wgpu"]
 cuda = ["burn-cuda"]
 
@@ -16,7 +17,8 @@ burn-cubecl = "0.20.0-pre.6"
 cubecl = { version = "=0.9.0-pre.6", default-features = false, features = ["stdlib"] }
 burn = { workspace = true }
 
-# Optional backends for testing (enabled via features)
+# Optional backends
+burn-cpu = { version = "0.20.0-pre.6", optional = true }
 burn-wgpu = { workspace = true, optional = true }
 burn-cuda = { workspace = true, optional = true }
 

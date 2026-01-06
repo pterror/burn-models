@@ -871,6 +871,7 @@ name = "burn-models-cubecl"
 version = "0.1.0"
 dependencies = [
  "burn",
+ "burn-cpu",
  "burn-cubecl",
  "burn-cuda",
  "burn-models-core",

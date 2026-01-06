@@ -263,27 +263,18 @@ fn test_cuda_conv3d_1x1x1_kernel() {
 fn test_cuda_conv3d_3x3x3_same_padding() {
     let device = CudaDevice::default();
 
-    let batch = 1;
-    let in_ch = 3;
-    let out_ch = 8;
-    let t = 8;
-    let h = 8;
-    let w = 8;
-
     let input = Tensor::<TestBackend, 5>::random(
-        [batch, in_ch, t, h, w],
+        [1, 3, 8, 8, 8],
         burn::tensor::Distribution::Uniform(-1.0, 1.0),
         &device,
     );
-
     let weight = Tensor::<TestBackend, 5>::random(
-        [out_ch, in_ch, 3, 3, 3],
+        [8, 3, 3, 3, 3],
         burn::tensor::Distribution::Uniform(-0.5, 0.5),
         &device,
     );
-
     let bias = Tensor::<TestBackend, 1>::random(
-        [out_ch],
+        [8],
         burn::tensor::Distribution::Uniform(-0.1, 0.1),
         &device,
     );
@@ -295,23 +286,165 @@ fn test_cuda_conv3d_3x3x3_same_padding() {
         groups: 1,
     };
 
-    let cubecl_output = run_cubecl_conv3d(
-        input.clone(),
-        weight.clone(),
-        Some(bias.clone()),
-        options,
-    );
-
-    let reference_output = reference::conv3d_reference(
-        input,
-        weight,
-        Some(bias),
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 1],
-    );
+    let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), Some(bias.clone()), options);
+    let reference_output = reference::conv3d_reference(input, weight, Some(bias), [1, 1, 1], [1, 1, 1], [1, 1, 1]);
 
     assert_eq!(cubecl_output.dims(), [1, 8, 8, 8, 8]);
-    assert_eq!(reference_output.dims(), [1, 8, 8, 8, 8]);
-    assert_tensors_approx_eq(cubecl_output, reference_output, 1e-4, "3x3x3 same padding (CUDA)");
+    assert_tensors_approx_eq(cubecl_output, reference_output, 1e-4, "3x3x3 same padding");
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_conv3d_3x3x3_no_padding() {
+    let device = CudaDevice::default();
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [1, 2, 6, 6, 6],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    let weight = Tensor::<TestBackend, 5>::random(
+        [4, 2, 3, 3, 3],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &device,
+    );
+
+    let options = Conv3dOptions {
+        stride: [1, 1, 1],
+        padding: [0, 0, 0],
+        dilation: [1, 1, 1],
+        groups: 1,
+    };
+
+    let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
+    let reference_output = reference::conv3d_reference(input, weight, None, [1, 1, 1], [0, 0, 0], [1, 1, 1]);
+
+    assert_eq!(cubecl_output.dims(), [1, 4, 4, 4, 4]);
+    assert_tensors_approx_eq(cubecl_output, reference_output, 1e-4, "3x3x3 no padding");
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_conv3d_stride_2() {
+    let device = CudaDevice::default();
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [1, 2, 8, 8, 8],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    let weight = Tensor::<TestBackend, 5>::random(
+        [4, 2, 3, 3, 3],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &device,
+    );
+
+    let options = Conv3dOptions {
+        stride: [2, 2, 2],
+        padding: [1, 1, 1],
+        dilation: [1, 1, 1],
+        groups: 1,
+    };
+
+    let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
+    let reference_output = reference::conv3d_reference(input, weight, None, [2, 2, 2], [1, 1, 1], [1, 1, 1]);
+
+    assert_eq!(cubecl_output.dims(), [1, 4, 4, 4, 4]);
+    assert_tensors_approx_eq(cubecl_output, reference_output, 1e-4, "stride 2");
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_conv3d_batch_2() {
+    let device = CudaDevice::default();
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [2, 2, 4, 4, 4],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    let weight = Tensor::<TestBackend, 5>::random(
+        [3, 2, 3, 3, 3],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &device,
+    );
+    let bias = Tensor::<TestBackend, 1>::random(
+        [3],
+        burn::tensor::Distribution::Uniform(-0.1, 0.1),
+        &device,
+    );
+
+    let options = Conv3dOptions {
+        stride: [1, 1, 1],
+        padding: [1, 1, 1],
+        dilation: [1, 1, 1],
+        groups: 1,
+    };
+
+    let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), Some(bias.clone()), options);
+    let reference_output = reference::conv3d_reference(input, weight, Some(bias), [1, 1, 1], [1, 1, 1], [1, 1, 1]);
+
+    assert_eq!(cubecl_output.dims(), [2, 3, 4, 4, 4]);
+    assert_tensors_approx_eq(cubecl_output, reference_output, 1e-4, "batch 2");
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_conv3d_asymmetric() {
+    let device = CudaDevice::default();
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [1, 3, 4, 8, 6],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    // 1x3x3 kernel
+    let weight = Tensor::<TestBackend, 5>::random(
+        [4, 3, 1, 3, 3],
+        burn::tensor::Distribution::Uniform(-0.5, 0.5),
+        &device,
+    );
+
+    let options = Conv3dOptions {
+        stride: [1, 1, 1],
+        padding: [0, 1, 1],
+        dilation: [1, 1, 1],
+        groups: 1,
+    };
+
+    let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
+    let reference_output = reference::conv3d_reference(input, weight, None, [1, 1, 1], [0, 1, 1], [1, 1, 1]);
+
+    assert_eq!(cubecl_output.dims(), [1, 4, 4, 8, 6]);
+    assert_tensors_approx_eq(cubecl_output, reference_output, 1e-4, "asymmetric");
+}
+
+#[test]
+#[ignore = "requires CUDA GPU"]
+fn test_cuda_conv3d_deep_channels() {
+    let device = CudaDevice::default();
+
+    let input = Tensor::<TestBackend, 5>::random(
+        [1, 32, 4, 4, 4],
+        burn::tensor::Distribution::Uniform(-1.0, 1.0),
+        &device,
+    );
+    let weight = Tensor::<TestBackend, 5>::random(
+        [64, 32, 3, 3, 3],
+        burn::tensor::Distribution::Uniform(-0.1, 0.1),
+        &device,
+    );
+
+    let options = Conv3dOptions {
+        stride: [1, 1, 1],
+        padding: [1, 1, 1],
+        dilation: [1, 1, 1],
+        groups: 1,
+    };
+
+    let cubecl_output = run_cubecl_conv3d(input.clone(), weight.clone(), None, options);
+    let reference_output = reference::conv3d_reference(input, weight, None, [1, 1, 1], [1, 1, 1], [1, 1, 1]);
+
+    assert_eq!(cubecl_output.dims(), [1, 64, 4, 4, 4]);
+    assert_tensors_approx_eq(cubecl_output, reference_output, 1e-3, "deep channels");
 }
