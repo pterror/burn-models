@@ -124,7 +124,10 @@ Decision: Own crate rather than upstream (faster iteration, avoid "vibe code" co
 - [x] Benchmark against im2col implementation ✓ **630-40,900× speedup**
   - Run: `cargo bench -p burn-models-cubecl --features cuda --bench conv3d`
   - Results: see `docs/cubecl-guide.md` for full benchmark table
-- [ ] Replace im2col with CubeCL kernel in vae3d.rs
+- [x] Provide CubeCL Conv3d layer as alternative to im2col
+  - `Conv3dLayer<R>` in burn-models-cubecl for GPU backends (CUDA/WGPU)
+  - `Conv3d<B>` in burn-models-core remains for CPU/generic backends
+  - Helper functions `to_cube_tensor`/`from_cube_tensor` for type conversion
 
 #### Phase 3: Conv3d Optimization (if benchmarks justify)
 - [ ] Add Line<E> vectorization

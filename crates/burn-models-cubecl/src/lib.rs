@@ -15,4 +15,8 @@
 mod conv3d;
 mod utils;
 
-pub use conv3d::{conv3d, Conv3dOptions};
+pub use conv3d::{conv3d, Conv3dLayer, Conv3dOptions, from_cube_tensor, to_cube_tensor};
+
+// Re-export key types for consumers
+pub use burn_cubecl::{tensor::CubeTensor, CubeRuntime};
+pub use cubecl::server::LaunchError;

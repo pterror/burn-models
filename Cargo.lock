@@ -872,8 +872,10 @@ version = "0.1.0"
 dependencies = [
  "burn",
  "burn-cubecl",
+ "burn-cuda",
  "burn-models-core",
  "burn-ndarray",
+ "burn-wgpu",
  "criterion",
  "cubecl",
 ]

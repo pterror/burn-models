@@ -225,6 +225,82 @@ pub fn conv3d<R: CubeRuntime>(
     Ok(output)
 }
 
+/// 3D Convolution layer using CubeCL
+///
+/// A stateful convolution layer that holds weights and bias.
+/// Requires a CubeRuntime backend (CUDA or WGPU).
+///
+/// # Example
+///
+/// ```ignore
+/// use burn_models_cubecl::{Conv3dLayer, Conv3dOptions};
+///
+/// // Create layer
+/// let layer = Conv3dLayer::<CudaRuntime>::new(
+///     weight_tensor,  // [out_ch, in_ch, k_t, k_h, k_w]
+///     Some(bias_tensor),  // [out_ch]
+///     Conv3dOptions { stride: [1,1,1], padding: [1,1,1], ..Default::default() },
+/// );
+///
+/// // Forward pass
+/// let output = layer.forward(input)?;
+/// ```
+pub struct Conv3dLayer<R: CubeRuntime> {
+    /// Weight tensor [out_channels, in_channels, kernel_t, kernel_h, kernel_w]
+    pub weight: CubeTensor<R>,
+    /// Optional bias [out_channels]
+    pub bias: Option<CubeTensor<R>>,
+    /// Convolution options
+    pub options: Conv3dOptions,
+}
+
+impl<R: CubeRuntime> Conv3dLayer<R> {
+    /// Create a new Conv3d layer
+    pub fn new(
+        weight: CubeTensor<R>,
+        bias: Option<CubeTensor<R>>,
+        options: Conv3dOptions,
+    ) -> Self {
+        Self { weight, bias, options }
+    }
+
+    /// Forward pass
+    pub fn forward(&self, input: CubeTensor<R>) -> Result<CubeTensor<R>, LaunchError> {
+        conv3d(input, self.weight.clone(), self.bias.clone(), self.options.clone())
+    }
+}
+
+/// Helper to convert Burn tensor to CubeTensor
+///
+/// Works with any CubeBackend (CUDA, WGPU).
+pub fn to_cube_tensor<R, F, I, U, const D: usize>(
+    tensor: burn::tensor::Tensor<burn_cubecl::CubeBackend<R, F, I, U>, D>,
+) -> CubeTensor<R>
+where
+    R: CubeRuntime,
+    F: burn_cubecl::FloatElement,
+    I: burn_cubecl::IntElement,
+    U: burn_cubecl::BoolElement,
+{
+    match tensor.into_primitive() {
+        burn::tensor::TensorPrimitive::Float(t) => t,
+        _ => panic!("Expected float tensor"),
+    }
+}
+
+/// Helper to convert CubeTensor back to Burn tensor
+pub fn from_cube_tensor<R, F, I, U, const D: usize>(
+    tensor: CubeTensor<R>,
+) -> burn::tensor::Tensor<burn_cubecl::CubeBackend<R, F, I, U>, D>
+where
+    R: CubeRuntime,
+    F: burn_cubecl::FloatElement,
+    I: burn_cubecl::IntElement,
+    U: burn_cubecl::BoolElement,
+{
+    burn::tensor::Tensor::from_primitive(burn::tensor::TensorPrimitive::Float(tensor))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
