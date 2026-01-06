@@ -127,7 +127,7 @@ Decision: Own crate rather than upstream (faster iteration, avoid "vibe code" co
 - [x] Provide CubeCL Conv3d layer (removed im2col from burn-models-core)
   - `Conv3dLayer<R>` in burn-models-cubecl for all CubeBackends
   - Helper functions `to_cube_tensor`/`from_cube_tensor` for type conversion
-  - Comprehensive test suite (7 CUDA tests, 6 WGPU tests)
+  - Comprehensive test suite: 7 CPU tests, 7 CUDA tests, 6 WGPU tests
 
 #### Phase 3: Conv3d Optimization (if benchmarks justify)
 - [ ] Add Line<E> vectorization
