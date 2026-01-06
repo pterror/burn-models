@@ -18,7 +18,7 @@ cubecl = { version = "=0.9.0-pre.6", default-features = false, features = ["stdl
 burn = { workspace = true }
 
 # Optional backends
-burn-cpu = { version = "0.20.0-pre.6", optional = true }
+burn-cpu = { version = "0.20.0-pre.6", optional = true, default-features = false }
 burn-wgpu = { workspace = true, optional = true }
 burn-cuda = { workspace = true, optional = true }
 
