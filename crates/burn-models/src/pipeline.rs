@@ -76,40 +76,167 @@ pub struct StepInfo<B: Backend> {
     pub output: Option<Tensor<B, 4>>,
 }
 
+/// Latent format for preview coefficients
+///
+/// Coefficients from ComfyUI's latent_formats.py:
+/// https://github.com/comfyanonymous/ComfyUI/blob/master/comfy/latent_formats.py
+/// Licensed under GPL-3.0
+#[derive(Debug, Clone, Copy, Default)]
+pub enum LatentFormat {
+    /// Stable Diffusion 1.x (scale factor 0.18215)
+    #[default]
+    SD15,
+    /// Stable Diffusion XL (scale factor 0.13025)
+    SDXL,
+    /// Stable Diffusion 3 (16 channels)
+    SD3,
+    /// Flux (16 channels)
+    Flux,
+    /// Stable Cascade stage B
+    SCB,
+}
+
+/// Latent RGB coefficients for 4-channel models (SD 1.5, SDXL, SC-B)
+struct LatentCoefs4 {
+    coefs: [f32; 12], // 4x3
+    bias: [f32; 3],
+}
+
+/// Latent RGB coefficients for 16-channel models (SD3, Flux)
+struct LatentCoefs16 {
+    coefs: [f32; 48], // 16x3
+    bias: [f32; 3],
+}
+
+impl LatentFormat {
+    #[rustfmt::skip]
+    fn coefs_4(&self) -> Option<LatentCoefs4> {
+        match self {
+            LatentFormat::SD15 => Some(LatentCoefs4 {
+                coefs: [
+                     0.3512,  0.2297,  0.3227,
+                     0.3250,  0.4974,  0.2350,
+                    -0.2829,  0.1762,  0.2721,
+                    -0.2120, -0.2616, -0.7177,
+                ],
+                bias: [0.0, 0.0, 0.0],
+            }),
+            LatentFormat::SDXL => Some(LatentCoefs4 {
+                coefs: [
+                     0.3651,  0.4232,  0.4341,
+                    -0.2533, -0.0042,  0.1068,
+                     0.1076,  0.1111, -0.0362,
+                    -0.3165, -0.2492, -0.2188,
+                ],
+                bias: [0.1084, -0.0175, -0.0011],
+            }),
+            LatentFormat::SCB => Some(LatentCoefs4 {
+                coefs: [
+                     0.1121,  0.2006,  0.1023,
+                    -0.2093, -0.0222, -0.0195,
+                    -0.3087, -0.1535,  0.0366,
+                     0.0290, -0.1574, -0.4078,
+                ],
+                bias: [0.0, 0.0, 0.0],
+            }),
+            _ => None,
+        }
+    }
+
+    #[rustfmt::skip]
+    fn coefs_16(&self) -> Option<LatentCoefs16> {
+        match self {
+            LatentFormat::SD3 => Some(LatentCoefs16 {
+                coefs: [
+                    -0.0645,  0.0177,  0.1052,
+                     0.0028,  0.0312,  0.0650,
+                     0.1848,  0.0762,  0.0360,
+                     0.0944,  0.0360,  0.0889,
+                     0.0897,  0.0506, -0.0364,
+                    -0.0020,  0.1203,  0.0284,
+                     0.0855,  0.0118,  0.0283,
+                    -0.0539,  0.1160,  0.1077,
+                    -0.0057,  0.0116,  0.0700,
+                    -0.0412,  0.0281, -0.0039,
+                     0.1106,  0.1171,  0.1220,
+                    -0.0248,  0.0682, -0.0481,
+                     0.0815,  0.0846,  0.1207,
+                    -0.0120, -0.0055, -0.1463,
+                     0.0020,  0.0523,  0.1994,
+                     0.0339,  0.0254,  0.0459,
+                ],
+                bias: [0.2394, 0.2135, 0.1925],
+            }),
+            LatentFormat::Flux => Some(LatentCoefs16 {
+                coefs: [
+                    -0.0346,  0.0244,  0.0681,
+                     0.0034,  0.0210,  0.0687,
+                     0.0437,  0.0689,  0.0471,
+                     0.0440,  0.0967,  0.0728,
+                     0.0386,  0.0445, -0.0601,
+                     0.0444,  0.0921,  0.0335,
+                     0.0986,  0.0331,  0.0743,
+                    -0.0279,  0.0553,  0.0452,
+                    -0.0060,  0.0298,  0.0636,
+                     0.0349,  0.0784,  0.0276,
+                     0.0732,  0.0735,  0.0148,
+                     0.0091,  0.0420,  0.0073,
+                     0.0719,  0.0669,  0.0757,
+                     0.0270,  0.0658,  0.0031,
+                    -0.0156,  0.0353,  0.0604,
+                     0.0472,  0.0316,  0.0701,
+                ],
+                bias: [-0.0329, -0.0718, -0.0851],
+            }),
+            _ => None,
+        }
+    }
+
+    /// Number of latent channels for this format
+    pub fn channels(&self) -> usize {
+        match self {
+            LatentFormat::SD15 | LatentFormat::SDXL | LatentFormat::SCB => 4,
+            LatentFormat::SD3 | LatentFormat::Flux => 16,
+        }
+    }
+}
+
 /// Convert latent to RGB preview without VAE decode
 ///
-/// Uses learned coefficients to project 4-channel latent to RGB.
+/// Uses learned coefficients to project latent channels to RGB.
 /// Much faster than VAE decode (~0.1ms vs ~50ms).
 ///
-/// Coefficients from: https://discuss.huggingface.co/t/decoding-latents-to-rgb-without-upscaling/23204
-/// Note: These are SD 1.4 coefficients. SDXL may need different values.
-pub fn latent_to_preview<B: Backend>(latent: Tensor<B, 4>) -> Tensor<B, 4> {
-    let [b, _c, h, w] = latent.dims();
+/// Coefficients from ComfyUI's latent_formats.py (GPL-3.0):
+/// https://github.com/comfyanonymous/ComfyUI/blob/master/comfy/latent_formats.py
+pub fn latent_to_preview<B: Backend>(latent: Tensor<B, 4>, format: LatentFormat) -> Tensor<B, 4> {
+    let [b, c, h, w] = latent.dims();
     let device = latent.device();
 
-    // SD 1.4 latent -> RGB coefficients [4, 3]
-    // Each row is a latent channel, each column is an RGB channel
-    #[rustfmt::skip]
-    let coefs_data: [f32; 12] = [
-        0.298,  0.207,  0.208,   // L1 -> R, G, B
-        0.187,  0.286,  0.173,   // L2 -> R, G, B
-       -0.158,  0.189,  0.264,   // L3 -> R, G, B
-       -0.184, -0.271, -0.473,   // L4 -> R, G, B
-    ];
-    let coefs: Tensor<B, 2> = Tensor::from_data(TensorData::new(coefs_data.to_vec(), [4, 3]), &device);
+    // Get coefficients based on channel count
+    let (coefs_vec, bias, channels): (Vec<f32>, [f32; 3], usize) = if c == 4 {
+        let coefs = format.coefs_4().unwrap_or_else(|| LatentFormat::SD15.coefs_4().unwrap());
+        (coefs.coefs.to_vec(), coefs.bias, 4)
+    } else {
+        let coefs = format.coefs_16().unwrap_or_else(|| LatentFormat::SD3.coefs_16().unwrap());
+        (coefs.coefs.to_vec(), coefs.bias, 16)
+    };
 
-    // einsum "lxy,lr -> rxy": project 4 latent channels to 3 RGB channels
-    // latent: [B, 4, H, W] -> [B, 4, H*W]
-    // coefs: [4, 3] -> [1, 4, 3] (broadcast over batch)
-    // result: [B, 3, H*W] -> [B, 3, H, W]
-    let flat = latent.reshape([b, 4, h * w]); // [B, 4, H*W]
-    let flat_t = flat.swap_dims(1, 2); // [B, H*W, 4]
-    let coefs_3d = coefs.unsqueeze::<3>().repeat_dim(0, b); // [B, 4, 3]
+    let coefs: Tensor<B, 2> = Tensor::from_data(
+        TensorData::new(coefs_vec, [channels, 3]),
+        &device,
+    );
+
+    // einsum "cxy,cr -> rxy": project latent channels to 3 RGB channels
+    let flat = latent.reshape([b, channels, h * w]); // [B, C, H*W]
+    let flat_t = flat.swap_dims(1, 2); // [B, H*W, C]
+    let coefs_3d = coefs.unsqueeze::<3>().repeat_dim(0, b); // [B, C, 3]
     let rgb_flat = flat_t.matmul(coefs_3d); // [B, H*W, 3]
     let rgb = rgb_flat.swap_dims(1, 2).reshape([b, 3, h, w]); // [B, 3, H, W]
 
-    // Normalize to [0, 255] - output is roughly [-0.5, 0.5]
-    let normalized = (rgb + 0.5) * 255.0;
+    // Apply bias and normalize to [0, 255]
+    let bias_tensor: Tensor<B, 1> = Tensor::from_data(TensorData::new(bias.to_vec(), [3]), &device);
+    let rgb_biased = rgb + bias_tensor.reshape([1, 3, 1, 1]);
+    let normalized = (rgb_biased + 0.5) * 255.0;
     normalized.clamp(0.0, 255.0)
 }
 
@@ -353,7 +480,7 @@ impl<B: Backend> StableDiffusion1x<B> {
             let output = match step_output {
                 StepOutput::None => None,
                 StepOutput::Latent => Some(latent.clone()),
-                StepOutput::LatentPreview => Some(latent_to_preview(latent.clone())),
+                StepOutput::LatentPreview => Some(latent_to_preview(latent.clone(), LatentFormat::SD15)),
                 StepOutput::Decoded => Some(self.vae_decoder.decode_to_image(latent.clone())),
             };
 
