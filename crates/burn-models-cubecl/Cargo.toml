@@ -1,0 +1,25 @@
+[package]
+name = "burn-models-cubecl"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "CubeCL GPU kernels for burn-models"
+
+[features]
+default = []
+# Note: Backend selection (wgpu, cuda) is handled by the consuming crate
+# via burn-wgpu or burn-cuda. This crate just provides the kernels.
+
+[dependencies]
+burn-cubecl = "0.20.0-pre.6"
+cubecl = { version = "=0.9.0-pre.6", default-features = false, features = ["stdlib"] }
+burn = { workspace = true }
+
+[dev-dependencies]
+criterion = "0.5"
+burn-models-core = { workspace = true }
+burn-ndarray = { workspace = true }
+
+[[bench]]
+name = "conv3d"
+harness = false

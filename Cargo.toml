@@ -11,6 +11,7 @@ members = [
     "crates/burn-models-cli",
     "crates/burn-models-llm",
     "crates/burn-models-dit",
+    "crates/burn-models-cubecl",
 ]
 
 [workspace.package]
@@ -28,6 +29,7 @@ burn-models-samplers = { path = "crates/burn-models-samplers" }
 burn-models-convert = { path = "crates/burn-models-convert" }
 burn-models-llm = { path = "crates/burn-models-llm" }
 burn-models-dit = { path = "crates/burn-models-dit" }
+burn-models-cubecl = { path = "crates/burn-models-cubecl" }
 
 # External dependencies
 burn = "0.20.0-pre.6"
