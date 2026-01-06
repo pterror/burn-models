@@ -9,7 +9,7 @@ use burn::tensor::activation::sigmoid;
 use burn::tensor::Int;
 
 use burn_models_core::layernorm::LayerNorm;
-use crate::attention::{create_causal_mask, scaled_dot_product_attention};
+use crate::attention::{precompute_causal_mask, slice_causal_mask, scaled_dot_product_attention};
 
 /// CLIP model configuration
 #[derive(Debug, Clone)]
@@ -43,6 +43,9 @@ pub struct ClipTextEncoder<B: Backend> {
     pub position_embedding: Param<Tensor<B, 2>>,
     pub layers: Vec<TransformerBlock<B>>,
     pub final_layer_norm: LayerNorm<B>,
+    /// Precomputed causal mask for max context length
+    pub causal_mask: Tensor<B, 2>,
+    #[module(skip)]
     pub context_length: usize,
 }
 
@@ -67,11 +70,15 @@ impl<B: Backend> ClipTextEncoder<B> {
 
         let final_layer_norm = LayerNorm::new(config.embed_dim, device);
 
+        // Precompute causal mask for max context length
+        let causal_mask = precompute_causal_mask(config.context_length, device);
+
         Self {
             token_embedding,
             position_embedding,
             layers,
             final_layer_norm,
+            causal_mask,
             context_length: config.context_length,
         }
     }
@@ -92,8 +99,8 @@ impl<B: Backend> ClipTextEncoder<B> {
             .unsqueeze::<3>();
         let mut x = x + pos_emb;
 
-        // Create causal mask
-        let mask = create_causal_mask(seq_len, &x.device());
+        // Slice precomputed causal mask to actual sequence length
+        let mask = slice_causal_mask(&self.causal_mask, seq_len);
 
         // Pass through transformer layers
         for layer in &self.layers {
@@ -136,8 +143,8 @@ impl<B: Backend> ClipTextEncoder<B> {
             .unsqueeze::<3>();
         let mut x = x + pos_emb;
 
-        // Create causal mask
-        let mask = create_causal_mask(seq_len, &x.device());
+        // Slice precomputed causal mask to actual sequence length
+        let mask = slice_causal_mask(&self.causal_mask, seq_len);
 
         // Pass through all but the last layer
         let num_layers = self.layers.len();

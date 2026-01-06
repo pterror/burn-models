@@ -161,6 +161,7 @@ impl LtxVideoConfig {
         let runtime = LtxVideoRuntime {
             spatial_rope: RotaryEmbedding::new(self.head_dim(), self.max_spatial_len, device),
             temporal_rope: RotaryEmbedding::new(self.head_dim(), self.max_temporal_len, device),
+            temporal_causal_mask: precompute_temporal_causal_mask(self.max_temporal_len, device),
         };
 
         (model, runtime)
@@ -320,9 +321,16 @@ pub struct LtxCausalAttention<B: Backend> {
 }
 
 impl<B: Backend> LtxCausalAttention<B> {
-    pub fn forward(&self, x: Tensor<B, 3>, rope: &RotaryEmbedding<B>) -> Tensor<B, 3> {
+    /// Forward pass with precomputed causal mask.
+    ///
+    /// `causal_mask` should be the precomputed mask from `LtxVideoRuntime`.
+    pub fn forward(
+        &self,
+        x: Tensor<B, 3>,
+        rope: &RotaryEmbedding<B>,
+        causal_mask: &Tensor<B, 4>,
+    ) -> Tensor<B, 3> {
         let [batch, seq_len, _hidden] = x.dims();
-        let device = x.device();
 
         let qkv = self.to_qkv.forward(x);
         let qkv = qkv.reshape([batch, seq_len, 3, self.num_heads, self.head_dim]);
@@ -343,8 +351,8 @@ impl<B: Backend> LtxCausalAttention<B> {
         let scale = (self.head_dim as f32).sqrt().recip();
         let attn = q.matmul(k.swap_dims(2, 3)) * scale;
 
-        // Apply causal mask
-        let mask = Self::causal_mask(seq_len, &device);
+        // Apply causal mask (slice precomputed mask to actual seq_len)
+        let mask = slice_temporal_causal_mask(causal_mask, seq_len);
         let attn = attn + mask;
 
         let attn = burn::tensor::activation::softmax(attn, 3);
@@ -352,21 +360,6 @@ impl<B: Backend> LtxCausalAttention<B> {
 
         let out = out.swap_dims(1, 2).reshape([batch, seq_len, self.num_heads * self.head_dim]);
         self.to_out.forward(out)
-    }
-
-    fn causal_mask<D: burn::tensor::backend::Backend>(seq_len: usize, device: &D::Device) -> Tensor<D, 4> {
-        // Create lower triangular mask
-        let mut mask_data = vec![0.0f32; seq_len * seq_len];
-        for i in 0..seq_len {
-            for j in 0..seq_len {
-                if j > i {
-                    mask_data[i * seq_len + j] = f32::NEG_INFINITY;
-                }
-            }
-        }
-        Tensor::<D, 1>::from_floats(&mask_data[..], device)
-            .reshape([seq_len, seq_len])
-            .unsqueeze_dims::<4>(&[0, 1])
     }
 }
 
@@ -437,6 +430,7 @@ impl<B: Backend> LtxBlock<B> {
         nw: usize,
         spatial_rope: &RotaryEmbedding<B>,
         temporal_rope: &RotaryEmbedding<B>,
+        temporal_causal_mask: &Tensor<B, 4>,
     ) -> Tensor<B, 3> {
         let [batch, seq_len, hidden] = x.dims();
         let spatial_len = nh * nw;
@@ -468,7 +462,7 @@ impl<B: Backend> LtxBlock<B> {
         let x_norm = (Tensor::ones_like(&scale2) + scale2) * x_norm + shift2;
         let x_reshaped = x_norm.reshape([batch, temporal_len, spatial_len, hidden]);
         let x_temporal = x_reshaped.swap_dims(1, 2).reshape([batch * spatial_len, temporal_len, hidden]);
-        let temporal_out = self.temporal_attn.forward(x_temporal, temporal_rope);
+        let temporal_out = self.temporal_attn.forward(x_temporal, temporal_rope, temporal_causal_mask);
         let temporal_out = temporal_out.reshape([batch, spatial_len, temporal_len, hidden])
             .swap_dims(1, 2)
             .reshape([batch, seq_len, hidden]);
@@ -533,6 +527,31 @@ pub struct LtxVideo<B: Backend> {
 pub struct LtxVideoRuntime<B: Backend> {
     pub spatial_rope: RotaryEmbedding<B>,
     pub temporal_rope: RotaryEmbedding<B>,
+    /// Precomputed causal mask for temporal attention [1, 1, max_temporal, max_temporal]
+    pub temporal_causal_mask: Tensor<B, 4>,
+}
+
+/// Precompute causal mask for temporal attention.
+///
+/// Returns a 4D mask [1, 1, seq_len, seq_len] ready for broadcasting over attention scores.
+#[rustfmt::skip]
+pub fn precompute_temporal_causal_mask<B: Backend>(max_seq_len: usize, device: &B::Device) -> Tensor<B, 4> {
+    let mut mask_data = vec![0.0f32; max_seq_len * max_seq_len];
+    for i in 0..max_seq_len {
+        for j in 0..max_seq_len {
+            if j > i {
+                mask_data[i * max_seq_len + j] = f32::NEG_INFINITY;
+            }
+        }
+    }
+    Tensor::<B, 1>::from_floats(&mask_data[..], device)
+        .reshape([max_seq_len, max_seq_len])
+        .unsqueeze_dims::<4>(&[0, 1])
+}
+
+/// Slice a precomputed 4D causal mask to actual sequence length.
+pub fn slice_temporal_causal_mask<B: Backend>(mask: &Tensor<B, 4>, seq_len: usize) -> Tensor<B, 4> {
+    mask.clone().slice([0..1, 0..1, 0..seq_len, 0..seq_len])
 }
 
 /// Output from LTX-Video
@@ -627,6 +646,7 @@ impl<B: Backend> LtxVideo<B> {
                 nw,
                 &runtime.spatial_rope,
                 &runtime.temporal_rope,
+                &runtime.temporal_causal_mask,
             );
         }
 
@@ -694,9 +714,10 @@ mod tests {
             head_dim: 64,
         };
         let rope = RotaryEmbedding::new(64, 256, &device);
+        let causal_mask = precompute_temporal_causal_mask(32, &device);
 
         let x = Tensor::<TestBackend, 3>::zeros([2, 8, 256], &device);
-        let out = attn.forward(x, &rope);
+        let out = attn.forward(x, &rope, &causal_mask);
         assert_eq!(out.dims(), [2, 8, 256]);
     }
 
@@ -706,13 +727,14 @@ mod tests {
         let block = LtxBlockConfig::new(256, 4, 512).init::<TestBackend>(&device);
         let spatial_rope = RotaryEmbedding::new(64, 256, &device);
         let temporal_rope = RotaryEmbedding::new(64, 32, &device);
+        let temporal_mask = precompute_temporal_causal_mask(32, &device);
 
         // 4 temporal * 16 spatial = 64 tokens
         let x = Tensor::zeros([2, 64, 256], &device);
         let cond = Tensor::zeros([2, 256], &device);
         let ctx = Tensor::zeros([2, 8, 256], &device);
 
-        let out = block.forward(x, cond, ctx, 4, 4, 4, &spatial_rope, &temporal_rope);
+        let out = block.forward(x, cond, ctx, 4, 4, 4, &spatial_rope, &temporal_rope, &temporal_mask);
         assert_eq!(out.dims(), [2, 64, 256]);
     }
 

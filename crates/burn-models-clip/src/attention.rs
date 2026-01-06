@@ -2,19 +2,34 @@
 
 use burn::prelude::*;
 
-/// Create a causal attention mask
+/// Precompute a causal attention mask for a given max sequence length.
 ///
-/// Creates a lower triangular mask with -inf for masked positions,
-/// ensuring tokens can only attend to previous tokens.
-pub fn create_causal_mask<B: Backend>(seq_len: usize, device: &B::Device) -> Tensor<B, 2> {
-    let mut mask_data = vec![0.0f32; seq_len * seq_len];
-    for i in 0..seq_len {
-        for j in (i + 1)..seq_len {
-            mask_data[i * seq_len + j] = f32::NEG_INFINITY;
+/// Call this once at initialization time and slice the result in forward().
+/// This avoids allocating a Vec<f32> on every forward pass.
+#[rustfmt::skip]
+pub fn precompute_causal_mask<B: Backend>(max_seq_len: usize, device: &B::Device) -> Tensor<B, 2> {
+    let mut mask_data = vec![0.0f32; max_seq_len * max_seq_len];
+    for i in 0..max_seq_len {
+        for j in (i + 1)..max_seq_len {
+            mask_data[i * max_seq_len + j] = f32::NEG_INFINITY;
         }
     }
-    let data = TensorData::new(mask_data, [seq_len, seq_len]);
+    let data = TensorData::new(mask_data, [max_seq_len, max_seq_len]);
     Tensor::from_data(data, device)
+}
+
+/// Slice a precomputed causal mask to the actual sequence length.
+///
+/// This is a cheap operation (no allocation) compared to creating a new mask.
+pub fn slice_causal_mask<B: Backend>(mask: &Tensor<B, 2>, seq_len: usize) -> Tensor<B, 2> {
+    mask.clone().slice([0..seq_len, 0..seq_len])
+}
+
+/// Create a causal attention mask (convenience function, allocates on each call)
+///
+/// For hot paths, prefer `precompute_causal_mask` + `slice_causal_mask`.
+pub fn create_causal_mask<B: Backend>(seq_len: usize, device: &B::Device) -> Tensor<B, 2> {
+    precompute_causal_mask(seq_len, device)
 }
 
 /// Compute scaled dot-product attention

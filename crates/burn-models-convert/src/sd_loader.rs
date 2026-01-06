@@ -219,11 +219,15 @@ fn load_clip_from_file<B: Backend>(
     let final_ln_bias_key = format!("{}.final_layer_norm.bias", prefix);
     let final_layer_norm = load_layer_norm(file, &final_ln_weight_key, &final_ln_bias_key, config.embed_dim, device)?;
 
+    // Precompute causal mask for max context length
+    let causal_mask = burn_models_clip::attention::precompute_causal_mask(config.context_length, device);
+
     Ok(ClipTextEncoder {
         token_embedding,
         position_embedding,
         layers,
         final_layer_norm,
+        causal_mask,
         context_length: config.context_length,
     })
 }

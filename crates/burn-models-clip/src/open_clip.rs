@@ -13,7 +13,7 @@ use burn::tensor::activation::gelu;
 use burn::tensor::Int;
 
 use burn_models_core::layernorm::LayerNorm;
-use crate::attention::{create_causal_mask, scaled_dot_product_attention};
+use crate::attention::{precompute_causal_mask, slice_causal_mask, scaled_dot_product_attention};
 
 /// OpenCLIP model configuration
 #[derive(Debug, Clone)]
@@ -79,6 +79,9 @@ pub struct OpenClipTextEncoder<B: Backend> {
     layers: Vec<OpenClipTransformerBlock<B>>,
     final_layer_norm: LayerNorm<B>,
     text_projection: Linear<B>,
+    /// Precomputed causal mask for max context length
+    causal_mask: Tensor<B, 2>,
+    #[module(skip)]
     context_length: usize,
 }
 
@@ -108,12 +111,16 @@ impl<B: Backend> OpenClipTextEncoder<B> {
             .with_bias(false)
             .init(device);
 
+        // Precompute causal mask for max context length
+        let causal_mask = precompute_causal_mask(config.context_length, device);
+
         Self {
             token_embedding,
             position_embedding,
             layers,
             final_layer_norm,
             text_projection,
+            causal_mask,
             context_length: config.context_length,
         }
     }
@@ -134,8 +141,8 @@ impl<B: Backend> OpenClipTextEncoder<B> {
             .unsqueeze::<3>();
         let mut x = x + pos_emb;
 
-        // Create causal mask
-        let mask = create_causal_mask(seq_len, &x.device());
+        // Slice precomputed causal mask to actual sequence length
+        let mask = slice_causal_mask(&self.causal_mask, seq_len);
 
         // Pass through transformer layers
         for layer in &self.layers {
@@ -188,7 +195,8 @@ impl<B: Backend> OpenClipTextEncoder<B> {
             .unsqueeze::<3>();
         let mut x = x + pos_emb;
 
-        let mask = create_causal_mask(seq_len, &x.device());
+        // Slice precomputed causal mask to actual sequence length
+        let mask = slice_causal_mask(&self.causal_mask, seq_len);
 
         // Pass through all but last layer
         let num_layers = self.layers.len();
