@@ -221,7 +221,7 @@ See `docs/cubecl-guide.md` for implementation details.
 - [ ] MLX backend (Apple Silicon) - via [burn-mlx](https://lib.rs/crates/burn-mlx)
   - Note: burn-mlx 0.1.2 requires burn ^0.16, we're on 0.20 - wait for update
 - [x] Wire up CLI `generate` command - now validates paths and shows helpful messages
-- [ ] WeightLoader for SD models - **blocks** actual image generation
+- [x] WeightLoader for SD models - enables actual image generation
   - [x] CLIP text encoder loader (`SdWeightLoader::load_clip_text_encoder`)
     - Detects prefix automatically (text_model, text_encoder.text_model, etc.)
     - Loads embeddings, all transformer layers, final layer norm
@@ -229,8 +229,10 @@ See `docs/cubecl-guide.md` for implementation details.
     - Detects prefix (model.diffusion_model, unet, etc.)
     - Loads time embedding, conv_in, all down/mid/up blocks, conv_out
     - Each block: ResBlock, SpatialTransformer, Downsample/Upsample
-  - [ ] VAE decoder loader - similar pattern to UNet
-  - Reference: `burn-models-llm/src/llama_loader.rs` for the pattern
+  - [x] VAE decoder loader (`SdWeightLoader::load_vae_decoder`)
+    - Detects prefix (decoder, vae.decoder, first_stage_model.decoder)
+    - Loads conv_in, mid blocks, all up blocks, conv_out
+    - Each block: ResnetBlock, SelfAttention, Upsample
 
 ### Future Architectures
 
@@ -383,7 +385,7 @@ Found during dead code audit. These are stubs or broken implementations that nee
 #### Intentional Simplifications (not bugs)
 
 - [x] `main.rs:304-415` CLI generate - Now validates weights path and shows helpful messages.
-  Still outputs placeholder image until WeightLoader is implemented for SD models.
+  WeightLoader implemented for all SD components (CLIP, UNet, VAE).
 
 - [x] `rwkv.rs:277-290` RWKV-7 dynamic mixing - Now implements full low-rank projection.
   Auto-detects RWKV-6 vs RWKV-7 by checking if `time_maa_w1` weights are present.

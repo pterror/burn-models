@@ -66,13 +66,13 @@ pub mod scaling {
 /// VAE Decoder
 #[derive(Module, Debug)]
 pub struct Decoder<B: Backend> {
-    conv_in: Conv2d<B>,
-    mid_block1: ResnetBlock<B>,
-    mid_attn: SelfAttention<B>,
-    mid_block2: ResnetBlock<B>,
-    up_blocks: Vec<DecoderBlock<B>>,
-    norm_out: GroupNorm<B>,
-    conv_out: Conv2d<B>,
+    pub conv_in: Conv2d<B>,
+    pub mid_block1: ResnetBlock<B>,
+    pub mid_attn: SelfAttention<B>,
+    pub mid_block2: ResnetBlock<B>,
+    pub up_blocks: Vec<DecoderBlock<B>>,
+    pub norm_out: GroupNorm<B>,
+    pub conv_out: Conv2d<B>,
 }
 
 impl<B: Backend> Decoder<B> {
@@ -195,8 +195,8 @@ impl<B: Backend> Decoder<B> {
 /// Decoder block with optional upsampling
 #[derive(Module, Debug)]
 pub struct DecoderBlock<B: Backend> {
-    res_blocks: Vec<ResnetBlock<B>>,
-    upsample: Option<Upsample<B>>,
+    pub res_blocks: Vec<ResnetBlock<B>>,
+    pub upsample: Option<Upsample<B>>,
 }
 
 impl<B: Backend> DecoderBlock<B> {
@@ -247,11 +247,11 @@ impl<B: Backend> DecoderBlock<B> {
 /// Resnet block with skip connection
 #[derive(Module, Debug)]
 pub struct ResnetBlock<B: Backend> {
-    norm1: GroupNorm<B>,
-    conv1: Conv2d<B>,
-    norm2: GroupNorm<B>,
-    conv2: Conv2d<B>,
-    skip_conv: Option<Conv2d<B>>,
+    pub norm1: GroupNorm<B>,
+    pub conv1: Conv2d<B>,
+    pub norm2: GroupNorm<B>,
+    pub conv2: Conv2d<B>,
+    pub skip_conv: Option<Conv2d<B>>,
 }
 
 impl<B: Backend> ResnetBlock<B> {
@@ -307,7 +307,7 @@ impl<B: Backend> ResnetBlock<B> {
 /// 2x Upsampling with conv
 #[derive(Module, Debug)]
 pub struct Upsample<B: Backend> {
-    conv: Conv2d<B>,
+    pub conv: Conv2d<B>,
 }
 
 impl<B: Backend> Upsample<B> {
@@ -339,12 +339,12 @@ impl<B: Backend> Upsample<B> {
 /// Self-attention for VAE mid block
 #[derive(Module, Debug)]
 pub struct SelfAttention<B: Backend> {
-    norm: GroupNorm<B>,
-    q: Conv2d<B>,
-    k: Conv2d<B>,
-    v: Conv2d<B>,
-    proj_out: Conv2d<B>,
-    channels: usize,
+    pub norm: GroupNorm<B>,
+    pub q: Conv2d<B>,
+    pub k: Conv2d<B>,
+    pub v: Conv2d<B>,
+    pub proj_out: Conv2d<B>,
+    pub channels: usize,
 }
 
 impl<B: Backend> SelfAttention<B> {

@@ -33,5 +33,5 @@ pub mod encoder;
 pub mod decoder;
 pub mod autoencoder;
 
-pub use decoder::{Decoder, DecoderConfig, scaling};
+pub use decoder::{Decoder, DecoderConfig, DecoderBlock, ResnetBlock, SelfAttention, Upsample, scaling};
 pub use encoder::{Encoder, EncoderConfig};
