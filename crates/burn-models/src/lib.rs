@@ -95,6 +95,8 @@ pub use offload::{OffloadStrategy, OffloadConfig, ModelComponent, OffloadState, 
 pub use pipeline::{
     DiffusionPipeline, Img2ImgConfig, SampleConfig, Sd1xConditioning,
     StableDiffusion1x, StableDiffusion1xImg2Img, tensor_to_rgb,
+    // Step callback types
+    StepOutput, StepInfo, latent_to_preview,
     // Inpainting
     InpaintConfig, StableDiffusion1xInpaint,
     // SDXL

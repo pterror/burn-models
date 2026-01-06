@@ -46,6 +46,73 @@ impl Default for SampleConfig {
     }
 }
 
+// ============================================================================
+// Step Callback Types
+// ============================================================================
+
+/// What to output at each sampling step
+#[derive(Debug, Clone, Copy, Default)]
+pub enum StepOutput {
+    /// No output, minimal overhead
+    #[default]
+    None,
+    /// Raw latent tensor (~0.1ms GPU→CPU copy)
+    Latent,
+    /// Latent visualized as RGB without VAE decode (~0.1ms)
+    LatentPreview,
+    /// Full VAE decode to image (~50-100ms, expensive!)
+    Decoded,
+}
+
+/// Information passed to step callback
+pub struct StepInfo<B: Backend> {
+    /// Current step (0-indexed)
+    pub step: usize,
+    /// Total number of steps
+    pub total_steps: usize,
+    /// Current timestep value
+    pub timestep: usize,
+    /// Output based on StepOutput setting
+    pub output: Option<Tensor<B, 4>>,
+}
+
+/// Convert latent to RGB preview without VAE decode
+///
+/// Uses learned coefficients to project 4-channel latent to RGB.
+/// Much faster than VAE decode (~0.1ms vs ~50ms).
+///
+/// Coefficients from: https://discuss.huggingface.co/t/decoding-latents-to-rgb-without-upscaling/23204
+/// Note: These are SD 1.4 coefficients. SDXL may need different values.
+pub fn latent_to_preview<B: Backend>(latent: Tensor<B, 4>) -> Tensor<B, 4> {
+    let [b, _c, h, w] = latent.dims();
+    let device = latent.device();
+
+    // SD 1.4 latent -> RGB coefficients [4, 3]
+    // Each row is a latent channel, each column is an RGB channel
+    #[rustfmt::skip]
+    let coefs_data: [f32; 12] = [
+        0.298,  0.207,  0.208,   // L1 -> R, G, B
+        0.187,  0.286,  0.173,   // L2 -> R, G, B
+       -0.158,  0.189,  0.264,   // L3 -> R, G, B
+       -0.184, -0.271, -0.473,   // L4 -> R, G, B
+    ];
+    let coefs: Tensor<B, 2> = Tensor::from_data(TensorData::new(coefs_data.to_vec(), [4, 3]), &device);
+
+    // einsum "lxy,lr -> rxy": project 4 latent channels to 3 RGB channels
+    // latent: [B, 4, H, W] -> [B, 4, H*W]
+    // coefs: [4, 3] -> [1, 4, 3] (broadcast over batch)
+    // result: [B, 3, H*W] -> [B, 3, H, W]
+    let flat = latent.reshape([b, 4, h * w]); // [B, 4, H*W]
+    let flat_t = flat.swap_dims(1, 2); // [B, H*W, 4]
+    let coefs_3d = coefs.unsqueeze::<3>().repeat_dim(0, b); // [B, 4, 3]
+    let rgb_flat = flat_t.matmul(coefs_3d); // [B, H*W, 3]
+    let rgb = rgb_flat.swap_dims(1, 2).reshape([b, 3, h, w]); // [B, 3, H, W]
+
+    // Normalize to [0, 255] - output is roughly [-0.5, 0.5]
+    let normalized = (rgb + 0.5) * 255.0;
+    normalized.clamp(0.0, 255.0)
+}
+
 /// Unified interface for diffusion pipelines
 pub trait DiffusionPipeline<B: Backend> {
     type Conditioning;
@@ -207,6 +274,115 @@ impl<B: Backend> DiffusionPipeline<B> for StableDiffusion1x<B> {
     }
 
     fn decode(&self, latent: Tensor<B, 4>) -> Tensor<B, 4> {
+        self.vae_decoder.decode_to_image(latent)
+    }
+}
+
+impl<B: Backend> StableDiffusion1x<B> {
+    /// Sample latent with step callback for progress reporting
+    ///
+    /// The callback is called after each step with step info and optional output.
+    /// Use `StepOutput::None` for minimal overhead, or `StepOutput::LatentPreview`
+    /// for cheap visual feedback.
+    pub fn sample_latent_with_callback<F>(
+        &self,
+        conditioning: &Sd1xConditioning<B>,
+        config: &SampleConfig,
+        step_output: StepOutput,
+        mut callback: F,
+    ) -> Tensor<B, 4>
+    where
+        F: FnMut(StepInfo<B>),
+    {
+        let latent_height = config.height / 8;
+        let latent_width = config.width / 8;
+
+        // Create DDIM sampler
+        let ddim_config = DdimConfig {
+            num_inference_steps: config.steps,
+            eta: 0.0,
+        };
+        let sampler = DdimSampler::new(
+            NoiseSchedule::sd1x(&self.device),
+            ddim_config,
+        );
+
+        // Initialize with random noise
+        let mut latent = sampler.init_latent(1, 4, latent_height, latent_width, &self.device);
+
+        // Precompute all timestep tensors
+        let timestep_tensors: Vec<Tensor<B, 1>> = sampler
+            .timesteps()
+            .iter()
+            .map(|&t| {
+                Tensor::<B, 1>::from_data(
+                    TensorData::new(vec![t as f32], [1]),
+                    &self.device,
+                )
+            })
+            .collect();
+
+        let timesteps = sampler.timesteps();
+        let total_steps = sampler.num_steps();
+
+        // Sampling loop
+        for step_idx in 0..total_steps {
+            let t = timestep_tensors[step_idx].clone();
+
+            // Predict noise for unconditional
+            let noise_uncond = self.unet.forward(
+                latent.clone(),
+                t.clone(),
+                conditioning.uncond.clone(),
+            );
+
+            // Predict noise for conditional
+            let noise_cond = self.unet.forward(
+                latent.clone(),
+                t,
+                conditioning.cond.clone(),
+            );
+
+            // Apply classifier-free guidance
+            let noise_pred = apply_guidance(noise_uncond, noise_cond, config.guidance_scale);
+
+            // DDIM step
+            latent = sampler.step(latent, noise_pred, step_idx);
+
+            // Generate output based on step_output setting
+            let output = match step_output {
+                StepOutput::None => None,
+                StepOutput::Latent => Some(latent.clone()),
+                StepOutput::LatentPreview => Some(latent_to_preview(latent.clone())),
+                StepOutput::Decoded => Some(self.vae_decoder.decode_to_image(latent.clone())),
+            };
+
+            // Call the callback
+            callback(StepInfo {
+                step: step_idx,
+                total_steps,
+                timestep: timesteps[step_idx],
+                output,
+            });
+        }
+
+        latent
+    }
+
+    /// Generate image with step callback
+    pub fn generate_with_callback<F>(
+        &self,
+        prompt: &str,
+        negative_prompt: &str,
+        config: &SampleConfig,
+        step_output: StepOutput,
+        callback: F,
+    ) -> Tensor<B, 4>
+    where
+        F: FnMut(StepInfo<B>),
+    {
+        let conditioning = <Self as DiffusionPipeline<B>>::encode_prompt(self, prompt, negative_prompt);
+        let latent = self.sample_latent_with_callback(&conditioning, config, step_output, callback);
         self.vae_decoder.decode_to_image(latent)
     }
 }

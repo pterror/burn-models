@@ -562,9 +562,7 @@ fn run_sd1x_generate_impl<B: Backend>(
         device: device.clone(),
     };
 
-    // Step 7: Generate image
-    pb.set_message("Generating image...");
-    pb.set_position(60);
+    // Step 7: Generate image with per-step progress
     let start = Instant::now();
     let config = burn_models::SampleConfig {
         width,
@@ -574,7 +572,27 @@ fn run_sd1x_generate_impl<B: Backend>(
         seed: None,
     };
 
-    let image_tensor = pipeline.generate(prompt, negative, &config);
+    // Track step timing for debug mode
+    let mut step_start = Instant::now();
+
+    let image_tensor = pipeline.generate_with_callback(
+        prompt,
+        negative,
+        &config,
+        burn_models::StepOutput::None, // No overhead - just progress
+        |info| {
+            // Update progress bar (60-90% range for generation)
+            let progress = 60 + (info.step + 1) * 30 / info.total_steps;
+            pb.set_position(progress as u64);
+            pb.set_message(format!("Step {}/{}", info.step + 1, info.total_steps));
+
+            if debug_flags.timing {
+                eprintln!("[step {}] {:?}", info.step, step_start.elapsed());
+                step_start = Instant::now();
+            }
+        },
+    );
+
     if debug_flags.timing {
         eprintln!("[timing] inference ({} steps): {:?}", steps, start.elapsed());
     }
