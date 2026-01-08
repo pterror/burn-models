@@ -74,15 +74,15 @@ impl OpenClipConfig {
 /// OpenCLIP Text Encoder
 #[derive(Module, Debug)]
 pub struct OpenClipTextEncoder<B: Backend> {
-    token_embedding: Embedding<B>,
-    position_embedding: Param<Tensor<B, 2>>,
-    layers: Vec<OpenClipTransformerBlock<B>>,
-    final_layer_norm: LayerNorm<B>,
-    text_projection: Linear<B>,
+    pub token_embedding: Embedding<B>,
+    pub position_embedding: Param<Tensor<B, 2>>,
+    pub layers: Vec<OpenClipTransformerBlock<B>>,
+    pub final_layer_norm: LayerNorm<B>,
+    pub text_projection: Linear<B>,
     /// Precomputed causal mask for max context length
-    causal_mask: Tensor<B, 2>,
+    pub causal_mask: Tensor<B, 2>,
     #[module(skip)]
-    context_length: usize,
+    pub context_length: usize,
 }
 
 impl<B: Backend> OpenClipTextEncoder<B> {
@@ -221,10 +221,10 @@ impl<B: Backend> OpenClipTextEncoder<B> {
 /// OpenCLIP Transformer block with self-attention and feed-forward
 #[derive(Module, Debug)]
 pub struct OpenClipTransformerBlock<B: Backend> {
-    attn_norm: LayerNorm<B>,
-    attn: OpenClipMultiHeadSelfAttention<B>,
-    ffn_norm: LayerNorm<B>,
-    ffn: OpenClipFeedForward<B>,
+    pub attn_norm: LayerNorm<B>,
+    pub attn: OpenClipMultiHeadSelfAttention<B>,
+    pub ffn_norm: LayerNorm<B>,
+    pub ffn: OpenClipFeedForward<B>,
 }
 
 impl<B: Backend> OpenClipTransformerBlock<B> {
@@ -255,12 +255,12 @@ impl<B: Backend> OpenClipTransformerBlock<B> {
 /// Multi-head self-attention for OpenCLIP
 #[derive(Module, Debug)]
 pub struct OpenClipMultiHeadSelfAttention<B: Backend> {
-    q_proj: Linear<B>,
-    k_proj: Linear<B>,
-    v_proj: Linear<B>,
-    out_proj: Linear<B>,
-    num_heads: usize,
-    head_dim: usize,
+    pub q_proj: Linear<B>,
+    pub k_proj: Linear<B>,
+    pub v_proj: Linear<B>,
+    pub out_proj: Linear<B>,
+    pub num_heads: usize,
+    pub head_dim: usize,
 }
 
 impl<B: Backend> OpenClipMultiHeadSelfAttention<B> {
@@ -315,8 +315,8 @@ impl<B: Backend> OpenClipMultiHeadSelfAttention<B> {
 /// Feed-forward network with standard GELU activation (not QuickGELU)
 #[derive(Module, Debug)]
 pub struct OpenClipFeedForward<B: Backend> {
-    fc1: Linear<B>,
-    fc2: Linear<B>,
+    pub fc1: Linear<B>,
+    pub fc2: Linear<B>,
 }
 
 impl<B: Backend> OpenClipFeedForward<B> {

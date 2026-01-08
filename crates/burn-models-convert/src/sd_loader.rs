@@ -44,7 +44,7 @@ use burn::prelude::*;
 
 use crate::loader::{LoadError, SafeTensorFile};
 
-use burn_models_clip::{ClipConfig, ClipTextEncoder};
+use burn_models_clip::{ClipConfig, ClipTextEncoder, OpenClipConfig, OpenClipTextEncoder};
 use burn_models_core::groupnorm::GroupNorm;
 use burn_models_core::layernorm::LayerNorm;
 
@@ -75,8 +75,10 @@ pub enum SdLoadError {
 pub struct SdWeightLoader {
     /// Path to the weights (file or directory)
     path: PathBuf,
-    /// Cached text encoder file
+    /// Cached text encoder file (CLIP for SD1.x, or embedders.0 for SDXL)
     text_encoder_file: Option<SafeTensorFile>,
+    /// Cached second text encoder file (OpenCLIP embedders.1 for SDXL)
+    text_encoder_2_file: Option<SafeTensorFile>,
     /// Cached UNet file
     unet_file: Option<SafeTensorFile>,
     /// Cached VAE file
@@ -95,6 +97,7 @@ impl SdWeightLoader {
         Ok(Self {
             path,
             text_encoder_file: None,
+            text_encoder_2_file: None,
             unet_file: None,
             vae_file: None,
         })
@@ -110,6 +113,18 @@ impl SdWeightLoader {
             self.text_encoder_file = Some(SafeTensorFile::open(file_path)?);
         }
         Ok(self.text_encoder_file.as_ref().unwrap())
+    }
+
+    /// Get the SafeTensorFile for second text encoder weights (OpenCLIP for SDXL)
+    fn get_text_encoder_2_file(&mut self) -> Result<&SafeTensorFile, SdLoadError> {
+        if self.text_encoder_2_file.is_none() {
+            let file_path = self.find_component_file(&[
+                "text_encoder_2.safetensors",
+                "text_encoder_2/model.safetensors",
+            ])?;
+            self.text_encoder_2_file = Some(SafeTensorFile::open(file_path)?);
+        }
+        Ok(self.text_encoder_2_file.as_ref().unwrap())
     }
 
     /// Get the SafeTensorFile for UNet weights
@@ -170,6 +185,18 @@ impl SdWeightLoader {
         load_clip_from_file(file, config, device)
     }
 
+    /// Load OpenCLIP text encoder weights (SDXL second encoder)
+    ///
+    /// Returns an OpenClipTextEncoder with loaded weights.
+    pub fn load_open_clip_text_encoder<B: Backend>(
+        &mut self,
+        config: &OpenClipConfig,
+        device: &B::Device,
+    ) -> Result<OpenClipTextEncoder<B>, SdLoadError> {
+        let file = self.get_text_encoder_2_file()?;
+        load_open_clip_from_file(file, config, device)
+    }
+
     /// Load UNet weights
     ///
     /// Returns a UNet with loaded weights.
@@ -180,6 +207,18 @@ impl SdWeightLoader {
     ) -> Result<burn_models_unet::UNet<B>, SdLoadError> {
         let file = self.get_unet_file()?;
         load_unet_from_file(file, config, device)
+    }
+
+    /// Load UNetXL weights (SDXL)
+    ///
+    /// Returns a UNetXL with loaded weights.
+    pub fn load_unet_xl<B: Backend>(
+        &mut self,
+        config: &burn_models_unet::UNetXLConfig,
+        device: &B::Device,
+    ) -> Result<burn_models_unet::UNetXL<B>, SdLoadError> {
+        let file = self.get_unet_file()?;
+        load_unet_xl_from_file(file, config, device)
     }
 
     /// Load VAE decoder weights
@@ -407,6 +446,224 @@ fn load_clip_ffn<B: Backend>(
 }
 
 // ============================================================================
+// OpenCLIP Text Encoder Loading (SDXL second encoder)
+// ============================================================================
+
+/// Load OpenCLIP text encoder weights from a SafeTensorFile
+fn load_open_clip_from_file<B: Backend>(
+    file: &SafeTensorFile,
+    config: &OpenClipConfig,
+    device: &B::Device,
+) -> Result<OpenClipTextEncoder<B>, SdLoadError> {
+    // Detect prefix - could be "model" or "conditioner.embedders.1.model"
+    let prefix = detect_open_clip_prefix(file);
+
+    // Load token embedding
+    let token_emb_key = format!("{}.token_embedding.weight", prefix);
+    let token_emb_weight: Tensor<B, 2> = file.load_f32(&token_emb_key, device)?;
+
+    let mut token_embedding =
+        EmbeddingConfig::new(config.vocab_size, config.embed_dim).init(device);
+    token_embedding.weight = Param::from_tensor(token_emb_weight);
+
+    // Load position embedding (OpenCLIP uses positional_embedding, not position_embedding)
+    let pos_emb_key = format!("{}.positional_embedding", prefix);
+    let position_embedding: Tensor<B, 2> = file.load_f32(&pos_emb_key, device)?;
+    let position_embedding = Param::from_tensor(position_embedding);
+
+    // Load transformer layers
+    let mut layers = Vec::with_capacity(config.num_layers);
+    for i in 0..config.num_layers {
+        let layer = load_open_clip_transformer_layer(file, &prefix, i, config, device)?;
+        layers.push(layer);
+    }
+
+    // Load final layer norm (ln_final)
+    let final_ln_weight_key = format!("{}.ln_final.weight", prefix);
+    let final_ln_bias_key = format!("{}.ln_final.bias", prefix);
+    let final_layer_norm = load_layer_norm(
+        file,
+        &final_ln_weight_key,
+        &final_ln_bias_key,
+        config.embed_dim,
+        device,
+    )?;
+
+    // Load text projection
+    let text_proj_key = format!("{}.text_projection", prefix);
+    let text_proj_weight: Tensor<B, 2> = file.load_f32(&text_proj_key, device)?;
+    let mut text_projection = LinearConfig::new(config.embed_dim, config.projection_dim)
+        .with_bias(false)
+        .init(device);
+    // text_projection is [embed_dim, projection_dim] in OpenCLIP, need to transpose
+    text_projection.weight = Param::from_tensor(text_proj_weight.transpose());
+
+    // Precompute causal mask for max context length
+    let causal_mask =
+        burn_models_clip::attention::precompute_causal_mask(config.context_length, device);
+
+    Ok(OpenClipTextEncoder {
+        token_embedding,
+        position_embedding,
+        layers,
+        final_layer_norm,
+        text_projection,
+        causal_mask,
+        context_length: config.context_length,
+    })
+}
+
+/// Detect the prefix used for OpenCLIP weights
+fn detect_open_clip_prefix(file: &SafeTensorFile) -> String {
+    // Check common prefixes for OpenCLIP
+    let prefixes = ["model", "conditioner.embedders.1.model", "text_encoder_2"];
+
+    for prefix in prefixes {
+        let test_key = format!("{}.token_embedding.weight", prefix);
+        if file.contains(&test_key) {
+            return prefix.to_string();
+        }
+    }
+
+    // Default
+    "model".to_string()
+}
+
+/// Load a single OpenCLIP transformer layer
+fn load_open_clip_transformer_layer<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    layer_idx: usize,
+    config: &OpenClipConfig,
+    device: &B::Device,
+) -> Result<burn_models_clip::open_clip::OpenClipTransformerBlock<B>, SdLoadError> {
+    let layer_prefix = format!("{}.transformer.resblocks.{}", prefix, layer_idx);
+
+    // Load attention layer norm (ln_1)
+    let attn_norm = load_layer_norm(
+        file,
+        &format!("{}.ln_1.weight", layer_prefix),
+        &format!("{}.ln_1.bias", layer_prefix),
+        config.embed_dim,
+        device,
+    )?;
+
+    // Load self-attention (with fused QKV)
+    let attn = load_open_clip_attention(file, &layer_prefix, config, device)?;
+
+    // Load FFN layer norm (ln_2)
+    let ffn_norm = load_layer_norm(
+        file,
+        &format!("{}.ln_2.weight", layer_prefix),
+        &format!("{}.ln_2.bias", layer_prefix),
+        config.embed_dim,
+        device,
+    )?;
+
+    // Load feed-forward
+    let ffn = load_open_clip_ffn(file, &layer_prefix, config, device)?;
+
+    Ok(burn_models_clip::open_clip::OpenClipTransformerBlock {
+        attn_norm,
+        attn,
+        ffn_norm,
+        ffn,
+    })
+}
+
+/// Load OpenCLIP multi-head self-attention with fused QKV
+fn load_open_clip_attention<B: Backend>(
+    file: &SafeTensorFile,
+    layer_prefix: &str,
+    config: &OpenClipConfig,
+    device: &B::Device,
+) -> Result<burn_models_clip::open_clip::OpenClipMultiHeadSelfAttention<B>, SdLoadError> {
+    let embed_dim = config.embed_dim;
+
+    // OpenCLIP uses fused in_proj_weight [3*embed_dim, embed_dim] and in_proj_bias [3*embed_dim]
+    let in_proj_weight_key = format!("{}.attn.in_proj_weight", layer_prefix);
+    let in_proj_bias_key = format!("{}.attn.in_proj_bias", layer_prefix);
+
+    let in_proj_weight: Tensor<B, 2> = file.load_f32(&in_proj_weight_key, device)?;
+    let in_proj_bias: Tensor<B, 1> = file.load_f32(&in_proj_bias_key, device)?;
+
+    // Split fused weights into Q, K, V
+    // in_proj_weight is [3*embed_dim, embed_dim], split along dim 0
+    let q_weight = in_proj_weight.clone().slice([0..embed_dim, 0..embed_dim]);
+    let k_weight = in_proj_weight
+        .clone()
+        .slice([embed_dim..2 * embed_dim, 0..embed_dim]);
+    let v_weight = in_proj_weight.slice([2 * embed_dim..3 * embed_dim, 0..embed_dim]);
+
+    let q_bias = in_proj_bias.clone().slice(0..embed_dim);
+    let k_bias = in_proj_bias.clone().slice(embed_dim..2 * embed_dim);
+    let v_bias = in_proj_bias.slice(2 * embed_dim..3 * embed_dim);
+
+    // Create Q, K, V projections
+    let mut q_proj = LinearConfig::new(embed_dim, embed_dim).init(device);
+    q_proj.weight = Param::from_tensor(q_weight.transpose());
+    q_proj.bias = Some(Param::from_tensor(q_bias));
+
+    let mut k_proj = LinearConfig::new(embed_dim, embed_dim).init(device);
+    k_proj.weight = Param::from_tensor(k_weight.transpose());
+    k_proj.bias = Some(Param::from_tensor(k_bias));
+
+    let mut v_proj = LinearConfig::new(embed_dim, embed_dim).init(device);
+    v_proj.weight = Param::from_tensor(v_weight.transpose());
+    v_proj.bias = Some(Param::from_tensor(v_bias));
+
+    // Load output projection
+    let out_proj = load_linear(
+        file,
+        &format!("{}.attn.out_proj.weight", layer_prefix),
+        Some(&format!("{}.attn.out_proj.bias", layer_prefix)),
+        embed_dim,
+        embed_dim,
+        device,
+    )?;
+
+    Ok(
+        burn_models_clip::open_clip::OpenClipMultiHeadSelfAttention {
+            q_proj,
+            k_proj,
+            v_proj,
+            out_proj,
+            num_heads: config.num_heads,
+            head_dim: embed_dim / config.num_heads,
+        },
+    )
+}
+
+/// Load OpenCLIP feed-forward network
+fn load_open_clip_ffn<B: Backend>(
+    file: &SafeTensorFile,
+    layer_prefix: &str,
+    config: &OpenClipConfig,
+    device: &B::Device,
+) -> Result<burn_models_clip::open_clip::OpenClipFeedForward<B>, SdLoadError> {
+    // OpenCLIP uses c_fc and c_proj naming
+    let fc1 = load_linear(
+        file,
+        &format!("{}.mlp.c_fc.weight", layer_prefix),
+        Some(&format!("{}.mlp.c_fc.bias", layer_prefix)),
+        config.embed_dim,
+        config.intermediate_size,
+        device,
+    )?;
+
+    let fc2 = load_linear(
+        file,
+        &format!("{}.mlp.c_proj.weight", layer_prefix),
+        Some(&format!("{}.mlp.c_proj.bias", layer_prefix)),
+        config.intermediate_size,
+        config.embed_dim,
+        device,
+    )?;
+
+    Ok(burn_models_clip::open_clip::OpenClipFeedForward { fc1, fc2 })
+}
+
+// ============================================================================
 // Helper functions for loading common layer types
 // ============================================================================
 
@@ -571,7 +828,7 @@ fn load_conv2d_strided<B: Backend>(
 
 use burn_models_unet::{
     CrossAttention, DownBlock, Downsample, FeedForward, MidBlock, ResBlock, SpatialTransformer,
-    TransformerBlock, UNet, UNetConfig, UpBlock, Upsample, timestep_freqs,
+    TransformerBlock, UNet, UNetConfig, UNetXL, UNetXLConfig, UpBlock, Upsample, timestep_freqs,
 };
 
 /// Naming convention used in safetensors files
@@ -671,6 +928,42 @@ fn load_unet_from_file<B: Backend>(
         UNetNaming::CompVis => load_unet_compvis(file, &prefix, config, device),
         UNetNaming::HuggingFace => load_unet_hf(file, &prefix, config, device),
     }
+}
+
+/// Load SDXL UNet (UNetXL) from a SafeTensorFile
+///
+/// SDXL UNet differs from SD 1.x:
+/// - Has `label_emb` for pooled text + size conditioning
+/// - Variable transformer depths per resolution (1, 2, 10)
+/// - Uses CompVis naming (input_blocks, etc.)
+///
+/// # Block structure
+/// - input_blocks.0.0 = conv_in (handled separately)
+/// - input_blocks.1.0 = res block, input_blocks.1.1 = transformer (depth 1)
+/// - input_blocks.2.0 = res block, input_blocks.2.1 = transformer
+/// - input_blocks.3.0.op = downsample
+/// - etc.
+fn load_unet_xl_from_file<B: Backend>(
+    _file: &SafeTensorFile,
+    _config: &UNetXLConfig,
+    _device: &B::Device,
+) -> Result<UNetXL<B>, SdLoadError> {
+    // TODO: Implement SDXL UNet loading
+    //
+    // Key differences from SD 1.x:
+    // 1. Load label_emb (add_embed_0, add_embed_2) from model.diffusion_model.label_emb.0.{0,2}
+    // 2. Different transformer depths per resolution (transformer_depth config)
+    // 3. Block structure: DownBlockXL has res1, attn1, res2, attn2 vs DownBlock's vector layout
+    // 4. Need to make DownBlockXL, MidBlockXL, UpBlockXL public in unet_sdxl.rs
+    //
+    // The CompVis naming maps as:
+    // - input_blocks.1-2 = down block 0 (res + attn + res + attn)
+    // - input_blocks.3 = downsample
+    // - input_blocks.4-5 = down block 1
+    // - etc.
+    Err(SdLoadError::MissingTensor(
+        "SDXL UNet loading not yet implemented. Use SD 1.x models for now.".to_string(),
+    ))
 }
 
 /// Load UNet using HuggingFace diffusers naming

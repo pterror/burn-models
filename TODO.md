@@ -390,6 +390,31 @@ See [docs/issues-log.md](docs/issues-log.md) for detailed tracking of issues enc
 |-------|--------|------------|
 | f16 produces NaN in UNet | Low priority (bf16 works) | Use `--precision bf16` (default) or `--precision f32` |
 | CompVis single-file checkpoints | Backlog | Use HuggingFace diffusers format |
+| SDXL CLI not implemented | In progress | Use SD 1.x for now |
+
+### SDXL Weight Loading (Blocking CLI)
+
+The SDXL pipeline code exists in `pipeline/sdxl.rs` but weight loading is partially implemented:
+
+1. **OpenCLIP text encoder** ✅ DONE
+   - Tensor prefix: `conditioner.embedders.1.model.*` (single-file) or `text_encoder_2/*` (diffusers)
+   - Handles fused QKV weights (`in_proj_weight`) by splitting into Q/K/V
+   - Loader: `SdWeightLoader::load_open_clip_text_encoder()`
+
+2. **UNetXL** - TODO (stub returns error)
+   - Tensor prefix: `model.diffusion_model.*` (single-file)
+   - Complex block mapping: DownBlockXL has (res1, attn1, res2, attn2) vs SD 1.x vector layout
+   - Need to make `DownBlockXL`, `MidBlockXL`, `UpBlockXL` public in unet_sdxl.rs
+   - Need to map CompVis naming to Rust block structure:
+     - `input_blocks.1-2` → down block 0 (res + attn + res + attn)
+     - `input_blocks.3.0.op` → downsample
+     - `input_blocks.4-5` → down block 1
+     - etc.
+   - Also needs `label_emb` loading for add_embed
+
+3. **CLI integration** - Wire `run_sdxl_generate()` similar to `run_sd1x_generate()`
+
+For now, use SD 1.x models with `--model sd1x`. SDXL needs UNetXL loader implementation.
 
 ### Upstream Dependencies to Track
 
@@ -400,6 +425,8 @@ See [docs/issues-log.md](docs/issues-log.md) for detailed tracking of issues enc
 When PR is merged and released to crates.io, update cubek dependency and remove f32 attention workaround.
 
 **Current workaround**: UNet casts Q/K/V to f32 before attention, then casts back. This adds ~2x memory overhead for attention tensors (temporary) but allows f16/bf16 model weights to work.
+
+**Performance impact**: f32 attention is ~4x slower than native f16 would be (1.2s/step vs 0.3s/step). This is significant - prioritize removing the workaround once cubek PR is merged.
 
 ## Backlog
 
