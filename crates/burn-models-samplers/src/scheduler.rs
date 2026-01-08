@@ -221,6 +221,59 @@ impl<B: Backend> NoiseSchedule<B> {
     pub fn sqrt_one_minus_alpha_cumprod_at(&self, t: usize) -> Tensor<B, 1> {
         (self.alpha_cumprod_at(t).neg() + 1.0).sqrt()
     }
+
+    /// Convert sigma to the closest training timestep
+    ///
+    /// Given sigma = sqrt((1 - alpha_cumprod) / alpha_cumprod), we can compute
+    /// alpha_cumprod = 1 / (1 + sigma^2), then find the timestep with the closest
+    /// alpha_cumprod value.
+    ///
+    /// This is needed when using non-uniform sigma schedules (e.g., Karras) where
+    /// the inference sigmas don't correspond to evenly-spaced training timesteps.
+    pub fn sigma_to_timestep(&self, sigma: f32) -> usize {
+        // alpha_cumprod = 1 / (1 + sigma^2)
+        let target_alpha = 1.0 / (1.0 + sigma * sigma);
+
+        // Get all alphas_cumprod as f32 for comparison
+        let alphas_data = self.alphas_cumprod.clone().into_data();
+        let alphas: Vec<f32> = alphas_data.convert::<f32>().to_vec().unwrap();
+
+        // Find closest timestep
+        let mut best_t = 0;
+        let mut best_dist = f32::INFINITY;
+        for (t, &alpha) in alphas.iter().enumerate() {
+            let dist = (alpha - target_alpha).abs();
+            if dist < best_dist {
+                best_dist = dist;
+                best_t = t;
+            }
+        }
+
+        best_t
+    }
+
+    /// Convert multiple sigmas to training timesteps
+    pub fn sigmas_to_timesteps(&self, sigmas: &[f32]) -> Vec<usize> {
+        sigmas.iter().map(|&s| self.sigma_to_timestep(s)).collect()
+    }
+
+    /// Get sigma at a specific timestep
+    pub fn sigma_at(&self, t: usize) -> f32 {
+        let alpha_cumprod = self.alpha_cumprod_at(t);
+        let alpha_data = alpha_cumprod.into_data();
+        let alpha: f32 = alpha_data.convert::<f32>().to_vec().unwrap()[0];
+        ((1.0 - alpha) / alpha).sqrt()
+    }
+
+    /// Get the maximum sigma (at t = num_train_steps - 1)
+    pub fn sigma_max(&self) -> f32 {
+        self.sigma_at(self.num_train_steps - 1)
+    }
+
+    /// Get the minimum sigma (at t = 0)
+    pub fn sigma_min(&self) -> f32 {
+        self.sigma_at(0)
+    }
 }
 
 /// Generate timestep sequence for inference
@@ -248,10 +301,34 @@ pub fn sigmas_from_timesteps<B: Backend>(
         .map(|&t| {
             let alpha_cumprod = schedule.alpha_cumprod_at(t);
             let alpha_data = alpha_cumprod.into_data();
-            let alpha: f32 = alpha_data.to_vec().unwrap()[0];
+            let alpha: f32 = alpha_data.convert::<f32>().to_vec().unwrap()[0];
             ((1.0 - alpha) / alpha).sqrt()
         })
         .collect()
+}
+
+// ============================================================================
+// Sigma Schedule Types
+// ============================================================================
+
+/// Sigma schedule type for sampler timestep spacing
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SigmaSchedule {
+    /// Simple/Normal - uniform spacing in timestep space (default for most samplers)
+    #[default]
+    Normal,
+    /// Karras - uses Karras et al. schedule with rho=7.0 for improved quality
+    Karras,
+    /// Exponential - exponential spacing between sigma_max and sigma_min
+    Exponential,
+    /// SGM Uniform - uniform spacing in sigma space (Score-based Generative Models)
+    SgmUniform,
+    /// Beta - beta distribution spacing (more steps at high noise)
+    Beta,
+    /// Linear Quadratic - blend of linear and quadratic spacing
+    LinearQuadratic,
+    /// Custom sigmas provided by user
+    Custom,
 }
 
 /// Apply Karras noise schedule transformation
@@ -277,23 +354,177 @@ pub fn apply_karras_schedule(sigmas: &[f32], rho: f32) -> Vec<f32> {
         .collect()
 }
 
-/// Compute sigmas with optional Karras schedule
+/// Apply exponential schedule transformation
+///
+/// Creates exponentially spaced sigmas between sigma_max and sigma_min.
+pub fn apply_exponential_schedule(sigmas: &[f32]) -> Vec<f32> {
+    if sigmas.is_empty() {
+        return Vec::new();
+    }
+
+    let sigma_min = *sigmas.last().unwrap_or(&0.0);
+    let sigma_max = *sigmas.first().unwrap_or(&1.0);
+    let n = sigmas.len();
+
+    // Avoid log(0)
+    let log_min = (sigma_min.max(1e-10)).ln();
+    let log_max = sigma_max.ln();
+
+    (0..n)
+        .map(|i| {
+            let t = i as f32 / (n - 1).max(1) as f32;
+            (log_max + t * (log_min - log_max)).exp()
+        })
+        .collect()
+}
+
+/// Apply SGM uniform schedule
+///
+/// Uniform spacing in sigma space (used by Score-based Generative Models).
+pub fn apply_sgm_uniform_schedule(sigmas: &[f32]) -> Vec<f32> {
+    if sigmas.is_empty() {
+        return Vec::new();
+    }
+
+    let sigma_min = *sigmas.last().unwrap_or(&0.0);
+    let sigma_max = *sigmas.first().unwrap_or(&1.0);
+    let n = sigmas.len();
+
+    (0..n)
+        .map(|i| {
+            let t = i as f32 / (n - 1).max(1) as f32;
+            sigma_max + t * (sigma_min - sigma_max)
+        })
+        .collect()
+}
+
+/// Apply beta distribution schedule
+///
+/// Uses beta distribution CDF for spacing (concentrates steps at high noise).
+pub fn apply_beta_schedule(sigmas: &[f32], alpha: f32, beta_param: f32) -> Vec<f32> {
+    if sigmas.is_empty() {
+        return Vec::new();
+    }
+
+    let sigma_min = *sigmas.last().unwrap_or(&0.0);
+    let sigma_max = *sigmas.first().unwrap_or(&1.0);
+    let n = sigmas.len();
+
+    // Simplified beta-like spacing using power function
+    // Full beta distribution would require the incomplete beta function
+    (0..n)
+        .map(|i| {
+            let t = i as f32 / (n - 1).max(1) as f32;
+            // Use power function as approximation: t^alpha / (t^alpha + (1-t)^beta)
+            let t_powered = t.powf(alpha);
+            let one_minus_t_powered = (1.0 - t).powf(beta_param);
+            let beta_t = if t_powered + one_minus_t_powered > 0.0 {
+                t_powered / (t_powered + one_minus_t_powered)
+            } else {
+                t
+            };
+            sigma_max + beta_t * (sigma_min - sigma_max)
+        })
+        .collect()
+}
+
+/// Apply linear-quadratic blend schedule
+///
+/// Blends linear and quadratic spacing for a balance of quality and speed.
+pub fn apply_linear_quadratic_schedule(sigmas: &[f32], blend: f32) -> Vec<f32> {
+    if sigmas.is_empty() {
+        return Vec::new();
+    }
+
+    let sigma_min = *sigmas.last().unwrap_or(&0.0);
+    let sigma_max = *sigmas.first().unwrap_or(&1.0);
+    let n = sigmas.len();
+
+    (0..n)
+        .map(|i| {
+            let t = i as f32 / (n - 1).max(1) as f32;
+            let linear = t;
+            let quadratic = t * t;
+            let blended = linear * (1.0 - blend) + quadratic * blend;
+            sigma_max + blended * (sigma_min - sigma_max)
+        })
+        .collect()
+}
+
+/// Compute sigmas with specified schedule type
 ///
 /// This is the main entry point for computing sigmas in samplers.
 /// Appends sigma=0.0 at the end for the final denoising step.
 pub fn compute_sigmas<B: Backend>(
     schedule: &NoiseSchedule<B>,
     timesteps: &[usize],
-    use_karras: bool,
+    sigma_schedule: SigmaSchedule,
 ) -> Vec<f32> {
-    let mut sigmas = sigmas_from_timesteps(schedule, timesteps);
+    // Get base sigmas at the sampler timesteps
+    let base_sigmas = sigmas_from_timesteps(schedule, timesteps);
 
-    if use_karras {
-        sigmas = apply_karras_schedule(&sigmas, 7.0);
-    }
+    let mut sigmas = match sigma_schedule {
+        SigmaSchedule::Normal => base_sigmas,
+        SigmaSchedule::Karras => apply_karras_schedule(&base_sigmas, 7.0),
+        SigmaSchedule::Exponential => apply_exponential_schedule(&base_sigmas),
+        SigmaSchedule::SgmUniform => apply_sgm_uniform_schedule(&base_sigmas),
+        SigmaSchedule::Beta => apply_beta_schedule(&base_sigmas, 0.6, 0.6),
+        SigmaSchedule::LinearQuadratic => apply_linear_quadratic_schedule(&base_sigmas, 0.5),
+        SigmaSchedule::Custom => base_sigmas,
+    };
 
     sigmas.push(0.0);
     sigmas
+}
+
+/// Compute sigmas with optional Karras schedule (legacy API)
+///
+/// For backwards compatibility. Prefer `compute_sigmas` with `SigmaSchedule`.
+pub fn compute_sigmas_karras<B: Backend>(
+    schedule: &NoiseSchedule<B>,
+    timesteps: &[usize],
+    use_karras: bool,
+) -> Vec<f32> {
+    compute_sigmas(
+        schedule,
+        timesteps,
+        if use_karras {
+            SigmaSchedule::Karras
+        } else {
+            SigmaSchedule::Normal
+        },
+    )
+}
+
+/// Create custom sigmas from user-provided values
+///
+/// Allows users to specify exact sigma values for sampling.
+/// If `normalize` is true, scales sigmas so the sum equals the original sum.
+pub fn custom_sigmas(sigmas: Vec<f32>, normalize: bool) -> Vec<f32> {
+    if sigmas.is_empty() {
+        return vec![0.0];
+    }
+
+    let mut result = if normalize {
+        let sum: f32 = sigmas.iter().sum();
+        if sum > 0.0 {
+            sigmas
+                .iter()
+                .map(|s| s / sum * sigmas.len() as f32)
+                .collect()
+        } else {
+            sigmas
+        }
+    } else {
+        sigmas
+    };
+
+    // Ensure we end with 0.0
+    if result.last() != Some(&0.0) {
+        result.push(0.0);
+    }
+
+    result
 }
 
 /// Compute ancestral sampling step parameters

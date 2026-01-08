@@ -17,12 +17,19 @@
 //! // Causal (autoregressive) - for LLMs
 //! let output = flash_attention(query, key, value, FlashAttentionOptions::causal())?;
 //! ```
+//!
+//! # Known Issues
+//!
+//! **f16/bf16 is broken on CUDA** - cubek-attention 0.1.0-pre.1 has an alignment bug
+//! where half-precision types fail with `assertion failed: unit_tile.layout.num_cols % line_size == 0`.
+//! Use f32 precision until this is fixed upstream.
+//! See: https://github.com/tracel-ai/cubek/pull/55
 
 use burn::tensor::{DType, Shape};
 use burn_cubecl::{CubeRuntime, ops::numeric::empty_device_dtype, tensor::CubeTensor};
 use cubek::attention::{
     definition::{AccumulatorPrecision, AttentionGlobalTypes, AttentionOptions},
-    launch::Strategy,
+    launch::{BlueprintStrategy, Strategy},
 };
 
 // Re-export the error type for consumers
@@ -81,7 +88,12 @@ impl FlashAttentionOptions {
 ///
 /// # Errors
 ///
-/// Returns `AttentionSetupError` if the kernel cannot be launched (e.g., hardware limitations).
+/// Returns `AttentionSetupError` if the kernel cannot be launched.
+///
+/// # Panics
+///
+/// **Will panic on CUDA with f16/bf16 inputs** due to a bug in cubek-attention 0.1.0-pre.1.
+/// Use f32 precision until https://github.com/tracel-ai/cubek/pull/55 is merged.
 pub fn flash_attention<R: CubeRuntime>(
     query: CubeTensor<R>,
     key: CubeTensor<R>,
@@ -142,8 +154,11 @@ fn flash_attention_impl<R: CubeRuntime>(
         out: out.dtype.into(),
     };
 
+    // Use Inferred strategy - let cubek compute optimal tile sizes
+    let strategy = Strategy::Unit(BlueprintStrategy::Inferred(()));
+
     cubek::attention::launch::launch_ref::<R>(
-        Strategy::Unit(cubek::attention::launch::BlueprintStrategy::Inferred(())),
+        strategy,
         client,
         &query.as_handle_ref(),
         &key.as_handle_ref(),

@@ -63,6 +63,56 @@
 
 ## Backlog
 
+### Precision Support
+
+**bf16 (Brain Float16)** - IMPLEMENTED ✅
+- Same exponent range as f32, so no overflow issues
+- Native on Ampere+ GPUs (RTX 30xx/40xx)
+- Now the default precision
+- Use `--precision bf16` (or just default)
+
+**f32 + Flash Attention** - Working ✅
+- Stable, recommended for quality
+- Use `--precision f32`
+
+**Half-precision (f16/bf16) with Flash Attention** - BLOCKED (cubek-attention bug)
+- cubek-attention 0.1.0-pre.1 has alignment bug with BOTH f16 and bf16
+- Unit(Inferred) strategy: Assertion fails `unit_tile.layout.num_cols % line_size == 0`
+- Root cause: hardcoded tile_size=4 doesn't align with CUDA's line_size=8 for half-precision
+- **Workaround**: Using simple flash attention impl in `burn-models-cubecl/src/flash_attention.rs`
+- **Upstream fix**: https://github.com/tracel-ai/cubek/pull/55
+- Once merged and released, switch to cubek-attention for better performance
+
+**Tasks**:
+- [x] Add `--flash-attention` CLI flag (default enabled)
+- [x] bf16 support with Cargo feature flags
+- [x] Create pipeline variant using `CrossAttentionCubeCL` with flash attention
+- [ ] Test bf16 generation on different GPU architectures
+
+**Low Priority** (f16 overflow requires upcasting ALL matmuls, not just attention):
+- [ ] Upcast all Linear layers for f16 stability (wrap nn::Linear with f32 compute)
+- [ ] Upcast GroupNorm variance calculation
+- [ ] Mixed precision pipeline (different precision per component)
+
+**Cargo feature flags for precision presets**:
+```bash
+# Default: all precisions
+cargo build -p burn-models-cli --features cuda
+
+# bf16 only (minimal binary)
+cargo build -p burn-models-cli --no-default-features --features cuda,preset-fast
+
+# f32 only (no JIT overhead)
+cargo build -p burn-models-cli --no-default-features --features cuda,preset-quality
+```
+
+### Code Organization (High Priority)
+- [ ] Split pipeline.rs (~2k lines) into separate files by model:
+  - sd1x.rs (SD 1.x pipelines)
+  - sdxl.rs (SDXL pipelines)
+  - common.rs (shared traits, utilities)
+- [ ] Split large model files generally (unet_sd.rs, blocks.rs, etc.)
+
 - [x] SD1x CLI defaults: 512x512 (native resolution), f16 precision (2026-01-07)
 
 ### Samplers
@@ -330,6 +380,25 @@ See `docs/cubecl-guide.md` for implementation details.
 - [ ] LLaDA - Large Language Diffusion with Masking, bidirectional diffusion LM
 - [ ] TESS-2 - Simplex diffusion LM, reward guidance for alignment
 
+## Issues Log
+
+See [docs/issues-log.md](docs/issues-log.md) for detailed tracking of issues encountered and their resolution, including root cause analysis and prevention strategies.
+
+### Current Open Issues
+
+| Issue | Status | Workaround |
+|-------|--------|------------|
+| f16 produces NaN in UNet | Low priority (bf16 works) | Use `--precision bf16` (default) or `--precision f32` |
+| CompVis single-file checkpoints | Backlog | Use HuggingFace diffusers format |
+
+### Upstream Dependencies to Track
+
+| Dependency | Issue | Status | Last Checked |
+|------------|-------|--------|--------------|
+| cubek-attention | [PR #55](https://github.com/tracel-ai/cubek/pull/55) - f16/bf16 tile alignment | Pending review | 2026-01-08 |
+
+When PR is merged and released to crates.io, update cubek dependency and switch from simple flash attention to cubek-attention.
+
 ## Postmortems
 
 ### Dead Code Patterns (2026-01-06)
@@ -430,11 +499,31 @@ Comparison: ComfyUI does SDXL @ 20 steps in ~26s (~1.3s/step). We're 37% slower 
   - Remaining issues:
     1. VAE decoder lacks CompVis naming support (separate file prefixes)
     2. Needs testing with actual CompVis checkpoint
-- [ ] Investigate white output regression (2026-01-07)
-  - After optional attention changes, output is pure white (all 255)
-  - May be f16-specific type conversion issue with timestep/freq tensors
-  - Test with --precision f32 to isolate
-  - Check if TensorData::new(vec![t as f32]) converts correctly to f16 backend
+- [x] Investigate garbled image output (2026-01-07) - **FIXED**
+  - Output had structure but psychedelic colors (heat-map appearance)
+  - **ROOT CAUSE**: Missing `post_quant_conv` layer in VAE decoder
+  - **Fix applied:**
+    1. Added `post_quant_conv: Option<Conv2d<B>>` field to `Decoder` struct
+    2. Load `first_stage_model.post_quant_conv` (1x1 conv, [4,4,1,1]) in decoder loader
+    3. Apply `post_quant_conv` to latent before main decoder path in `forward_raw()`
+  - diffusers VAE has two extra convolutions:
+    - `quant_conv` (8→8 channels) - applied after encoder
+    - `post_quant_conv` (4→4 channels) - applied before decoder
+  - Our decoder now matches diffusers output exactly (verified via roundtrip test)
+  - **Other fixes applied during investigation:**
+    1. VAE `num_res_blocks` changed from 2 to 3 (matches safetensors)
+    2. GroupNorm uses `var_bias` (population variance, N) to match PyTorch
+    3. VAE clamping added to [-1, 1] before conversion
+  - **Remaining issues:**
+    1. f16 produces NaN in UNet (f32 works) - see "f16 NaN Investigation" below
+- [x] Fix tokenizer non-determinism (2026-01-07)
+  - **ROOT CAUSE**: HashMap iteration order is non-deterministic in Rust
+  - Vocab was built by iterating `byte_encoder.values()` and `bpe_ranks.keys()`
+  - Each run assigned different token IDs to the same tokens
+  - **Fix**: Sort iterators before assigning vocab indices
+    - `byte_chars.sort()` for byte-level tokens
+    - Sort `bpe_ranks` by rank for merged tokens
+  - Verified: Token IDs now match official CLIP vocab.json exactly
 
 ### f16 Performance Investigation (2026-01-07)
 
@@ -514,6 +603,52 @@ linear.weight = Param::from_tensor(weight.transpose());
 
 Previously observed errors like `[1, 77, 768] @ [1, 3072, 768]` were from missing transpose.
 
+
+### f16 NaN Investigation (2026-01-07)
+
+**Symptom**: f16 precision produces NaN from step 0 in UNet forward pass.
+```
+[debug] Step 0 t=666 - noise_uncond: min=inf, max=-inf, mean=NaN
+```
+
+**Root cause**: Attention softmax overflow in f16.
+- f16 max representable: ~65504
+- exp(x) overflows for x > ~11
+- Attention scores before softmax can exceed this when Q·K^T accumulates
+
+**Attempted fix #1**: Manual stable softmax (max-subtraction before exp):
+```rust
+let attn_max = attn.clone().max_dim(3);
+let attn = (attn - attn_max).exp();
+let attn = attn.clone() / attn.clone().sum_dim(3);
+```
+Applied to: UNet CrossAttention, CLIP attention, VAE SelfAttention.
+**Result**: Still NaN. Overflow likely in matmul itself, not softmax.
+
+**Solution: Flash Attention**
+
+Flash attention solves this by:
+1. Tiled computation - never materializes full attention matrix
+2. f32 accumulation - even with f16 inputs, uses f32 for intermediate sums
+3. Online softmax - computes softmax incrementally without storing full scores
+
+**Implementation exists** in `burn-models-unet/src/cubecl.rs`:
+- `CrossAttentionCubeCL<R: CubeRuntime>` - uses `flash_attention()` from cubek
+- Uses `AccumulatorPrecision::Strict(f32)` internally
+- `convert_crossattention()` converts standard CrossAttention
+
+**Not wired up yet** to main pipeline because:
+1. CubeCL blocks use `CubeBackend<R, f32, i32, u32>` (hardcoded f32 inputs)
+2. Would need to support f16 input with f32 accumulation
+3. Pipeline creates standard UNet, doesn't use CubeCL variants
+
+**To wire up flash attention**:
+1. Modify CubeCL CrossAttention to accept f16 inputs
+2. Add `--flash-attention` flag to CLI
+3. Convert UNet attention layers to CubeCL at pipeline construction
+4. Or: Make attention implementation pluggable via trait
+
+**Workaround**: Use f32 precision (works correctly, ~5x slower than f16 would be)
 
 ### Session Notes (2026-01-06) - CubeCL Phase 4
 

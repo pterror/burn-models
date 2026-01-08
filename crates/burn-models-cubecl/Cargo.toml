@@ -17,6 +17,7 @@ burn-cubecl = "0.20.0-pre.6"
 cubecl = { version = "=0.9.0-pre.6", default-features = false, features = ["stdlib"] }
 cubek = { version = "=0.1.0-pre.1", features = ["attention"] }
 burn = { workspace = true }
+half = { workspace = true }
 
 # Optional backends
 burn-cpu = { version = "0.20.0-pre.6", optional = true, default-features = false }
