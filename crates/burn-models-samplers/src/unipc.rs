@@ -6,7 +6,7 @@
 use burn::prelude::*;
 use std::collections::VecDeque;
 
-use crate::scheduler::{NoiseSchedule, compute_sigmas, sampler_timesteps};
+use crate::scheduler::{NoiseSchedule, compute_sigmas_karras, sampler_timesteps};
 
 /// Configuration for UniPC sampler
 #[derive(Debug, Clone)]
@@ -56,7 +56,7 @@ impl<B: Backend> UniPcSampler<B> {
     /// Create a new UniPC sampler
     pub fn new(config: UniPcConfig, schedule: &NoiseSchedule<B>) -> Self {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
-        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let sigmas = compute_sigmas_karras(schedule, &timesteps, config.use_karras_sigmas);
 
         Self {
             config,

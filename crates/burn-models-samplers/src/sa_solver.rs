@@ -7,7 +7,7 @@ use burn::prelude::*;
 use std::collections::VecDeque;
 
 use crate::scheduler::{
-    NoiseSchedule, adams_bashforth_coefficients, compute_sigmas, sampler_timesteps,
+    NoiseSchedule, adams_bashforth_coefficients, compute_sigmas_karras, sampler_timesteps,
 };
 
 /// Configuration for SA-Solver
@@ -70,7 +70,7 @@ impl<B: Backend> SaSolver<B> {
     /// Create a new SA-Solver
     pub fn new(config: SaSolverConfig, schedule: &NoiseSchedule<B>) -> Self {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
-        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let sigmas = compute_sigmas_karras(schedule, &timesteps, config.use_karras_sigmas);
 
         Self {
             config,

@@ -1,0 +1,90 @@
+{
+  "name": "dpm_2m_k_diffusion_reference",
+  "description": "Reference values for DPM++ 2M using k-diffusion formulation",
+  "formulas": {
+    "first_order": "x_next = (sigma_next / sigma) * x + (1 - exp(-h)) * denoised",
+    "second_order": "denoised_d = (1 + 1/(2r)) * denoised - (1/(2r)) * old_denoised; x_next = (sigma_next / sigma) * x + (1 - exp(-h)) * denoised_d",
+    "where": {
+      "t": "-log(sigma)",
+      "h": "t_next - t",
+      "r": "h_prev / h"
+    }
+  },
+  "test_cases": [
+    {
+      "name": "step_0",
+      "sigma": 14.614599999999992,
+      "sigma_next": 6.082772091237882,
+      "expected": {
+        "t": -2.6820210290473736,
+        "t_next": -1.8054605281296752,
+        "h": 0.8765605009176984
+      }
+    },
+    {
+      "name": "step_1",
+      "sigma": 6.082772091237882,
+      "sigma_next": 2.2326903992392197,
+      "expected": {
+        "t": -1.8054605281296752,
+        "t_next": -0.8032073153454763,
+        "h": 1.0022532127841988,
+        "t_prev": -2.6820210290473736,
+        "h_prev": 0.8765605009176984,
+        "r": 0.8745898638555285
+      },
+      "old_sigma": 14.614599999999992
+    },
+    {
+      "name": "step_2",
+      "sigma": 2.2326903992392197,
+      "sigma_next": 0.692866683360781,
+      "expected": {
+        "t": -0.8032073153454763,
+        "t_next": 0.36691767440165884,
+        "h": 1.170124989747135,
+        "t_prev": -1.8054605281296752,
+        "h_prev": 1.0022532127841988,
+        "r": 0.8565351749310016
+      },
+      "old_sigma": 6.082772091237882
+    },
+    {
+      "name": "step_3",
+      "sigma": 0.692866683360781,
+      "sigma_next": 0.16987527081455212,
+      "expected": {
+        "t": 0.36691767440165884,
+        "t_next": 1.7726908123131178,
+        "h": 1.4057731379114589,
+        "t_prev": -0.8032073153454763,
+        "h_prev": 1.170124989747135,
+        "r": 0.8323711402577918
+      },
+      "old_sigma": 2.2326903992392197
+    }
+  ],
+  "coefficient_verification": {
+    "description": "For r = h_prev / h, coeff = 1/(2r)",
+    "examples": [
+      {
+        "r": 1.0,
+        "coeff": 0.5,
+        "d_weight": 1.5,
+        "old_d_weight": -0.5
+      },
+      {
+        "r": 0.5,
+        "coeff": 1.0,
+        "d_weight": 2.0,
+        "old_d_weight": -1.0
+      },
+      {
+        "r": 2.0,
+        "coeff": 0.25,
+        "d_weight": 1.25,
+        "old_d_weight": -0.25
+      }
+    ]
+  }
+}

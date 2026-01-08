@@ -2,11 +2,13 @@
 //!
 //! Implements the simple Euler method for ODE-based sampling.
 //! Fast and produces good results with ~20-30 steps.
+//!
+//! Uses k-diffusion formulation for ComfyUI/A1111 compatibility.
 
 use burn::prelude::*;
 
 use crate::scheduler::{
-    NoiseSchedule, init_noise_latent, sampler_timesteps, sigmas_from_timesteps,
+    NoiseSchedule, SigmaSchedule, compute_sigmas, init_noise_latent, sampler_timesteps,
 };
 
 /// Euler sampler configuration
@@ -14,12 +16,21 @@ use crate::scheduler::{
 pub struct EulerConfig {
     /// Number of inference steps
     pub num_inference_steps: usize,
+    /// Sigma schedule type
+    pub sigma_schedule: SigmaSchedule,
+    /// Eta for ancestral sampling (0 = deterministic, 1 = full noise)
+    pub eta: f32,
+    /// Noise scale multiplier
+    pub s_noise: f32,
 }
 
 impl Default for EulerConfig {
     fn default() -> Self {
         Self {
             num_inference_steps: 30,
+            sigma_schedule: SigmaSchedule::Karras,
+            eta: 1.0,
+            s_noise: 1.0,
         }
     }
 }
@@ -43,8 +54,7 @@ impl<B: Backend> EulerSampler<B> {
     /// Create a new Euler sampler
     pub fn new(schedule: NoiseSchedule<B>, config: EulerConfig, _device: &B::Device) -> Self {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
-        let mut sigmas = sigmas_from_timesteps(&schedule, &timesteps);
-        sigmas.push(0.0);
+        let sigmas = compute_sigmas(&schedule, &timesteps, config.sigma_schedule);
 
         Self {
             timesteps,
@@ -113,6 +123,7 @@ impl<B: Backend> EulerSampler<B> {
 /// Euler Ancestral sampler
 ///
 /// Adds noise during sampling for more stochastic results.
+/// Uses k-diffusion formulation with configurable eta.
 /// Often produces more creative outputs.
 pub struct EulerAncestralSampler<B: Backend> {
     /// Timestep indices for sampling
@@ -121,6 +132,10 @@ pub struct EulerAncestralSampler<B: Backend> {
     sigmas: Vec<f32>,
     /// Number of inference steps
     num_inference_steps: usize,
+    /// Eta for noise injection (0 = ODE, 1 = full ancestral)
+    eta: f32,
+    /// Noise scale multiplier
+    s_noise: f32,
     /// Phantom for backend type
     _marker: std::marker::PhantomData<B>,
 }
@@ -129,13 +144,14 @@ impl<B: Backend> EulerAncestralSampler<B> {
     /// Create a new Euler Ancestral sampler
     pub fn new(schedule: NoiseSchedule<B>, config: EulerConfig, _device: &B::Device) -> Self {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
-        let mut sigmas = sigmas_from_timesteps(&schedule, &timesteps);
-        sigmas.push(0.0);
+        let sigmas = compute_sigmas(&schedule, &timesteps, config.sigma_schedule);
 
         Self {
             timesteps,
             sigmas,
             num_inference_steps: config.num_inference_steps,
+            eta: config.eta,
+            s_noise: config.s_noise,
             _marker: std::marker::PhantomData,
         }
     }
@@ -150,7 +166,14 @@ impl<B: Backend> EulerAncestralSampler<B> {
         self.num_inference_steps
     }
 
+    /// Get the sigma values
+    pub fn sigmas(&self) -> &[f32] {
+        &self.sigmas
+    }
+
     /// Performs one Euler Ancestral step with stochastic noise injection
+    ///
+    /// Uses k-diffusion formulation with configurable eta for noise injection.
     pub fn step(
         &self,
         latent: Tensor<B, 4>,
@@ -160,32 +183,39 @@ impl<B: Backend> EulerAncestralSampler<B> {
         let sigma = self.sigmas[step_index];
         let sigma_next = self.sigmas[step_index + 1];
 
-        if sigma_next == 0.0 {
-            // Last step: just denoise
-            return latent.clone() - noise_pred * sigma;
-        }
-
-        // Compute sigma_up and sigma_down
-        let sigma_up =
-            (sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2)) / sigma.powi(2)).sqrt();
-        let sigma_down = (sigma_next.powi(2) - sigma_up.powi(2)).sqrt();
-
         // Compute denoised
         let denoised = latent.clone() - noise_pred.clone() * sigma;
 
+        if sigma_next == 0.0 {
+            // Last step: just return denoised
+            return denoised;
+        }
+
+        // Compute sigma_up and sigma_down using k-diffusion formula
+        // sigma_up = min(sigma_next, eta * sqrt(sigma_next^2 * (sigma^2 - sigma_next^2) / sigma^2))
+        let sigma_up_unscaled =
+            (sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2)) / sigma.powi(2)).sqrt();
+        let sigma_up = (self.eta * sigma_up_unscaled).min(sigma_next) * self.s_noise;
+        let sigma_down = (sigma_next.powi(2) - sigma_up.powi(2)).sqrt();
+
+        // Derivative d = (x - denoised) / sigma
+        let derivative = (latent.clone() - denoised.clone()) / sigma;
+
         // Euler step to sigma_down
         let dt = sigma_down - sigma;
-        let derivative = (latent.clone() - denoised.clone()) / sigma;
-        let latent_down = latent + derivative * dt;
+        let mut result = latent + derivative * dt;
 
         // Add noise
-        let noise: Tensor<B, 4> = Tensor::random(
-            latent_down.shape(),
-            burn::tensor::Distribution::Normal(0.0, 1.0),
-            &latent_down.device(),
-        );
+        if sigma_up > 0.0 {
+            let noise: Tensor<B, 4> = Tensor::random(
+                result.shape(),
+                burn::tensor::Distribution::Normal(0.0, 1.0),
+                &result.device(),
+            );
+            result = result + noise * sigma_up;
+        }
 
-        latent_down + noise * sigma_up
+        result
     }
 
     /// Initializes a random noise latent scaled for the first sigma

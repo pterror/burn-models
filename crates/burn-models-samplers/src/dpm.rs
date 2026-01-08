@@ -2,11 +2,17 @@
 //!
 //! Implements DPM-Solver++ for high-quality, fast sampling.
 //! These samplers typically produce excellent results in 15-25 steps.
+//!
+//! Uses the k-diffusion formulation (ComfyUI/A1111 compatible) for numerical
+//! stability and ecosystem compatibility.
+//!
+//! For algorithm details comparing the paper vs k-diffusion formulations,
+//! see `docs/samplers.md` in the repository.
 
 use burn::prelude::*;
 
 use crate::scheduler::{
-    NoiseSchedule, init_noise_latent, sampler_timesteps, sigmas_from_timesteps,
+    NoiseSchedule, SigmaSchedule, compute_sigmas, init_noise_latent, sampler_timesteps,
 };
 
 /// DPM++ configuration
@@ -16,6 +22,10 @@ pub struct DpmConfig {
     pub num_inference_steps: usize,
     /// Solver order (1 = Euler-like, 2 = second-order)
     pub solver_order: usize,
+    /// Sigma schedule type
+    pub sigma_schedule: SigmaSchedule,
+    /// Enable debug logging (sigma values, step details)
+    pub debug: bool,
 }
 
 impl Default for DpmConfig {
@@ -23,6 +33,8 @@ impl Default for DpmConfig {
         Self {
             num_inference_steps: 25,
             solver_order: 2,
+            sigma_schedule: SigmaSchedule::Karras,
+            debug: false,
         }
     }
 }
@@ -42,14 +54,15 @@ pub struct DpmPlusPlusSampler<B: Backend> {
     prev_sample: Option<Tensor<B, 4>>,
     /// Previous sigma
     prev_sigma: Option<f32>,
+    /// Debug logging enabled
+    debug: bool,
 }
 
 impl<B: Backend> DpmPlusPlusSampler<B> {
     /// Create a new DPM++ 2M sampler
     pub fn new(schedule: NoiseSchedule<B>, config: DpmConfig, _device: &B::Device) -> Self {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
-        let mut sigmas = sigmas_from_timesteps(&schedule, &timesteps);
-        sigmas.push(0.0);
+        let sigmas = compute_sigmas(&schedule, &timesteps, config.sigma_schedule);
 
         Self {
             timesteps,
@@ -57,6 +70,7 @@ impl<B: Backend> DpmPlusPlusSampler<B> {
             num_inference_steps: config.num_inference_steps,
             prev_sample: None,
             prev_sigma: None,
+            debug: config.debug,
         }
     }
 
@@ -76,7 +90,14 @@ impl<B: Backend> DpmPlusPlusSampler<B> {
         self.prev_sigma = None;
     }
 
+    /// Get the sigma values
+    pub fn sigmas(&self) -> &[f32] {
+        &self.sigmas
+    }
+
     /// Perform one DPM++ 2M step
+    ///
+    /// Uses the k-diffusion formulation for compatibility with ComfyUI/A1111.
     pub fn step(
         &mut self,
         latent: Tensor<B, 4>,
@@ -86,54 +107,137 @@ impl<B: Backend> DpmPlusPlusSampler<B> {
         let sigma = self.sigmas[step_index];
         let sigma_next = self.sigmas[step_index + 1];
 
-        // Convert to log domain for numerical stability
-        let lambda_t = -(sigma.ln());
-        let lambda_next = if sigma_next > 0.0 {
+        if self.debug {
+            eprintln!(
+                "[dpm++] step {} sigma={:.6} sigma_next={:.6}",
+                step_index, sigma, sigma_next
+            );
+        }
+
+        // t = -log(sigma) in k-diffusion notation
+        let t = -(sigma.ln());
+        let t_next = if sigma_next > 0.0 {
             -(sigma_next.ln())
         } else {
             f32::INFINITY
         };
-
-        let h = lambda_next - lambda_t;
+        let h = t_next - t;
 
         // Compute denoised estimate (x0 prediction)
+        // For sigma-parameterized models: x0 = x_t - sigma * epsilon
         let denoised = latent.clone() - noise_pred.clone() * sigma;
 
-        if self.prev_sample.is_none() {
-            // First-order (Euler-like)
-            let result = if sigma_next > 0.0 {
-                // x_{t-1} = sigma_{t-1} / sigma_t * x_t + (1 - sigma_{t-1}/sigma_t) * denoised
-                let ratio = sigma_next / sigma;
-                latent.clone() * ratio + denoised.clone() * (1.0 - ratio)
-            } else {
-                denoised.clone()
-            };
+        // sigma ratio for the update
+        let sigma_ratio = sigma_next / sigma;
+
+        // Use second-order when r is reasonable, fall back to first-order for extreme cases
+        if self.prev_sample.is_none() || sigma_next == 0.0 {
+            // First-order step or final step
+            // x = (sigma_next / sigma) * x - expm1(-h) * denoised
+            // expm1(-h) = exp(-h) - 1, so -expm1(-h) = 1 - exp(-h)
+            let exp_neg_h = (-h).exp();
+            let result = latent.clone() * sigma_ratio + denoised.clone() * (1.0 - exp_neg_h);
 
             self.prev_sample = Some(denoised);
             self.prev_sigma = Some(sigma);
 
             result
         } else {
-            // Second-order (multistep)
+            // Second-order multistep (2M)
             let prev_denoised = self.prev_sample.take().unwrap();
             let prev_sigma = self.prev_sigma.take().unwrap();
 
-            let lambda_prev = -(prev_sigma.ln());
-            let h_prev = lambda_t - lambda_prev;
-            let r = h / h_prev;
+            let t_prev = -(prev_sigma.ln());
+            let h_prev = t - t_prev;
+            let r = h_prev / h;
 
-            // Second-order correction
-            let d0 = denoised.clone();
-            let d1 = (denoised.clone() - prev_denoised) / r;
+            if self.debug {
+                eprintln!("[dpm++] h={:.6} h_prev={:.6} r={:.6}", h, h_prev, r);
+            }
 
-            let result = if sigma_next > 0.0 {
-                let ratio = sigma_next / sigma;
-                latent.clone() * ratio + d0.clone() * (1.0 - ratio) + d1 * (1.0 - ratio) * (h / 2.0)
-            } else {
-                d0.clone() + d1 * (h / 2.0)
-            };
+            // Second-order correction using k-diffusion formula:
+            // denoised_d = (1 + 1/(2r)) * denoised - (1/(2r)) * old_denoised
+            let coeff = 1.0 / (2.0 * r);
+            let denoised_d = denoised.clone() * (1.0 + coeff) - prev_denoised * coeff;
 
-            self.prev_sample = Some(d0);
+            // x = (sigma_next / sigma) * x - expm1(-h) * denoised_d
+            let exp_neg_h = (-h).exp();
+            let result = latent.clone() * sigma_ratio + denoised_d * (1.0 - exp_neg_h);
+
+            self.prev_sample = Some(denoised);
+            self.prev_sigma = Some(sigma);
+
+            result
+        }
+    }
+
+    /// Perform one DPM++ 2M step with pre-computed denoised value
+    ///
+    /// This variant is used when denoised is computed externally using a scaled input
+    /// (c_in * x), while the step formula uses unscaled x for the sigma_ratio term.
+    /// This matches ComfyUI's k-diffusion formulation exactly.
+    pub fn step_with_denoised(
+        &mut self,
+        latent: Tensor<B, 4>,
+        denoised: Tensor<B, 4>,
+        step_index: usize,
+    ) -> Tensor<B, 4> {
+        let sigma = self.sigmas[step_index];
+        let sigma_next = self.sigmas[step_index + 1];
+
+        if self.debug {
+            eprintln!(
+                "[dpm++] step {} sigma={:.6} sigma_next={:.6}",
+                step_index, sigma, sigma_next
+            );
+        }
+
+        // t = -log(sigma) in k-diffusion notation
+        let t = -(sigma.ln());
+        let t_next = if sigma_next > 0.0 {
+            -(sigma_next.ln())
+        } else {
+            f32::INFINITY
+        };
+        let h = t_next - t;
+
+        // sigma ratio for the update
+        let sigma_ratio = sigma_next / sigma;
+
+        if self.prev_sample.is_none() || sigma_next == 0.0 {
+            // First-order step or final step
+            // x = (sigma_next / sigma) * x - expm1(-h) * denoised
+            // expm1(-h) = exp(-h) - 1, so -expm1(-h) = 1 - exp(-h)
+            let exp_neg_h = (-h).exp();
+            let result = latent * sigma_ratio + denoised.clone() * (1.0 - exp_neg_h);
+
+            self.prev_sample = Some(denoised);
+            self.prev_sigma = Some(sigma);
+
+            result
+        } else {
+            // Second-order multistep (2M)
+            let prev_denoised = self.prev_sample.take().unwrap();
+            let prev_sigma = self.prev_sigma.take().unwrap();
+
+            let t_prev = -(prev_sigma.ln());
+            let h_prev = t - t_prev;
+            let r = h_prev / h;
+
+            if self.debug {
+                eprintln!("[dpm++] h={:.6} h_prev={:.6} r={:.6}", h, h_prev, r);
+            }
+
+            // Second-order correction using k-diffusion formula:
+            // denoised_d = (1 + 1/(2r)) * denoised - (1/(2r)) * old_denoised
+            let coeff = 1.0 / (2.0 * r);
+            let denoised_d = denoised.clone() * (1.0 + coeff) - prev_denoised * coeff;
+
+            // x = (sigma_next / sigma) * x - expm1(-h) * denoised_d
+            let exp_neg_h = (-h).exp();
+            let result = latent * sigma_ratio + denoised_d * (1.0 - exp_neg_h);
+
+            self.prev_sample = Some(denoised);
             self.prev_sigma = Some(sigma);
 
             result
@@ -153,10 +257,12 @@ impl<B: Backend> DpmPlusPlusSampler<B> {
     }
 }
 
-/// DPM++ SDE Sampler (stochastic differential equation variant)
+/// DPM++ 2M SDE Sampler (second-order multistep with stochastic noise)
 ///
-/// Adds controlled noise during sampling for more diverse results.
-/// Good for creative generation with ~25-30 steps.
+/// Combines the second-order multistep method of DPM++ 2M with stochastic
+/// noise injection. Uses k-diffusion formulation for ComfyUI/A1111 compatibility.
+///
+/// Good for creative generation with ~20-30 steps.
 pub struct DpmPlusPlusSdeSampler<B: Backend> {
     /// Timestep indices for sampling
     timesteps: Vec<usize>,
@@ -164,14 +270,18 @@ pub struct DpmPlusPlusSdeSampler<B: Backend> {
     sigmas: Vec<f32>,
     /// Number of inference steps
     num_inference_steps: usize,
-    /// Noise multiplier (0.0 = deterministic, 1.0 = full noise)
+    /// Noise multiplier (0.0 = deterministic, 1.0 = full SDE)
     eta: f32,
-    /// Phantom for backend type
-    _marker: std::marker::PhantomData<B>,
+    /// Noise scale multiplier
+    s_noise: f32,
+    /// Previous denoised for second-order correction
+    prev_denoised: Option<Tensor<B, 4>>,
+    /// Previous sigma
+    prev_sigma: Option<f32>,
 }
 
 impl<B: Backend> DpmPlusPlusSdeSampler<B> {
-    /// Create a new DPM++ SDE sampler
+    /// Create a new DPM++ 2M SDE sampler
     pub fn new(
         schedule: NoiseSchedule<B>,
         config: DpmConfig,
@@ -179,16 +289,23 @@ impl<B: Backend> DpmPlusPlusSdeSampler<B> {
         _device: &B::Device,
     ) -> Self {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
-        let mut sigmas = sigmas_from_timesteps(&schedule, &timesteps);
-        sigmas.push(0.0);
+        let sigmas = compute_sigmas(&schedule, &timesteps, config.sigma_schedule);
 
         Self {
             timesteps,
             sigmas,
             num_inference_steps: config.num_inference_steps,
             eta,
-            _marker: std::marker::PhantomData,
+            s_noise: 1.0,
+            prev_denoised: None,
+            prev_sigma: None,
         }
+    }
+
+    /// Create with custom noise scale
+    pub fn with_s_noise(mut self, s_noise: f32) -> Self {
+        self.s_noise = s_noise;
+        self
     }
 
     /// Returns the timestep indices used for sampling
@@ -201,9 +318,23 @@ impl<B: Backend> DpmPlusPlusSdeSampler<B> {
         self.num_inference_steps
     }
 
-    /// Performs one DPM++ SDE step with stochastic noise injection
+    /// Get the sigma values
+    pub fn sigmas(&self) -> &[f32] {
+        &self.sigmas
+    }
+
+    /// Reset state for new generation
+    pub fn reset(&mut self) {
+        self.prev_denoised = None;
+        self.prev_sigma = None;
+    }
+
+    /// Performs one DPM++ 2M SDE step
+    ///
+    /// Uses k-diffusion formulation with exponential integrators and proper
+    /// noise injection for SDE sampling.
     pub fn step(
-        &self,
+        &mut self,
         latent: Tensor<B, 4>,
         noise_pred: Tensor<B, 4>,
         step_index: usize,
@@ -211,32 +342,64 @@ impl<B: Backend> DpmPlusPlusSdeSampler<B> {
         let sigma = self.sigmas[step_index];
         let sigma_next = self.sigmas[step_index + 1];
 
+        // Compute denoised estimate
+        let denoised = latent.clone() - noise_pred.clone() * sigma;
+
         if sigma_next == 0.0 {
-            // Last step: just denoise
-            return latent.clone() - noise_pred * sigma;
+            // Last step: just return denoised
+            return denoised;
         }
 
-        // Compute noise to inject
-        let sigma_up = (self.eta * sigma_next.powi(2) * (sigma.powi(2) - sigma_next.powi(2))
-            / sigma.powi(2))
-        .sqrt();
-        let sigma_down = (sigma_next.powi(2) - sigma_up.powi(2)).sqrt();
+        // Convert to log-SNR space (t = -log(sigma))
+        let t = -(sigma.ln());
+        let t_next = -(sigma_next.ln());
+        let h = t_next - t;
 
-        // Compute denoised
-        let denoised = latent.clone() - noise_pred * sigma;
+        // Compute noise injection parameters
+        // sigma_up = sigma_next * sqrt(1 - exp(-2*eta*h))
+        let exp_neg_2_eta_h = (-2.0 * self.eta * h).exp();
+        let sigma_up = sigma_next * (1.0 - exp_neg_2_eta_h).max(0.0).sqrt() * self.s_noise;
 
-        // DPM step to sigma_down
-        let ratio = sigma_down / sigma;
-        let latent_down = latent * ratio + denoised * (1.0 - ratio);
+        // Effective sigma to step to (accounting for noise we'll add)
+        // sigma_down = sigma_next * exp(-eta*h)
+        let exp_neg_eta_h = (-self.eta * h).exp();
+        let sigma_down = sigma_next * exp_neg_eta_h;
+
+        // Second-order correction using previous denoised
+        let denoised_d =
+            if let (Some(prev_d), Some(prev_s)) = (&self.prev_denoised, self.prev_sigma) {
+                let t_prev = -(prev_s.ln());
+                let h_prev = t - t_prev;
+                let r = h_prev / h;
+
+                // k-diffusion formula: (1 + 1/(2r)) * d - (1/(2r)) * d_prev
+                let coeff = 1.0 / (2.0 * r);
+                denoised.clone() * (1.0 + coeff) - prev_d.clone() * coeff
+            } else {
+                denoised.clone()
+            };
+
+        // Store for next step
+        self.prev_denoised = Some(denoised);
+        self.prev_sigma = Some(sigma);
+
+        // DPM++ update with exponential integrator
+        // x = (sigma_down / sigma) * x + (1 - exp(-h)) * denoised_d
+        let sigma_ratio = sigma_down / sigma;
+        let exp_neg_h = (-h).exp();
+        let mut result = latent * sigma_ratio + denoised_d * (1.0 - exp_neg_h);
 
         // Add noise
-        let noise: Tensor<B, 4> = Tensor::random(
-            latent_down.shape(),
-            burn::tensor::Distribution::Normal(0.0, 1.0),
-            &latent_down.device(),
-        );
+        if sigma_up > 0.0 {
+            let noise: Tensor<B, 4> = Tensor::random(
+                result.shape(),
+                burn::tensor::Distribution::Normal(0.0, 1.0),
+                &result.device(),
+            );
+            result = result + noise * sigma_up;
+        }
 
-        latent_down + noise * sigma_up
+        result
     }
 
     /// Initializes a random noise latent scaled for the first sigma

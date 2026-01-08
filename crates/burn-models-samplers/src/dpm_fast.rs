@@ -2,6 +2,8 @@
 //!
 //! DPM-Solver with adaptive step size selection for efficient sampling.
 //! DPM Fast uses fixed fast schedules, while DPM Adaptive adjusts step sizes.
+//!
+//! Uses k-diffusion formulation for ComfyUI/A1111 compatibility.
 
 use burn::prelude::*;
 
@@ -70,7 +72,7 @@ impl<B: Backend> DpmFastSampler<B> {
         &self.timesteps
     }
 
-    /// Perform one DPM Fast step
+    /// Perform one DPM Fast step (k-diffusion formulation)
     pub fn step(
         &self,
         model_output: Tensor<B, 4>,
@@ -80,16 +82,22 @@ impl<B: Backend> DpmFastSampler<B> {
         let sigma = self.sigmas[timestep_idx];
         let sigma_next = self.sigmas[timestep_idx + 1];
 
-        if sigma_next == 0.0 {
-            return sample.clone() - model_output * sigma;
-        }
-
         // Denoised prediction
         let denoised = sample.clone() - model_output.clone() * sigma;
 
-        // DPM-Solver update (first order for speed)
+        if sigma_next == 0.0 {
+            return denoised;
+        }
+
+        // k-diffusion formulation with exponential integrators
+        let t = -(sigma.ln());
+        let t_next = -(sigma_next.ln());
+        let h = t_next - t;
+
         let sigma_ratio = sigma_next / sigma;
-        sample.clone() * sigma_ratio + denoised * (1.0 - sigma_ratio)
+        let exp_neg_h = (-h).exp();
+
+        sample * sigma_ratio + denoised * (1.0 - exp_neg_h)
     }
 }
 
@@ -206,23 +214,41 @@ impl<B: Backend> DpmAdaptiveSampler<B> {
         // Denoised prediction (x0 estimate)
         let denoised = sample.clone() - model_output.clone() * sigma;
 
-        // DPM-Solver first-order step
+        // k-diffusion formulation with exponential integrators
+        let t = -(sigma.ln());
+        let t_next = -(sigma_next.ln());
+        let h_step = t_next - t;
+
         let sigma_ratio = sigma_next / sigma;
-        let next_sample = sample.clone() * sigma_ratio + denoised.clone() * (1.0 - sigma_ratio);
+        let exp_neg_h = (-h_step).exp();
+        let next_sample = sample.clone() * sigma_ratio + denoised.clone() * (1.0 - exp_neg_h);
 
         // Error estimation using change in denoised prediction
         let (error_ratio, accepted) = if let Some(ref prev_d) = self.prev_denoised {
             // Estimate second derivative from denoised prediction change
             let d_diff = denoised.clone() - prev_d.clone();
-            let d_diff_data: Vec<f32> = d_diff.clone().abs().mean().into_data().to_vec().unwrap();
+            let d_diff_data: Vec<f32> = d_diff
+                .clone()
+                .abs()
+                .mean()
+                .into_data()
+                .convert::<f32>()
+                .to_vec()
+                .unwrap();
             let mean_diff = d_diff_data[0];
 
             // Scale estimate for error: |h^2 * d''| ≈ |h * delta_d|
             let error_estimate = (h.abs() * mean_diff).abs();
 
             // Tolerance: atol + rtol * |denoised|
-            let denoised_data: Vec<f32> =
-                denoised.clone().abs().mean().into_data().to_vec().unwrap();
+            let denoised_data: Vec<f32> = denoised
+                .clone()
+                .abs()
+                .mean()
+                .into_data()
+                .convert::<f32>()
+                .to_vec()
+                .unwrap();
             let tolerance = self.config.atol + self.config.rtol * denoised_data[0];
 
             let ratio = error_estimate / tolerance.max(1e-10);

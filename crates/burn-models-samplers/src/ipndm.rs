@@ -47,7 +47,7 @@ fn extract_alphas_cumprod<B: Backend>(schedule: &NoiseSchedule<B>) -> Vec<f32> {
     for t in 0..schedule.num_train_steps {
         let alpha_cumprod = schedule.alpha_cumprod_at(t);
         let alpha_data = alpha_cumprod.into_data();
-        let alpha: f32 = alpha_data.to_vec().unwrap()[0];
+        let alpha: f32 = alpha_data.convert::<f32>().to_vec().unwrap()[0];
         alphas_cumprod.push(alpha);
     }
     alphas_cumprod

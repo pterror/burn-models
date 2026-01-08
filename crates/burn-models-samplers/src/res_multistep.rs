@@ -6,7 +6,9 @@
 use burn::prelude::*;
 use std::collections::VecDeque;
 
-use crate::scheduler::{NoiseSchedule, compute_sigmas, get_ancestral_step, sampler_timesteps};
+use crate::scheduler::{
+    NoiseSchedule, compute_sigmas_karras, get_ancestral_step, sampler_timesteps,
+};
 
 /// Configuration for Res Multistep sampler
 #[derive(Debug, Clone)]
@@ -53,7 +55,7 @@ impl<B: Backend> ResMultistepSampler<B> {
     /// Create a new Res Multistep sampler
     pub fn new(config: ResMultistepConfig, schedule: &NoiseSchedule<B>) -> Self {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
-        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let sigmas = compute_sigmas_karras(schedule, &timesteps, config.use_karras_sigmas);
 
         Self {
             config,
@@ -199,7 +201,7 @@ impl<B: Backend> ResMultistepSdeSampler<B> {
     /// Create a new Res Multistep SDE sampler
     pub fn new(config: ResMultistepConfig, schedule: &NoiseSchedule<B>, eta: f32) -> Self {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
-        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let sigmas = compute_sigmas_karras(schedule, &timesteps, config.use_karras_sigmas);
 
         Self {
             config,

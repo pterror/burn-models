@@ -2,29 +2,36 @@
 //!
 //! Second-order singlestep DPM-Solver++ with ancestral sampling.
 //! The "2S" indicates second-order singlestep (vs multistep).
+//!
+//! Uses k-diffusion formulation for ComfyUI/A1111 compatibility.
 
 use burn::prelude::*;
 
 use crate::guidance::apply_cfg_plus_plus;
-use crate::scheduler::{NoiseSchedule, compute_sigmas, get_ancestral_step, sampler_timesteps};
+use crate::scheduler::{
+    NoiseSchedule, SigmaSchedule, compute_sigmas, get_ancestral_step, sampler_timesteps,
+};
 
 /// Configuration for DPM++ 2S Ancestral sampler
 #[derive(Debug, Clone)]
 pub struct Dpm2sAncestralConfig {
     /// Number of inference steps
     pub num_inference_steps: usize,
-    /// Use Karras sigmas
-    pub use_karras_sigmas: bool,
+    /// Sigma schedule type
+    pub sigma_schedule: SigmaSchedule,
     /// S_noise parameter for noise scaling
     pub s_noise: f32,
+    /// Eta for ancestral sampling (0 = deterministic, 1 = full noise)
+    pub eta: f32,
 }
 
 impl Default for Dpm2sAncestralConfig {
     fn default() -> Self {
         Self {
             num_inference_steps: 25,
-            use_karras_sigmas: true,
+            sigma_schedule: SigmaSchedule::Karras,
             s_noise: 1.0,
+            eta: 1.0,
         }
     }
 }
@@ -32,7 +39,7 @@ impl Default for Dpm2sAncestralConfig {
 /// DPM++ 2S Ancestral Sampler
 ///
 /// Second-order singlestep DPM-Solver++ with noise injection.
-/// Uses a midpoint method with ancestral sampling for creative outputs.
+/// Uses k-diffusion formulation with exponential integrators.
 pub struct Dpm2sAncestralSampler<B: Backend> {
     config: Dpm2sAncestralConfig,
     timesteps: Vec<usize>,
@@ -44,7 +51,7 @@ impl<B: Backend> Dpm2sAncestralSampler<B> {
     /// Create a new DPM++ 2S Ancestral sampler
     pub fn new(config: Dpm2sAncestralConfig, schedule: &NoiseSchedule<B>) -> Self {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
-        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let sigmas = compute_sigmas(schedule, &timesteps, config.sigma_schedule);
 
         Self {
             config,
@@ -59,7 +66,12 @@ impl<B: Backend> Dpm2sAncestralSampler<B> {
         &self.timesteps
     }
 
-    /// Perform one DPM++ 2S Ancestral step
+    /// Get the sigma values
+    pub fn sigmas(&self) -> &[f32] {
+        &self.sigmas
+    }
+
+    /// Perform one DPM++ 2S Ancestral step (k-diffusion formulation)
     ///
     /// This is a singlestep method, requiring two model evaluations per step.
     /// The first evaluation is at the current point, the second at the midpoint.
@@ -73,46 +85,56 @@ impl<B: Backend> Dpm2sAncestralSampler<B> {
         let sigma = self.sigmas[timestep_idx];
         let sigma_next = self.sigmas[timestep_idx + 1];
 
-        if sigma_next == 0.0 {
-            return sample.clone() - model_output * sigma;
-        }
-
-        let (sigma_down, sigma_up) = get_ancestral_step(sigma, sigma_next, 1.0);
-
         // Denoised prediction (x0)
         let denoised = sample.clone() - model_output.clone() * sigma;
 
-        // Compute midpoint sigma
-        let sigma_mid = (sigma * sigma_down).sqrt();
+        if sigma_next == 0.0 {
+            return denoised;
+        }
+
+        let (sigma_down, sigma_up) = get_ancestral_step(sigma, sigma_next, self.config.eta);
+
+        // k-diffusion formulation using exponential integrators
+        let t = -(sigma.ln());
+        let t_next = -(sigma_down.ln());
+        let h = t_next - t;
+        let r = 0.5; // Midpoint
 
         let result = if let Some(model_output_mid) = model_output_2 {
             // Full second-order step with midpoint evaluation
-            let denoised_mid = sample.clone() - model_output_mid * sigma_mid;
+            // First compute midpoint sample
+            let sigma_s = (-(t + r * h)).exp();
+            let exp_neg_rh = (-(r * h)).exp();
 
-            // Second-order update
-            let t = -sigma.ln();
-            let t_next = -sigma_down.ln();
-            let h = t_next - t;
+            // x_2 = (sigma_s / sigma) * x - (1 - exp(-r*h)) * denoised
+            let x_mid = sample.clone() * (sigma_s / sigma) + denoised.clone() * (1.0 - exp_neg_rh);
 
-            let d0 = denoised.clone();
-            let d1 = denoised_mid;
-            let coeff = h / 2.0;
+            // Midpoint denoised
+            let denoised_mid = x_mid - model_output_mid * sigma_s;
 
-            (sample.clone() / sigma) * sigma_down
-                + d0 * (1.0 - sigma_down / sigma) * (1.0 - coeff)
-                + d1 * (1.0 - sigma_down / sigma) * coeff
+            // Full step with correction
+            let exp_neg_h = (-h).exp();
+            let sigma_ratio = sigma_down / sigma;
+
+            // x = (sigma_down / sigma) * x - (1 - exp(-h)) * denoised
+            //   + ((1 - exp(-h)) - 2*(1 - exp(-r*h))) * (denoised_mid - denoised)
+            let base = sample.clone() * sigma_ratio + denoised.clone() * (1.0 - exp_neg_h);
+            let correction_coeff = (1.0 - exp_neg_h) - 2.0 * (1.0 - exp_neg_rh);
+            base + (denoised_mid - denoised) * correction_coeff
         } else {
-            // First-order fallback (Euler)
-            let derivative = (sample.clone() - denoised.clone()) / sigma;
-            sample.clone() + derivative * (sigma_down - sigma)
+            // First-order fallback (Euler with exponential integrator)
+            let exp_neg_h = (-h).exp();
+            let sigma_ratio = sigma_down / sigma;
+            sample.clone() * sigma_ratio + denoised * (1.0 - exp_neg_h)
         };
 
         // Add ancestral noise
         if sigma_up > 0.0 {
-            let device = result.device();
-            let shape = result.dims();
-            let noise: Tensor<B, 4> =
-                Tensor::random(shape, burn::tensor::Distribution::Normal(0.0, 1.0), &device);
+            let noise: Tensor<B, 4> = Tensor::random(
+                result.shape(),
+                burn::tensor::Distribution::Normal(0.0, 1.0),
+                &result.device(),
+            );
             result + noise * (sigma_up * self.config.s_noise)
         } else {
             result
@@ -123,14 +145,21 @@ impl<B: Backend> Dpm2sAncestralSampler<B> {
     pub fn get_midpoint_sigma(&self, timestep_idx: usize) -> f32 {
         let sigma = self.sigmas[timestep_idx];
         let sigma_next = self.sigmas[timestep_idx + 1];
-        let (sigma_down, _) = get_ancestral_step(sigma, sigma_next, 1.0);
-        (sigma * sigma_down).sqrt()
+        let (sigma_down, _) = get_ancestral_step(sigma, sigma_next, self.config.eta);
+
+        // Midpoint in log-sigma space
+        let t = -(sigma.ln());
+        let t_next = -(sigma_down.ln());
+        let h = t_next - t;
+        let t_mid = t + 0.5 * h;
+        (-t_mid).exp()
     }
 }
 
 /// DPM++ 2S Ancestral CFG++ Sampler
 ///
 /// Combines DPM++ 2S Ancestral with CFG++ guidance.
+/// Uses k-diffusion formulation.
 pub struct Dpm2sAncestralCfgPlusPlusSampler<B: Backend> {
     config: Dpm2sAncestralConfig,
     timesteps: Vec<usize>,
@@ -148,7 +177,7 @@ impl<B: Backend> Dpm2sAncestralCfgPlusPlusSampler<B> {
         guidance_rescale: f32,
     ) -> Self {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
-        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let sigmas = compute_sigmas(schedule, &timesteps, config.sigma_schedule);
 
         Self {
             config,
@@ -162,6 +191,11 @@ impl<B: Backend> Dpm2sAncestralCfgPlusPlusSampler<B> {
     /// Get the timesteps
     pub fn timesteps(&self) -> &[usize] {
         &self.timesteps
+    }
+
+    /// Get the sigma values
+    pub fn sigmas(&self) -> &[f32] {
+        &self.sigmas
     }
 
     /// Apply CFG++ guidance in denoised space
@@ -183,7 +217,7 @@ impl<B: Backend> Dpm2sAncestralCfgPlusPlusSampler<B> {
         )
     }
 
-    /// Perform one step with pre-computed guided x0
+    /// Perform one step with pre-computed guided x0 (k-diffusion formulation)
     pub fn step(
         &self,
         x0_guided: Tensor<B, 4>,
@@ -198,18 +232,24 @@ impl<B: Backend> Dpm2sAncestralCfgPlusPlusSampler<B> {
         }
 
         // Ancestral step
-        let (sigma_down, sigma_up) = get_ancestral_step(sigma, sigma_next, 1.0);
+        let (sigma_down, sigma_up) = get_ancestral_step(sigma, sigma_next, self.config.eta);
 
-        // Euler step
-        let derivative = (sample.clone() - x0_guided.clone()) / sigma;
-        let result = sample + derivative * (sigma_down - sigma);
+        // k-diffusion formulation using exponential integrators
+        let t = -(sigma.ln());
+        let t_next = -(sigma_down.ln());
+        let h = t_next - t;
+        let exp_neg_h = (-h).exp();
+        let sigma_ratio = sigma_down / sigma;
+
+        let result = sample * sigma_ratio + x0_guided * (1.0 - exp_neg_h);
 
         // Add noise
         if sigma_up > 0.0 {
-            let device = result.device();
-            let shape = result.dims();
-            let noise: Tensor<B, 4> =
-                Tensor::random(shape, burn::tensor::Distribution::Normal(0.0, 1.0), &device);
+            let noise: Tensor<B, 4> = Tensor::random(
+                result.shape(),
+                burn::tensor::Distribution::Normal(0.0, 1.0),
+                &result.device(),
+            );
             result + noise * (sigma_up * self.config.s_noise)
         } else {
             result
@@ -225,7 +265,8 @@ mod tests {
     fn test_dpm2s_ancestral_config_default() {
         let config = Dpm2sAncestralConfig::default();
         assert_eq!(config.num_inference_steps, 25);
-        assert!(config.use_karras_sigmas);
+        assert_eq!(config.sigma_schedule, SigmaSchedule::Karras);
         assert_eq!(config.s_noise, 1.0);
+        assert_eq!(config.eta, 1.0);
     }
 }

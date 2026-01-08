@@ -4,7 +4,9 @@
 
 use burn::prelude::*;
 
-use crate::scheduler::{NoiseSchedule, compute_sigmas, sampler_timesteps, sigmas_from_timesteps};
+use crate::scheduler::{
+    NoiseSchedule, compute_sigmas_karras, sampler_timesteps, sigmas_from_timesteps,
+};
 
 /// Configuration for DPM2 sampler
 #[derive(Debug, Clone)]
@@ -47,7 +49,7 @@ impl<B: Backend> Dpm2Sampler<B> {
     /// Create a new DPM2 sampler
     pub fn new(config: Dpm2Config, schedule: &NoiseSchedule<B>) -> Self {
         let timesteps = sampler_timesteps(config.num_inference_steps, schedule.num_train_steps);
-        let sigmas = compute_sigmas(schedule, &timesteps, config.use_karras_sigmas);
+        let sigmas = compute_sigmas_karras(schedule, &timesteps, config.use_karras_sigmas);
 
         Self {
             timesteps,

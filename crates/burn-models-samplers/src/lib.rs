@@ -105,7 +105,9 @@ pub use lms::{LmsConfig, LmsSampler};
 pub use res_multistep::{ResMultistepConfig, ResMultistepSampler, ResMultistepSdeSampler};
 pub use sa_solver::{SaSolver, SaSolverConfig, TauType};
 pub use scheduler::{
-    NoiseSchedule, PredictionType, ScheduleConfig, apply_karras_schedule, compute_sigmas,
+    NoiseSchedule, PredictionType, ScheduleConfig, SigmaSchedule, apply_beta_schedule,
+    apply_exponential_schedule, apply_karras_schedule, apply_linear_quadratic_schedule,
+    apply_sgm_uniform_schedule, compute_sigmas, compute_sigmas_karras, custom_sigmas,
     epsilon_to_sample, epsilon_to_v, get_ancestral_step, sampler_timesteps, sigmas_from_timesteps,
     to_epsilon, to_sample, v_to_epsilon, v_to_sample,
 };
