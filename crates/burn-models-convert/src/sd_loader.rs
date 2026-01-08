@@ -193,6 +193,18 @@ impl SdWeightLoader {
         let file = self.get_vae_file()?;
         load_vae_decoder_from_file(file, config, device)
     }
+
+    /// Load VAE encoder weights
+    ///
+    /// Returns an Encoder with loaded weights.
+    pub fn load_vae_encoder<B: Backend>(
+        &mut self,
+        config: &burn_models_vae::EncoderConfig,
+        device: &B::Device,
+    ) -> Result<burn_models_vae::Encoder<B>, SdLoadError> {
+        let file = self.get_vae_file()?;
+        load_vae_encoder_from_file(file, config, device)
+    }
 }
 
 /// Load CLIP text encoder from a SafeTensorFile
@@ -2053,7 +2065,15 @@ fn load_vae_decoder_from_file<B: Backend>(
     config: &burn_models_vae::DecoderConfig,
     device: &B::Device,
 ) -> Result<burn_models_vae::Decoder<B>, SdLoadError> {
+    let debug = std::env::var("SD_DEBUG").is_ok();
     let prefix = detect_vae_decoder_prefix(file);
+    if debug {
+        eprintln!("[vae_loader] Using prefix: {}", prefix);
+        eprintln!(
+            "[vae_loader] Config: base_ch={}, ch_mult={:?}, num_res_blocks={}",
+            config.base_channels, config.channel_mult, config.num_res_blocks
+        );
+    }
     let ch = config.base_channels;
     let ch_mult = &config.channel_mult;
 
@@ -2097,11 +2117,19 @@ fn load_vae_decoder_from_file<B: Backend>(
     for (i, &mult) in ch_mult.iter().rev().enumerate() {
         let out_ch = ch * mult;
         let upsample = i < ch_mult.len() - 1; // Don't upsample on last block
+        let block_idx = ch_mult.len() - 1 - i; // Map to original block index (3, 2, 1, 0)
+
+        if debug {
+            eprintln!(
+                "[vae_loader] Loading up_block[{}] from up.{}: in_ch={}, out_ch={}, upsample={}",
+                i, block_idx, in_ch, out_ch, upsample
+            );
+        }
 
         let block = load_vae_decoder_block(
             file,
             &prefix,
-            ch_mult.len() - 1 - i, // Map to original block index (3, 2, 1, 0)
+            block_idx,
             in_ch,
             out_ch,
             config.num_res_blocks,
@@ -2132,7 +2160,48 @@ fn load_vae_decoder_from_file<B: Backend>(
         device,
     )?;
 
+    // Load post_quant_conv if present (1x1 conv applied to latent before decoding)
+    // The key is at the VAE root level, not under decoder
+    let vae_root = if prefix.contains(".decoder") {
+        prefix.replace(".decoder", "")
+    } else {
+        "first_stage_model".to_string()
+    };
+    let post_quant_key = format!("{}.post_quant_conv.weight", vae_root);
+    let post_quant_conv = if file.contains(&post_quant_key) {
+        if debug {
+            eprintln!(
+                "[vae_loader] Loading post_quant_conv from {}",
+                post_quant_key
+            );
+        }
+        let weight: Tensor<B, 4> = file.load_f32(&post_quant_key, device)?;
+        let bias_key = format!("{}.post_quant_conv.bias", vae_root);
+        let bias: Option<Tensor<B, 1>> = if file.contains(&bias_key) {
+            Some(file.load_f32(&bias_key, device)?)
+        } else {
+            None
+        };
+
+        // post_quant_conv is typically [4, 4, 1, 1] - a 1x1 conv
+        let [out_ch, in_ch, _, _] = weight.dims();
+        let mut conv = Conv2dConfig::new([in_ch, out_ch], [1, 1])
+            .with_bias(bias.is_some())
+            .init(device);
+        conv.weight = Param::from_tensor(weight);
+        if let Some(b) = bias {
+            conv.bias = Some(Param::from_tensor(b));
+        }
+        Some(conv)
+    } else {
+        if debug {
+            eprintln!("[vae_loader] No post_quant_conv found");
+        }
+        None
+    };
+
     Ok(burn_models_vae::Decoder {
+        post_quant_conv,
         conv_in,
         mid_block1,
         mid_attn,
@@ -2373,6 +2442,215 @@ fn load_vae_upsample<B: Backend>(
     )?;
 
     Ok(burn_models_vae::Upsample { conv })
+}
+
+// =============================================================================
+// VAE Encoder Loading
+// =============================================================================
+
+/// Load VAE encoder from a SafeTensorFile
+fn load_vae_encoder_from_file<B: Backend>(
+    file: &SafeTensorFile,
+    config: &burn_models_vae::EncoderConfig,
+    device: &B::Device,
+) -> Result<burn_models_vae::Encoder<B>, SdLoadError> {
+    let debug = std::env::var("SD_DEBUG").is_ok();
+    let prefix = detect_vae_encoder_prefix(file);
+    if debug {
+        eprintln!("[vae_encoder_loader] Using prefix: {}", prefix);
+        eprintln!(
+            "[vae_encoder_loader] Config: base_ch={}, ch_mult={:?}, num_res_blocks={}",
+            config.base_channels, config.channel_mult, config.num_res_blocks
+        );
+    }
+    let ch = config.base_channels;
+    let ch_mult = &config.channel_mult;
+
+    // Input conv: in_channels -> base_channels
+    let conv_in = load_conv2d(
+        file,
+        &format!("{}.conv_in.weight", prefix),
+        Some(&format!("{}.conv_in.bias", prefix)),
+        config.in_channels,
+        ch,
+        3,
+        1,
+        device,
+    )?;
+
+    // Down blocks
+    let mut down_blocks = Vec::new();
+    let mut in_ch = ch;
+
+    for (i, &mult) in ch_mult.iter().enumerate() {
+        let out_ch = ch * mult;
+        let downsample = i < ch_mult.len() - 1; // Don't downsample on last block
+
+        if debug {
+            eprintln!(
+                "[vae_encoder_loader] Loading down_block[{}] from down.{}: in_ch={}, out_ch={}, downsample={}",
+                i, i, in_ch, out_ch, downsample
+            );
+        }
+
+        let block = load_vae_encoder_block(
+            file,
+            &prefix,
+            i,
+            in_ch,
+            out_ch,
+            config.num_res_blocks,
+            downsample,
+            device,
+        )?;
+        down_blocks.push(block);
+        in_ch = out_ch;
+    }
+
+    // Mid blocks
+    let mid_ch = ch * ch_mult[ch_mult.len() - 1];
+    let mid_block1 = load_vae_resnet_block(
+        file,
+        &format!("{}.mid.block_1", prefix),
+        mid_ch,
+        mid_ch,
+        device,
+    )?;
+    let mid_attn =
+        load_vae_self_attention(file, &format!("{}.mid.attn_1", prefix), mid_ch, device)?;
+    let mid_block2 = load_vae_resnet_block(
+        file,
+        &format!("{}.mid.block_2", prefix),
+        mid_ch,
+        mid_ch,
+        device,
+    )?;
+
+    // Output layers
+    let norm_out = load_group_norm(
+        file,
+        &format!("{}.norm_out.weight", prefix),
+        &format!("{}.norm_out.bias", prefix),
+        32,
+        device,
+    )?;
+
+    let conv_out = load_conv2d(
+        file,
+        &format!("{}.conv_out.weight", prefix),
+        Some(&format!("{}.conv_out.bias", prefix)),
+        mid_ch,
+        config.latent_channels,
+        3,
+        1,
+        device,
+    )?;
+
+    Ok(burn_models_vae::Encoder {
+        conv_in,
+        down_blocks,
+        mid_block1,
+        mid_attn,
+        mid_block2,
+        norm_out,
+        conv_out,
+    })
+}
+
+/// Detect the prefix used for VAE encoder weights
+fn detect_vae_encoder_prefix(file: &SafeTensorFile) -> String {
+    let prefixes = ["encoder", "vae.encoder", "first_stage_model.encoder"];
+
+    for prefix in prefixes {
+        let test_key = format!("{}.conv_in.weight", prefix);
+        if file.contains(&test_key) {
+            return prefix.to_string();
+        }
+    }
+
+    "encoder".to_string()
+}
+
+/// Load a VAE encoder block with residual blocks and optional downsampling
+#[allow(clippy::too_many_arguments)]
+fn load_vae_encoder_block<B: Backend>(
+    file: &SafeTensorFile,
+    vae_prefix: &str,
+    block_idx: usize,
+    in_ch: usize,
+    out_ch: usize,
+    num_blocks: usize,
+    downsample: bool,
+    device: &B::Device,
+) -> Result<burn_models_vae::encoder::EncoderBlock<B>, SdLoadError> {
+    let block_prefix = format!("{}.down.{}", vae_prefix, block_idx);
+
+    let mut res_blocks = Vec::with_capacity(num_blocks);
+
+    // First block handles channel change
+    res_blocks.push(load_vae_resnet_block(
+        file,
+        &format!("{}.block.0", block_prefix),
+        in_ch,
+        out_ch,
+        device,
+    )?);
+
+    // Remaining blocks maintain channels
+    for i in 1..num_blocks {
+        res_blocks.push(load_vae_resnet_block(
+            file,
+            &format!("{}.block.{}", block_prefix, i),
+            out_ch,
+            out_ch,
+            device,
+        )?);
+    }
+
+    let downsample_layer = if downsample {
+        Some(load_vae_downsample(
+            file,
+            &format!("{}.downsample", block_prefix),
+            out_ch,
+            device,
+        )?)
+    } else {
+        None
+    };
+
+    Ok(burn_models_vae::encoder::EncoderBlock {
+        res_blocks,
+        downsample: downsample_layer,
+    })
+}
+
+/// Load a VAE Downsample layer (strided conv with asymmetric padding)
+fn load_vae_downsample<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    channels: usize,
+    device: &B::Device,
+) -> Result<burn_models_vae::encoder::Downsample<B>, SdLoadError> {
+    // VAE downsample uses asymmetric padding (0, 1) for proper spatial halving
+    let weight: Tensor<B, 4> = file
+        .load_f32(&format!("{}.conv.weight", prefix), device)
+        .map_err(|e| SdLoadError::MissingTensor(format!("{}.conv.weight: {}", prefix, e)))?;
+
+    let mut conv = Conv2dConfig::new([channels, channels], [3, 3])
+        .with_stride([2, 2])
+        .with_padding(PaddingConfig2d::Explicit(0, 1))
+        .with_bias(true)
+        .init(device);
+
+    conv.weight = Param::from_tensor(weight);
+
+    let bias_key = format!("{}.conv.bias", prefix);
+    if file.contains(&bias_key) {
+        let bias: Tensor<B, 1> = file.load_f32(&bias_key, device)?;
+        conv.bias = Some(Param::from_tensor(bias));
+    }
+
+    Ok(burn_models_vae::encoder::Downsample { conv })
 }
 
 #[cfg(test)]

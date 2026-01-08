@@ -67,8 +67,9 @@ impl<B: Backend> GroupNorm<B> {
         let x = x.reshape([batch, self.num_groups, group_size * height * width]);
 
         // Compute mean and variance over the last dimension
+        // Use var_bias (population variance, N) to match PyTorch's GroupNorm
         let mean = x.clone().mean_dim(2); // [batch, num_groups]
-        let var = x.clone().var(2); // [batch, num_groups]
+        let var = x.clone().var_bias(2); // [batch, num_groups] - population variance without Bessel's correction
 
         // Expand for broadcasting: [batch, num_groups, 1]
         let mean = mean.unsqueeze::<3>(); // [batch, num_groups, 1]

@@ -33,7 +33,7 @@ impl Default for DecoderConfig {
             out_channels: 3,
             base_channels: 128,
             channel_mult: vec![1, 2, 4, 4],
-            num_res_blocks: 2,
+            num_res_blocks: 3, // SD 1.x VAE has 3 res blocks per up block
         }
     }
 }
@@ -66,6 +66,8 @@ pub mod scaling {
 /// VAE Decoder
 #[derive(Module, Debug)]
 pub struct Decoder<B: Backend> {
+    /// Post-quantization conv applied to latent before decoding (optional, 1x1 conv)
+    pub post_quant_conv: Option<Conv2d<B>>,
     pub conv_in: Conv2d<B>,
     pub mid_block1: ResnetBlock<B>,
     pub mid_attn: SelfAttention<B>,
@@ -124,6 +126,7 @@ impl<B: Backend> Decoder<B> {
             .init(device);
 
         Self {
+            post_quant_conv: None,
             conv_in,
             mid_block1,
             mid_attn,
@@ -139,6 +142,12 @@ impl<B: Backend> Decoder<B> {
     /// Input: [batch, 4, h, w] latent (already unscaled)
     /// Output: [batch, 3, h*8, w*8] image (values in [-1, 1])
     pub fn forward_raw(&self, z: Tensor<B, 4>) -> Tensor<B, 4> {
+        // Apply post_quant_conv if present (transforms latent before decoding)
+        let z = match &self.post_quant_conv {
+            Some(conv) => conv.forward(z),
+            None => z,
+        };
+
         // Input conv
         let mut h = self.conv_in.forward(z);
 
@@ -181,7 +190,8 @@ impl<B: Backend> Decoder<B> {
     /// Decode and convert to [0, 255] range (SD 1.x scaling)
     pub fn decode_to_image(&self, z: Tensor<B, 4>) -> Tensor<B, 4> {
         let img = self.forward(z);
-        // Convert from [-1, 1] to [0, 255]
+        // Clamp to [-1, 1] range and convert to [0, 255]
+        let img = img.clamp(-1.0, 1.0);
         (img + 1.0) * 127.5
     }
 
@@ -379,9 +389,14 @@ impl<B: Backend> SelfAttention<B> {
         let v = v.reshape([b, c, h * w]).swap_dims(1, 2); // [b, h*w, c]
 
         // Attention: softmax(Q @ K^T / sqrt(d)) @ V
+        // Use stable softmax (max-subtraction) for f16 compatibility
         let scale = (c as f64).powf(-0.5);
         let attn = q.matmul(k) * scale; // [b, h*w, h*w]
-        let attn = burn::tensor::activation::softmax(attn, 2);
+
+        // Stable softmax to prevent f16 overflow
+        let attn_max = attn.clone().max_dim(2);
+        let attn = (attn - attn_max).exp();
+        let attn = attn.clone() / attn.clone().sum_dim(2);
 
         let out = attn.matmul(v); // [b, h*w, c]
 

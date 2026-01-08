@@ -39,6 +39,7 @@
         devShells.cuda = pkgs.mkShell rec {
           buildInputs = commonBuildInputs ++ (with pkgs; [
             cudaPackages.cudatoolkit
+            vulkan-loader  # For wgpu/TestRuntime in cubek tests
           ]);
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs
             + ":/run/opengl-driver/lib"  # System NVIDIA driver (libcuda.so)

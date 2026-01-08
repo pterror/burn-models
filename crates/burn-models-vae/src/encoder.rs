@@ -68,13 +68,13 @@ pub mod scaling {
 /// VAE Encoder
 #[derive(Module, Debug)]
 pub struct Encoder<B: Backend> {
-    conv_in: Conv2d<B>,
-    down_blocks: Vec<EncoderBlock<B>>,
-    mid_block1: ResnetBlock<B>,
-    mid_attn: SelfAttention<B>,
-    mid_block2: ResnetBlock<B>,
-    norm_out: GroupNorm<B>,
-    conv_out: Conv2d<B>,
+    pub conv_in: Conv2d<B>,
+    pub down_blocks: Vec<EncoderBlock<B>>,
+    pub mid_block1: ResnetBlock<B>,
+    pub mid_attn: SelfAttention<B>,
+    pub mid_block2: ResnetBlock<B>,
+    pub norm_out: GroupNorm<B>,
+    pub conv_out: Conv2d<B>,
 }
 
 impl<B: Backend> Encoder<B> {
@@ -225,8 +225,8 @@ impl<B: Backend> Encoder<B> {
 /// Encoder block with optional downsampling
 #[derive(Module, Debug)]
 pub struct EncoderBlock<B: Backend> {
-    res_blocks: Vec<ResnetBlock<B>>,
-    downsample: Option<Downsample<B>>,
+    pub res_blocks: Vec<ResnetBlock<B>>,
+    pub downsample: Option<Downsample<B>>,
 }
 
 impl<B: Backend> EncoderBlock<B> {
@@ -277,7 +277,7 @@ impl<B: Backend> EncoderBlock<B> {
 /// 2x Downsampling with strided conv
 #[derive(Module, Debug)]
 pub struct Downsample<B: Backend> {
-    conv: Conv2d<B>,
+    pub conv: Conv2d<B>,
 }
 
 impl<B: Backend> Downsample<B> {

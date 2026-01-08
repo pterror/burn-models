@@ -15,6 +15,8 @@ ndarray = ["burn-ndarray"]
 tch = ["burn-tch"]
 wgpu = ["burn-wgpu"]
 cuda = ["burn-cuda"]
+# CubeCL acceleration (flash attention for f16)
+cubecl = ["burn-models-unet/cubecl", "burn-models-cubecl", "burn-cubecl"]
 
 [dependencies]
 burn.workspace = true
@@ -25,6 +27,10 @@ burn-models-unet.workspace = true
 burn-models-samplers.workspace = true
 burn-models-convert.workspace = true
 burn-models-llm.workspace = true
+
+# Optional CubeCL dependencies
+burn-models-cubecl = { workspace = true, optional = true }
+burn-cubecl = { workspace = true, optional = true }
 
 # Optional backend dependencies
 burn-ndarray = { workspace = true, optional = true }

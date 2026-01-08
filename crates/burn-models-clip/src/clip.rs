@@ -89,6 +89,7 @@ impl<B: Backend> ClipTextEncoder<B> {
     /// Input: token_ids [batch, seq_len]
     /// Output: hidden_states [batch, seq_len, embed_dim]
     pub fn forward(&self, token_ids: Tensor<B, 2, Int>) -> Tensor<B, 3> {
+        let debug = std::env::var("CLIP_DEBUG").is_ok();
         let [_batch, seq_len] = token_ids.dims();
 
         // Token embeddings
@@ -102,16 +103,56 @@ impl<B: Backend> ClipTextEncoder<B> {
             .unsqueeze::<3>();
         let mut x = x + pos_emb;
 
+        if debug {
+            let data = x.clone().into_data();
+            let floats: Vec<f32> = data.to_vec().unwrap();
+            eprintln!(
+                "[CLIP] After embeddings: first 5 at pos 0: {:?}",
+                &floats[..5]
+                    .iter()
+                    .map(|f| format!("{:.6}", f))
+                    .collect::<Vec<_>>()
+            );
+        }
+
         // Slice precomputed causal mask to actual sequence length
         let mask = slice_causal_mask(&self.causal_mask, seq_len);
 
         // Pass through transformer layers
-        for layer in &self.layers {
+        for (i, layer) in self.layers.iter().enumerate() {
             x = layer.forward(x.clone(), Some(mask.clone()));
+            if debug && i == 0 {
+                let data = x.clone().into_data();
+                let floats: Vec<f32> = data.to_vec().unwrap();
+                eprintln!(
+                    "[CLIP] After layer 0: first 5 at pos 0: {:?}",
+                    &floats[..5]
+                        .iter()
+                        .map(|f| format!("{:.6}", f))
+                        .collect::<Vec<_>>()
+                );
+            }
         }
 
         // Final layer norm
-        self.final_layer_norm.forward(x)
+        let out = self.final_layer_norm.forward(x);
+
+        if debug {
+            let data = out.clone().into_data();
+            let floats: Vec<f32> = data.to_vec().unwrap();
+            let min = floats.iter().cloned().fold(f32::INFINITY, f32::min);
+            let max = floats.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let mean: f32 = floats.iter().sum::<f32>() / floats.len() as f32;
+            eprintln!(
+                "[CLIP] Output: shape={:?}, min={:.3}, max={:.3}, mean={:.3}",
+                out.dims(),
+                min,
+                max,
+                mean
+            );
+        }
+
+        out
     }
 
     /// Get the embedding at the end-of-text token position

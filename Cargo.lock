@@ -806,10 +806,12 @@ name = "burn-models"
 version = "0.1.0"
 dependencies = [
  "burn",
+ "burn-cubecl",
  "burn-cuda",
  "burn-models-clip",
  "burn-models-convert",
  "burn-models-core",
+ "burn-models-cubecl",
  "burn-models-llm",
  "burn-models-samplers",
  "burn-models-unet",
@@ -826,6 +828,7 @@ dependencies = [
  "anyhow",
  "burn",
  "burn-cpu",
+ "burn-cubecl",
  "burn-cuda",
  "burn-models",
  "burn-models-clip",
@@ -837,6 +840,7 @@ dependencies = [
  "burn-ndarray",
  "burn-wgpu",
  "clap",
+ "cubecl",
  "half",
  "image",
  "indicatif",
@@ -896,6 +900,7 @@ dependencies = [
  "criterion",
  "cubecl",
  "cubek",
+ "half",
 ]
 
 [[package]]
@@ -930,6 +935,8 @@ name = "burn-models-samplers"
 version = "0.1.0"
 dependencies = [
  "burn",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

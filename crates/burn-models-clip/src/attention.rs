@@ -35,6 +35,7 @@ pub fn create_causal_mask<B: Backend>(seq_len: usize, device: &B::Device) -> Ten
 /// Compute scaled dot-product attention
 ///
 /// Shared attention computation used by both CLIP and OpenCLIP.
+/// Uses numerically stable softmax (max-subtraction) for f16 compatibility.
 pub fn scaled_dot_product_attention<B: Backend>(
     q: Tensor<B, 4>,
     k: Tensor<B, 4>,
@@ -52,6 +53,10 @@ pub fn scaled_dot_product_attention<B: Backend>(
         None => attn,
     };
 
-    let attn = burn::tensor::activation::softmax(attn, 3);
+    // Stable softmax: subtract max before exp to prevent f16 overflow
+    let attn_max = attn.clone().max_dim(3);
+    let attn = (attn - attn_max).exp();
+    let attn = attn.clone() / attn.clone().sum_dim(3);
+
     attn.matmul(v)
 }

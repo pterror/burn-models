@@ -15,13 +15,30 @@ name = "inspect-safetensors"
 path = "src/bin/inspect-safetensors.rs"
 
 [features]
-default = ["wgpu", "cpu"]
+default = ["wgpu", "cpu", "cubecl", "precision-all"]
 # For NVIDIA GPUs, build with: cargo build --features cuda
+
+# Backend features
 cpu = ["burn-cpu"]
 ndarray = ["burn-models/ndarray", "burn-ndarray"]
 tch = ["burn-models/tch"]
 wgpu = ["burn-models/wgpu", "burn-wgpu"]
 cuda = ["burn-models/cuda", "burn-cuda"]
+
+# CubeCL acceleration (flash attention for f16/bf16) - enabled by default
+cubecl = ["burn-models/cubecl", "burn-models-unet/cubecl", "burn-cubecl", "dep:cubecl"]
+
+# Precision support - compile only what you need
+precision-f32 = []      # Enable f32 precision (slowest, most stable)
+precision-f16 = []      # Enable f16 precision (fast, may NaN without upcast)
+precision-bf16 = []     # Enable bf16 precision (fast, stable on Ampere+)
+precision-all = ["precision-f32", "precision-f16", "precision-bf16"]
+
+# Convenience presets (use with --no-default-features)
+preset-fast = ["precision-bf16", "cubecl"]   # bf16 + flash attention only
+preset-quality = ["precision-f32"]            # f32 only, no JIT overhead
+
+# LLM features
 llm-serve = ["burn-models-llm/serve", "tokio"]
 
 [dependencies]
@@ -46,6 +63,8 @@ burn-ndarray = { workspace = true, optional = true }
 burn-wgpu = { workspace = true, optional = true }
 burn-cuda = { workspace = true, optional = true }
 burn-cpu = { version = "0.20.0-pre.6", optional = true, default-features = false }
+burn-cubecl = { workspace = true, optional = true }
+cubecl = { version = "0.9.0-pre.6", optional = true, features = ["cuda", "wgpu"] }
 
 # Serve dependencies (optional)
 tokio = { version = "1", features = ["full"], optional = true }

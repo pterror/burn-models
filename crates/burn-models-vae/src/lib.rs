@@ -36,4 +36,4 @@ pub mod encoder;
 pub use decoder::{
     Decoder, DecoderBlock, DecoderConfig, ResnetBlock, SelfAttention, Upsample, scaling,
 };
-pub use encoder::{Encoder, EncoderConfig};
+pub use encoder::{Downsample as EncoderDownsample, Encoder, EncoderBlock, EncoderConfig};
