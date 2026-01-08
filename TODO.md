@@ -397,7 +397,18 @@ See [docs/issues-log.md](docs/issues-log.md) for detailed tracking of issues enc
 |------------|-------|--------|--------------|
 | cubek-attention | [PR #55](https://github.com/tracel-ai/cubek/pull/55) - f16/bf16 tile alignment | Pending review | 2026-01-08 |
 
-When PR is merged and released to crates.io, update cubek dependency and switch from simple flash attention to cubek-attention.
+When PR is merged and released to crates.io, update cubek dependency and remove f32 attention workaround.
+
+**Current workaround**: UNet casts Q/K/V to f32 before attention, then casts back. This adds ~2x memory overhead for attention tensors (temporary) but allows f16/bf16 model weights to work.
+
+## Backlog
+
+### Memory Optimization
+
+- **Smart offloading**: Implement CPU/GPU memory management for large models
+  - Move unused model components to CPU during inference
+  - Automatic based on available VRAM
+  - Priority: High for SDXL on <12GB VRAM cards
 
 ## Postmortems
 

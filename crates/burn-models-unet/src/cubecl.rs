@@ -20,6 +20,7 @@ use burn::nn::{
     conv::{Conv2d, Conv2dConfig},
 };
 use burn::prelude::*;
+use burn::tensor::DType;
 use burn_cubecl::{
     BoolElement, CubeBackend, CubeRuntime, FloatElement, IntElement, tensor::CubeTensor,
 };
@@ -326,16 +327,35 @@ impl<R: CubeRuntime, F: FloatElement, I: IntElement, BT: BoolElement>
         }
 
         // Flash attention (non-causal for diffusion models)
-        // Uses f32 accumulation internally to prevent f16 overflow
+        //
+        // WORKAROUND: cubek-attention 0.1.0-pre.1 has a bug where f16/bf16 fail on CUDA
+        // due to tile size alignment issues. We cast to f32 for attention computation.
+        // See: https://github.com/tracel-ai/cubek/pull/55
+        //
+        // Memory overhead: ~2x for Q/K/V during attention (temporary)
+        // Performance: slight overhead from casting, but attention itself is fast
+        let needs_cast = q.dtype() != DType::F32;
+        let (q_attn, k_attn, v_attn) = if needs_cast {
+            (
+                q.clone().cast(DType::F32),
+                k.clone().cast(DType::F32),
+                v.clone().cast(DType::F32),
+            )
+        } else {
+            (q.clone(), k.clone(), v.clone())
+        };
+
         let out = flash_attention(
-            tensor_to_cube(q.clone()),
-            tensor_to_cube(k.clone()),
-            tensor_to_cube(v.clone()),
+            tensor_to_cube(q_attn),
+            tensor_to_cube(k_attn),
+            tensor_to_cube(v_attn),
             FlashAttentionOptions::default(), // non-causal
         )
         .expect("Flash attention failed");
 
         let out: Tensor<CubeBackend<R, F, I, BT>, 4> = cube_to_tensor(out);
+        // Cast back to original dtype if we casted to f32
+        let out = if needs_cast { out.cast(q.dtype()) } else { out };
 
         // Slice back to original head_dim if we padded
         let out = if need_pad_head {
