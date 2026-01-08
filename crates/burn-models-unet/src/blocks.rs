@@ -388,10 +388,16 @@ impl<B: Backend> CrossAttention<B> {
             .reshape([b, ctx_len, self.num_heads, self.head_dim])
             .swap_dims(1, 2);
 
-        // Attention
+        // Scaled dot-product attention
+        // Note: For f16, we use stable softmax (max-subtraction) to prevent overflow
         let scale = (self.head_dim as f64).powf(-0.5);
         let attn = q.matmul(k.transpose()) * scale;
-        let attn = burn::tensor::activation::softmax(attn, 3);
+
+        // Stable softmax with explicit max subtraction for f16 stability
+        let attn_max = attn.clone().max_dim(3);
+        let attn = (attn - attn_max).exp();
+        let attn = attn.clone() / attn.clone().sum_dim(3);
+
         let out = attn.matmul(v);
 
         // Reshape back: [b, heads, seq, dim] -> [b, seq, heads*dim]
