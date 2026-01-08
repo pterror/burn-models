@@ -215,6 +215,83 @@ Available for:
 - `Dpm2mCfgPlusPlusSampler`
 - `Dpm2sAncestralCfgPlusPlusSampler`
 
+## Sigma Schedules
+
+Sigma schedules control how noise levels are spaced during sampling.
+
+| Schedule | Description | Best For |
+|----------|-------------|----------|
+| **Karras** | Concentrates steps at high noise (default) | General use |
+| **Normal** | Uniform timestep spacing | Baseline/testing |
+| **Exponential** | Exponential spacing in sigma | Smooth transitions |
+| **SGM Uniform** | Uniform in sigma space | Score-based models |
+| **Beta** | Beta distribution (more at high noise) | Quality priority |
+| **Linear Quadratic** | Blended linear/quadratic | Balanced |
+
+## Algorithm Details: DPM++ 2M Formulations
+
+There are two main implementations of DPM++ 2M in the ecosystem:
+
+### Original Paper (DPM-Solver++)
+
+From Lu et al. "DPM-Solver++: Fast Solver for Guided Sampling of Diffusion Probabilistic Models" (2022):
+
+```
+First-order:
+  x_{t-1} = (σ_{t-1}/σ_t) * x_t + (1 - σ_{t-1}/σ_t) * D_0
+
+Second-order:
+  x_{t-1} = (σ_{t-1}/σ_t) * x_t + (1 - σ_{t-1}/σ_t) * D_0
+          + (1 - σ_{t-1}/σ_t) * (h/2) * D_1
+
+where:
+  D_0 = denoised prediction (x_0 estimate)
+  D_1 = (D_0 - D_0_prev) / r
+  r = h / h_prev
+  h = λ_{t-1} - λ_t  (step in log-SNR space)
+  λ = -log(σ)
+```
+
+### k-diffusion (ComfyUI/A1111)
+
+From crowsonkb's k-diffusion library:
+
+```
+First-order:
+  x_{t-1} = (σ_{t-1}/σ_t) * x_t + (1 - exp(-h)) * D_0
+
+Second-order:
+  D_d = (1 + 1/(2r)) * D_0 - (1/(2r)) * D_0_prev
+  x_{t-1} = (σ_{t-1}/σ_t) * x_t + (1 - exp(-h)) * D_d
+
+where:
+  r = h_prev / h  (INVERSE of paper convention)
+```
+
+### Key Differences
+
+| Aspect | Paper | k-diffusion |
+|--------|-------|-------------|
+| Step coefficient | `(1 - σ_{t-1}/σ_t)` | `(1 - exp(-h))` |
+| r definition | `h / h_prev` | `h_prev / h` |
+| D_1 formula | `(D_0 - D_prev) / r` | `(1 + 1/(2r)) * D_0 - (1/(2r)) * D_prev` |
+
+### Why We Use k-diffusion
+
+This implementation uses the k-diffusion formulation because:
+
+1. **ComfyUI/A1111 compatibility** - Users expect matching output with same seeds
+2. **Numerical stability** - `exp(-h)` handles large Karras sigmas gracefully
+3. **Battle-tested** - Millions of production generations
+
+The formulations are mathematically equivalent, but k-diffusion's is more robust.
+
+### References
+
+- [DPM-Solver++ Paper](https://arxiv.org/abs/2211.01095)
+- [k-diffusion](https://github.com/crowsonkb/k-diffusion)
+- [diffusers](https://github.com/huggingface/diffusers)
+
 ## Recommendations
 
 | Use Case | Recommended Sampler | Steps |
