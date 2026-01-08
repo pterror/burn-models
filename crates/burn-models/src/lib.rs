@@ -95,6 +95,7 @@ pub use burn_models_core::precision::{PrecisionConfig, PrecisionMode};
 
 pub mod backends;
 pub mod batch;
+pub mod flash_attention;
 pub mod memory;
 pub mod offload;
 pub mod pipeline;
@@ -105,6 +106,8 @@ pub use offload::{ModelComponent, OffloadConfig, OffloadState, OffloadStrategy, 
 pub use pipeline::{
     // SDXL Base + Refiner Workflow
     BaseRefinerConfig,
+    // Debug configuration
+    DebugConfig,
     DiffusionPipeline,
     Img2ImgConfig,
     // Inpainting
@@ -113,6 +116,9 @@ pub use pipeline::{
     // SDXL Refiner
     RefinerConfig,
     SampleConfig,
+    // Sampler configuration
+    SamplerType,
+    ScheduleType,
     Sd1xConditioning,
     // SDXL
     SdxlConditioning,
