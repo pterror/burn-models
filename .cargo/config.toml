@@ -1,0 +1,35 @@
+# Cargo configuration for burn-models
+#
+# The target/ directory can grow very large (50GB+) due to:
+# - Multiple backend features (cuda, wgpu, cpu) each with their own deps
+# - Multiple precision features (f32, f16, bf16)
+# - Incremental compilation artifacts
+# - Debug symbols
+#
+# Tips to manage disk usage:
+# - Run `cargo clean` periodically
+# - Use `cargo clean --release` to clean only release builds
+# - Build with specific features: `cargo build --no-default-features --features cuda,precision-bf16`
+# - Install cargo-sweep: `cargo install cargo-sweep`
+#   Then: `cargo sweep --time 7` (clean artifacts older than 7 days)
+#   Or: `cargo sweep --installed` (keep only current toolchain's artifacts)
+
+[profile.dev]
+# Reduce debug info size (0=none, 1=line tables, 2=full)
+debug = 1
+
+[profile.release]
+# Strip symbols to reduce binary size
+strip = "symbols"
+# Single codegen unit = smaller but slower compile
+# codegen-units = 1
+# LTO for smaller binaries (slower compile)
+# lto = "thin"
+
+[profile.dev.package."*"]
+# Optimize dependencies even in dev builds (faster runtime, same compile time)
+opt-level = 2
+
+# Uncomment to disable incremental compilation (saves disk space, slower rebuilds)
+# [build]
+# incremental = false
