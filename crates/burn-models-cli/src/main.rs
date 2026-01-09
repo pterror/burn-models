@@ -78,10 +78,10 @@ pub enum Device {
     Cpu,
 }
 
-use burn_models_clip::{ClipConfig, ClipTokenizer};
+use burn_models_clip::{ClipConfig, ClipTokenizer, OpenClipConfig};
 use burn_models_convert::sd_loader::SdWeightLoader;
 use burn_models_samplers::NoiseSchedule;
-use burn_models_unet::UNetConfig;
+use burn_models_unet::{UNetConfig, UNetXLConfig};
 use burn_models_vae::DecoderConfig;
 
 mod llm;
@@ -165,13 +165,14 @@ enum Commands {
         #[arg(long, value_enum, default_value = "auto")]
         device: Device,
 
-        /// Debug modes (comma-separated): timing, shapes, nan, sampler, all
+        /// Debug modes (comma-separated): timing, shapes, nan, sampler, vae, all
         /// - timing: Show timing for each step
         /// - shapes: Show model weight shapes
         /// - nan: Panic on NaN/Inf values (helps find f16 overflow)
         /// - sampler: Show sampler steps, sigmas, and latent stats
+        /// - vae: Show VAE decoder debug output
         ///
-        /// Examples: --debug  --debug timing  --debug sampler,nan
+        /// Examples: --debug  --debug timing  --debug sampler,nan  --debug vae
         #[arg(long, value_delimiter = ',', num_args = 0.., default_missing_value = "all")]
         debug: Vec<String>,
 
@@ -182,6 +183,18 @@ enum Commands {
         /// Requires: CUDA or WGPU backend with cubecl feature enabled.
         #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
         flash_attention: bool,
+
+        /// Low VRAM mode: skip VAE attention to reduce memory usage
+        /// This reduces VRAM by ~3GB with minimal quality impact.
+        /// Use when encountering OOM errors during VAE decode.
+        #[arg(long, default_value = "false", action = clap::ArgAction::Set)]
+        low_vram: bool,
+
+        /// Enable aggressive clamping in VAE decoder to prevent f16 overflow
+        /// Clamps activations after each layer to stay within f16 range.
+        /// Helps prevent Inf/NaN but may affect output quality slightly.
+        #[arg(long, default_value = "false", action = clap::ArgAction::Set)]
+        vae_clamp: bool,
 
         /// Sampler/scheduler algorithm
         #[arg(long, value_enum, default_value = "dpm-plus-plus")]
@@ -395,7 +408,7 @@ fn run_llm_command(command: llm::LlmCommands) -> Result<()> {
     // Use wgpu backend by default, fall back to ndarray
     #[cfg(feature = "wgpu")]
     {
-        use burn_wgpu::{Wgpu, WgpuDevice};
+        use burn::backend::{Wgpu, wgpu::WgpuDevice};
         type Backend = Wgpu<f32>;
         let device = WgpuDevice::default();
         run_llm_command_with_backend::<Backend>(command, &device)
@@ -463,10 +476,11 @@ fn run_llm_command_with_backend<B: burn::prelude::Backend>(
 /// Try to initialize CUDA and return true if successful
 #[cfg(feature = "cuda")]
 fn cuda_available() -> bool {
+    use burn::backend::cuda::CudaDevice;
     use std::panic;
     // CudaDevice::default() will panic if CUDA is not available
     panic::catch_unwind(|| {
-        let _ = burn_cuda::CudaDevice::default();
+        let _ = CudaDevice::default();
     })
     .is_ok()
 }
@@ -474,10 +488,11 @@ fn cuda_available() -> bool {
 /// Try to initialize WGPU and return true if successful
 #[cfg(feature = "wgpu")]
 fn wgpu_available() -> bool {
+    use burn::backend::wgpu::WgpuDevice;
     use std::panic;
     // WgpuDevice::default() may panic if no GPU is available
     panic::catch_unwind(|| {
-        let _ = burn_wgpu::WgpuDevice::default();
+        let _ = WgpuDevice::default();
     })
     .is_ok()
 }
@@ -538,7 +553,7 @@ fn run_sd1x_generate(
     match device {
         #[cfg(feature = "cuda")]
         Device::Cuda => {
-            use burn_cuda::{Cuda, CudaDevice};
+            use burn::backend::{Cuda, cuda::CudaDevice};
             let cuda_device = CudaDevice::default();
 
             match precision {
@@ -710,7 +725,7 @@ fn run_sd1x_generate(
 
         #[cfg(feature = "wgpu")]
         Device::Wgpu => {
-            use burn_wgpu::{Wgpu, WgpuDevice};
+            use burn::backend::{Wgpu, wgpu::WgpuDevice};
             let wgpu_device = WgpuDevice::default();
 
             match precision {
@@ -852,7 +867,7 @@ fn run_sd1x_generate(
 
         #[cfg(feature = "cpu")]
         Device::Cpu => {
-            use burn_cpu::{Cpu, CpuDevice};
+            use burn::backend::{Cpu, cpu::CpuDevice};
             let cpu_device = CpuDevice;
 
             // Note: Flash attention is not available for CPU backend
@@ -939,6 +954,7 @@ struct DebugFlags {
     shapes: bool,
     nan: bool,
     sampler: bool,
+    vae: bool,
 }
 
 impl DebugFlags {
@@ -949,6 +965,7 @@ impl DebugFlags {
             shapes: all || debug.iter().any(|s| s == "shapes"),
             nan: all || debug.iter().any(|s| s == "nan"),
             sampler: all || debug.iter().any(|s| s == "sampler"),
+            vae: all || debug.iter().any(|s| s == "vae"),
         }
     }
 
@@ -1538,6 +1555,848 @@ where
     Ok(())
 }
 
+/// Run SDXL generation with the specified backend
+#[allow(clippy::too_many_arguments)]
+fn run_sdxl_generate(
+    prompt: &str,
+    negative: &str,
+    output: &PathBuf,
+    vocab: Option<&PathBuf>,
+    weights: &PathBuf,
+    width: usize,
+    height: usize,
+    steps: usize,
+    guidance: f64,
+    _loras: &[PathBuf],
+    _lora_scales: &[f64],
+    precision: Precision,
+    requested_device: Device,
+    debug: &[String],
+    flash_attention: bool,
+    low_vram: bool,
+    vae_clamp: bool,
+    _sampler: SamplerType,
+    _schedule: ScheduleType,
+    _denoise: f64,
+) -> Result<()> {
+    let device = resolve_device(requested_device);
+
+    match device {
+        #[cfg(feature = "cuda")]
+        Device::Cuda => {
+            use burn::backend::{Cuda, cuda::CudaDevice};
+            let cuda_device = CudaDevice::default();
+
+            match precision {
+                #[cfg(feature = "precision-f16")]
+                Precision::F16 => {
+                    if flash_attention {
+                        #[cfg(feature = "cubecl")]
+                        {
+                            use cubecl::cuda::CudaRuntime;
+                            use half::f16;
+                            run_sdxl_generate_flash::<CudaRuntime, f16, i32, u32>(
+                                prompt,
+                                negative,
+                                output,
+                                vocab,
+                                weights,
+                                width,
+                                height,
+                                steps,
+                                guidance,
+                                &cuda_device,
+                                debug,
+                                low_vram,
+                                vae_clamp,
+                            )
+                        }
+                        #[cfg(not(feature = "cubecl"))]
+                        {
+                            anyhow::bail!(
+                                "Flash attention requires the 'cubecl' feature.\n\n\
+                                Rebuild with: cargo build --features cubecl"
+                            );
+                        }
+                    } else {
+                        use half::f16;
+                        type Backend = Cuda<f16>;
+                        run_sdxl_generate_impl::<Backend>(
+                            prompt,
+                            negative,
+                            output,
+                            vocab,
+                            weights,
+                            width,
+                            height,
+                            steps,
+                            guidance,
+                            &cuda_device,
+                            debug,
+                        )
+                    }
+                }
+                #[cfg(feature = "precision-bf16")]
+                Precision::Bf16 => {
+                    if flash_attention {
+                        #[cfg(feature = "cubecl")]
+                        {
+                            use cubecl::cuda::CudaRuntime;
+                            use half::bf16;
+                            run_sdxl_generate_flash::<CudaRuntime, bf16, i32, u32>(
+                                prompt,
+                                negative,
+                                output,
+                                vocab,
+                                weights,
+                                width,
+                                height,
+                                steps,
+                                guidance,
+                                &cuda_device,
+                                debug,
+                                low_vram,
+                                vae_clamp,
+                            )
+                        }
+                        #[cfg(not(feature = "cubecl"))]
+                        {
+                            anyhow::bail!(
+                                "Flash attention requires the 'cubecl' feature.\n\n\
+                                Rebuild with: cargo build --features cubecl"
+                            );
+                        }
+                    } else {
+                        use half::bf16;
+                        type Backend = Cuda<bf16>;
+                        run_sdxl_generate_impl::<Backend>(
+                            prompt,
+                            negative,
+                            output,
+                            vocab,
+                            weights,
+                            width,
+                            height,
+                            steps,
+                            guidance,
+                            &cuda_device,
+                            debug,
+                        )
+                    }
+                }
+                #[cfg(feature = "precision-f32")]
+                Precision::F32 => {
+                    if flash_attention {
+                        #[cfg(feature = "cubecl")]
+                        {
+                            use cubecl::cuda::CudaRuntime;
+                            run_sdxl_generate_flash::<CudaRuntime, f32, i32, u32>(
+                                prompt,
+                                negative,
+                                output,
+                                vocab,
+                                weights,
+                                width,
+                                height,
+                                steps,
+                                guidance,
+                                &cuda_device,
+                                debug,
+                                low_vram,
+                                vae_clamp,
+                            )
+                        }
+                        #[cfg(not(feature = "cubecl"))]
+                        {
+                            anyhow::bail!(
+                                "Flash attention requires the 'cubecl' feature.\n\n\
+                                Rebuild with: cargo build --features cubecl"
+                            );
+                        }
+                    } else {
+                        type Backend = Cuda<f32>;
+                        run_sdxl_generate_impl::<Backend>(
+                            prompt,
+                            negative,
+                            output,
+                            vocab,
+                            weights,
+                            width,
+                            height,
+                            steps,
+                            guidance,
+                            &cuda_device,
+                            debug,
+                        )
+                    }
+                }
+            }
+        }
+
+        #[cfg(feature = "wgpu")]
+        Device::Wgpu => {
+            use burn::backend::{Wgpu, wgpu::WgpuDevice};
+            let wgpu_device = WgpuDevice::default();
+
+            match precision {
+                #[cfg(feature = "precision-f16")]
+                Precision::F16 => {
+                    use half::f16;
+                    type Backend = Wgpu<f16>;
+                    run_sdxl_generate_impl::<Backend>(
+                        prompt,
+                        negative,
+                        output,
+                        vocab,
+                        weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &wgpu_device,
+                        debug,
+                    )
+                }
+                #[cfg(feature = "precision-bf16")]
+                Precision::Bf16 => {
+                    use half::bf16;
+                    type Backend = Wgpu<bf16>;
+                    run_sdxl_generate_impl::<Backend>(
+                        prompt,
+                        negative,
+                        output,
+                        vocab,
+                        weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &wgpu_device,
+                        debug,
+                    )
+                }
+                #[cfg(feature = "precision-f32")]
+                Precision::F32 => {
+                    type Backend = Wgpu<f32>;
+                    run_sdxl_generate_impl::<Backend>(
+                        prompt,
+                        negative,
+                        output,
+                        vocab,
+                        weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &wgpu_device,
+                        debug,
+                    )
+                }
+            }
+        }
+
+        #[cfg(feature = "cpu")]
+        Device::Cpu => {
+            use burn::backend::{Cpu, cpu::CpuDevice};
+            let cpu_device = CpuDevice;
+
+            match precision {
+                #[cfg(feature = "precision-f16")]
+                Precision::F16 => {
+                    use half::f16;
+                    type Backend = Cpu<f16>;
+                    run_sdxl_generate_impl::<Backend>(
+                        prompt,
+                        negative,
+                        output,
+                        vocab,
+                        weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &cpu_device,
+                        debug,
+                    )
+                }
+                #[cfg(feature = "precision-bf16")]
+                Precision::Bf16 => {
+                    use half::bf16;
+                    type Backend = Cpu<bf16>;
+                    run_sdxl_generate_impl::<Backend>(
+                        prompt,
+                        negative,
+                        output,
+                        vocab,
+                        weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &cpu_device,
+                        debug,
+                    )
+                }
+                #[cfg(feature = "precision-f32")]
+                Precision::F32 => {
+                    type Backend = Cpu<f32>;
+                    run_sdxl_generate_impl::<Backend>(
+                        prompt,
+                        negative,
+                        output,
+                        vocab,
+                        weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &cpu_device,
+                        debug,
+                    )
+                }
+            }
+        }
+
+        Device::Auto => unreachable!("Auto should be resolved above"),
+    }
+}
+
+/// SDXL generation implementation with a specific backend
+#[allow(clippy::too_many_arguments)]
+fn run_sdxl_generate_impl<B: Backend>(
+    prompt: &str,
+    negative: &str,
+    output: &PathBuf,
+    vocab: Option<&PathBuf>,
+    weights: &PathBuf,
+    width: usize,
+    height: usize,
+    steps: usize,
+    guidance: f64,
+    device: &B::Device,
+    debug: &[String],
+) -> Result<()> {
+    use std::time::Instant;
+    let debug_flags = DebugFlags::from_args(debug);
+    let total_start = Instant::now();
+
+    let pb = ProgressBar::new(100);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}% {msg}")?
+            .progress_chars("#>-"),
+    );
+
+    // Step 1: Load tokenizer (embedded vocab or from file)
+    pb.set_message("Loading tokenizer...");
+    pb.set_position(5);
+    let start = Instant::now();
+    let tokenizer = match vocab {
+        Some(path) => ClipTokenizer::from_file(path).context("Failed to load vocabulary file")?,
+        None => ClipTokenizer::new(), // Use embedded CLIP vocabulary
+    };
+    if debug_flags.timing {
+        eprintln!("[timing] tokenizer: {:?}", start.elapsed());
+    }
+
+    // Step 2: Open weight loader
+    pb.set_message("Opening weights...");
+    pb.set_position(10);
+    let start = Instant::now();
+    let mut loader = SdWeightLoader::open(weights).context("Failed to open weights")?;
+    if debug_flags.timing {
+        eprintln!("[timing] open weights: {:?}", start.elapsed());
+    }
+
+    // Step 3: Load CLIP text encoder (first text encoder)
+    pb.set_message("Loading CLIP text encoder...");
+    pb.set_position(12);
+    let start = Instant::now();
+    let clip_config = ClipConfig::sd1x(); // SDXL uses same CLIP config as SD1.x
+    let clip_encoder = loader
+        .load_clip_text_encoder::<B>(&clip_config, device)
+        .context("Failed to load CLIP text encoder")?;
+    if debug_flags.timing {
+        eprintln!("[timing] load CLIP: {:?}", start.elapsed());
+    }
+
+    // Step 4: Load OpenCLIP text encoder (second text encoder)
+    pb.set_message("Loading OpenCLIP text encoder...");
+    pb.set_position(18);
+    let start = Instant::now();
+    let open_clip_config = OpenClipConfig::sdxl();
+    let open_clip_encoder = loader
+        .load_open_clip_text_encoder::<B>(&open_clip_config, device)
+        .context("Failed to load OpenCLIP text encoder")?;
+    if debug_flags.timing {
+        eprintln!("[timing] load OpenCLIP: {:?}", start.elapsed());
+    }
+
+    // Step 5: Load UNet XL
+    pb.set_message("Loading UNet XL...");
+    pb.set_position(30);
+    let start = Instant::now();
+    let unet_config = UNetXLConfig::sdxl_base();
+    let unet = loader
+        .load_unet_xl::<B>(&unet_config, device)
+        .context("Failed to load UNet XL")?;
+    if debug_flags.timing {
+        eprintln!("[timing] load UNet XL: {:?}", start.elapsed());
+    }
+
+    // Step 6: Load VAE decoder
+    pb.set_message("Loading VAE decoder...");
+    pb.set_position(50);
+    let start = Instant::now();
+    let vae_config = DecoderConfig::sd(); // SDXL uses same VAE architecture
+    let vae_decoder = loader
+        .load_vae_decoder::<B>(&vae_config, device)
+        .context("Failed to load VAE decoder")?;
+    if debug_flags.timing {
+        eprintln!("[timing] load VAE: {:?}", start.elapsed());
+    }
+
+    // Step 7: Create SDXL pipeline
+    pb.set_message("Initializing pipeline...");
+    pb.set_position(55);
+
+    let pipeline = burn_models::StableDiffusionXL {
+        tokenizer,
+        clip_encoder,
+        open_clip_encoder,
+        unet,
+        vae_decoder,
+        scheduler: NoiseSchedule::sdxl(device),
+        device: device.clone(),
+    };
+
+    // Step 8: Generate image
+    pb.set_message("Generating...");
+    let start = Instant::now();
+    let config = burn_models::SdxlSampleConfig {
+        width,
+        height,
+        steps,
+        guidance_scale: guidance,
+        seed: None,
+    };
+
+    let image_tensor = pipeline.generate(prompt, negative, &config);
+
+    if debug_flags.timing {
+        eprintln!(
+            "[timing] inference ({} steps): {:?}",
+            steps,
+            start.elapsed()
+        );
+    }
+
+    // Step 9: Convert to image and save
+    pb.set_message("Saving image...");
+    pb.set_position(95);
+    let start = Instant::now();
+
+    let rgb_data = burn_models::tensor_to_rgb(image_tensor.clone());
+    let [_, _, h, w] = image_tensor.dims();
+
+    let img: ImageBuffer<Rgb<u8>, Vec<u8>> = ImageBuffer::from_raw(w as u32, h as u32, rgb_data)
+        .context("Failed to create image buffer")?;
+    img.save(output)?;
+    if debug_flags.timing {
+        eprintln!("[timing] save image: {:?}", start.elapsed());
+    }
+
+    pb.finish_and_clear();
+    let output_path = output
+        .canonicalize()
+        .unwrap_or_else(|_| output.to_path_buf());
+    println!("\nSaved to: {}", output_path.display());
+
+    if debug_flags.timing {
+        eprintln!("[timing] total: {:?}", total_start.elapsed());
+    }
+
+    Ok(())
+}
+
+/// Run SDXL generation with flash attention (CubeCL backend)
+#[cfg(feature = "cubecl")]
+#[allow(clippy::too_many_arguments)]
+fn run_sdxl_generate_flash<R, F, I, BT>(
+    prompt: &str,
+    negative: &str,
+    output: &PathBuf,
+    vocab: Option<&PathBuf>,
+    weights: &PathBuf,
+    width: usize,
+    height: usize,
+    steps: usize,
+    guidance: f64,
+    device: &R::Device,
+    debug: &[String],
+    low_vram: bool,
+    vae_clamp: bool,
+) -> Result<()>
+where
+    R: burn_cubecl::CubeRuntime,
+    F: burn_cubecl::FloatElement,
+    I: burn_cubecl::IntElement,
+    BT: burn_cubecl::BoolElement,
+{
+    use burn_cubecl::CubeBackend;
+    use burn_models_samplers::{DpmConfig, DpmPlusPlusSampler, NoiseSchedule, SigmaSchedule};
+    use burn_models_unet::cubecl::convert_unet_xl;
+    use std::time::Instant;
+
+    let debug_flags = DebugFlags::from_args(debug);
+    let total_start = Instant::now();
+
+    let pb = ProgressBar::new(100);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}% {msg}")?
+            .progress_chars("#>-"),
+    );
+
+    // Step 1: Load tokenizer
+    pb.set_message("Loading tokenizer...");
+    pb.set_position(5);
+    let start = Instant::now();
+    let tokenizer = match vocab {
+        Some(path) => ClipTokenizer::from_file(path).context("Failed to load vocabulary file")?,
+        None => ClipTokenizer::new(),
+    };
+    if debug_flags.timing {
+        eprintln!("[timing] tokenizer: {:?}", start.elapsed());
+    }
+
+    // Step 2: Open weight loader
+    pb.set_message("Opening weights...");
+    pb.set_position(10);
+    let start = Instant::now();
+    let mut loader = SdWeightLoader::open(weights).context("Failed to open weights")?;
+    if debug_flags.timing {
+        eprintln!("[timing] open weights: {:?}", start.elapsed());
+    }
+
+    // Step 3: Load CLIP text encoder
+    pb.set_message("Loading CLIP text encoder...");
+    pb.set_position(12);
+    let start = Instant::now();
+    let clip_config = ClipConfig::sd1x();
+    let clip_encoder = loader
+        .load_clip_text_encoder::<CubeBackend<R, F, I, BT>>(&clip_config, device)
+        .context("Failed to load CLIP text encoder")?;
+    if debug_flags.timing {
+        eprintln!("[timing] load CLIP: {:?}", start.elapsed());
+    }
+
+    // Step 4: Load OpenCLIP text encoder
+    pb.set_message("Loading OpenCLIP text encoder...");
+    pb.set_position(18);
+    let start = Instant::now();
+    let open_clip_config = OpenClipConfig::sdxl();
+    let open_clip_encoder = loader
+        .load_open_clip_text_encoder::<CubeBackend<R, F, I, BT>>(&open_clip_config, device)
+        .context("Failed to load OpenCLIP text encoder")?;
+    if debug_flags.timing {
+        eprintln!("[timing] load OpenCLIP: {:?}", start.elapsed());
+    }
+
+    // Step 5: Load UNet XL and convert to flash attention
+    pb.set_message("Loading UNet XL (with flash attention)...");
+    pb.set_position(30);
+    let start = Instant::now();
+    let unet_config = UNetXLConfig::sdxl_base();
+    let unet_standard = loader
+        .load_unet_xl::<CubeBackend<R, F, I, BT>>(&unet_config, device)
+        .context("Failed to load UNet XL")?;
+
+    let unet = convert_unet_xl(&unet_standard);
+    drop(unet_standard);
+    if debug_flags.timing {
+        eprintln!(
+            "[timing] load UNet XL + convert to flash: {:?}",
+            start.elapsed()
+        );
+    }
+    eprintln!("[info] Flash attention enabled (f32 accumulation)");
+
+    // Step 6: Load VAE decoder
+    pb.set_message("Loading VAE decoder...");
+    pb.set_position(50);
+    let start = Instant::now();
+    let vae_config = DecoderConfig::sd();
+    let vae_decoder = loader
+        .load_vae_decoder::<CubeBackend<R, F, I, BT>>(&vae_config, device)
+        .context("Failed to load VAE decoder")?
+        .with_skip_attention(low_vram)
+        .with_debug(debug_flags.vae)
+        .with_clamp_overflow(vae_clamp);
+    if low_vram {
+        eprintln!("[info] Low VRAM mode: VAE attention skipped");
+    }
+    if vae_clamp {
+        eprintln!("[info] VAE clamp mode: clamping activations to prevent f16 overflow");
+    }
+    if debug_flags.timing {
+        eprintln!("[timing] load VAE: {:?}", start.elapsed());
+    }
+
+    // Step 7: Encode prompts
+    pb.set_message("Encoding prompts...");
+    pb.set_position(55);
+    let start = Instant::now();
+
+    // CLIP encoding (same as SD1x)
+    let pos_tokens = tokenizer.encode_padded(prompt, 77);
+    let pos_tensor: Tensor<CubeBackend<R, F, I, BT>, 1, Int> = Tensor::from_data(
+        TensorData::new(
+            pos_tokens.iter().map(|&t| t as i32).collect::<Vec<_>>(),
+            [77],
+        ),
+        device,
+    );
+    // SDXL always uses penultimate layer (clip_skip=2), NOT final layer.
+    // See: https://github.com/Stability-AI/generative-models/issues/37
+    let clip_cond = clip_encoder.forward_penultimate(pos_tensor.clone().unsqueeze::<2>());
+
+    let neg_tokens = tokenizer.encode_padded(negative, 77);
+    let neg_tensor: Tensor<CubeBackend<R, F, I, BT>, 1, Int> = Tensor::from_data(
+        TensorData::new(
+            neg_tokens.iter().map(|&t| t as i32).collect::<Vec<_>>(),
+            [77],
+        ),
+        device,
+    );
+    let clip_uncond = clip_encoder.forward_penultimate(neg_tensor.clone().unsqueeze::<2>());
+
+    // OpenCLIP encoding with proper pooled output (applies text_projection)
+    // EOS token ID for CLIP/OpenCLIP is 49407
+    let pos_eos_pos = pos_tokens.iter().position(|&t| t == 49407).unwrap_or(76);
+    let (open_clip_cond, pooled_cond) =
+        open_clip_encoder.forward_with_pooled(pos_tensor.unsqueeze::<2>(), &[pos_eos_pos]);
+
+    let neg_eos_pos = neg_tokens.iter().position(|&t| t == 49407).unwrap_or(76);
+    let (open_clip_uncond, pooled_uncond) =
+        open_clip_encoder.forward_with_pooled(neg_tensor.unsqueeze::<2>(), &[neg_eos_pos]);
+
+    // Concatenate CLIP and OpenCLIP embeddings for context
+    let cond = Tensor::cat(vec![clip_cond, open_clip_cond], 2);
+    let uncond = Tensor::cat(vec![clip_uncond, open_clip_uncond], 2);
+
+    // Create add_embed: [pooled_text, original_size, crop_coords, target_size]
+    // For simplicity, use default SDXL size conditioning
+    let size_cond: Tensor<CubeBackend<R, F, I, BT>, 2> = Tensor::from_data(
+        TensorData::new(
+            vec![
+                width as f32,
+                height as f32, // original size
+                0.0,
+                0.0, // crop coords
+                width as f32,
+                height as f32, // target size
+            ],
+            [1, 6],
+        ),
+        device,
+    );
+
+    // Embed size conditioning with sinusoidal encoding
+    let time_ids_cond = embed_time_ids::<CubeBackend<R, F, I, BT>>(size_cond.clone(), 256, device);
+    let add_cond = Tensor::cat(vec![pooled_cond, time_ids_cond.clone()], 1);
+    let add_uncond = Tensor::cat(vec![pooled_uncond, time_ids_cond], 1);
+
+    if debug_flags.timing {
+        eprintln!("[timing] encode prompts: {:?}", start.elapsed());
+    }
+
+    // Step 8: Sampling loop
+    let start = Instant::now();
+    let latent_height = height / 8;
+    let latent_width = width / 8;
+
+    let dpm_config = DpmConfig {
+        num_inference_steps: steps,
+        solver_order: 2,
+        sigma_schedule: SigmaSchedule::Karras,
+        debug: debug_flags.sampler,
+    };
+
+    let dpm_schedule = NoiseSchedule::sdxl(device);
+    let mut dpm_sampler = DpmPlusPlusSampler::new(dpm_schedule, dpm_config, device);
+    let timesteps_vec = dpm_sampler.timesteps().to_vec();
+    let total_steps = dpm_sampler.num_steps();
+    let sigmas = dpm_sampler.sigmas().to_vec();
+    let mut latent = dpm_sampler.init_latent(1, 4, latent_height, latent_width, device);
+
+    if debug_flags.timing {
+        eprintln!("[info] DPM++ 2M sampler, init_sigma={:.4}", sigmas[0]);
+    }
+
+    let timestep_tensors: Vec<Tensor<CubeBackend<R, F, I, BT>, 1>> = timesteps_vec
+        .iter()
+        .map(|&t| {
+            Tensor::<CubeBackend<R, F, I, BT>, 1>::from_data(
+                TensorData::new(vec![t as f32], [1]),
+                device,
+            )
+        })
+        .collect();
+
+    let mut step_start = Instant::now();
+
+    for step_idx in 0..total_steps {
+        let t = timestep_tensors[step_idx].clone();
+
+        let noise_uncond = unet.forward(
+            latent.clone(),
+            t.clone(),
+            uncond.clone(),
+            add_uncond.clone(),
+        );
+        let noise_cond = unet.forward(latent.clone(), t, cond.clone(), add_cond.clone());
+
+        let noise_pred = noise_uncond.clone() + (noise_cond - noise_uncond) * guidance;
+
+        latent = dpm_sampler.step(latent, noise_pred, step_idx);
+
+        let progress = 60 + (step_idx + 1) * 30 / total_steps;
+        pb.set_position(progress as u64);
+        pb.set_message(format!("Step {}/{}", step_idx + 1, total_steps));
+
+        if debug_flags.timing {
+            eprintln!(
+                "[step {}] t={} {:?}",
+                step_idx,
+                timesteps_vec[step_idx],
+                step_start.elapsed()
+            );
+            step_start = Instant::now();
+        }
+    }
+
+    if debug_flags.timing {
+        eprintln!(
+            "[timing] inference ({} steps): {:?}",
+            steps,
+            start.elapsed()
+        );
+    }
+
+    // Step 9: VAE decode
+    // Force the latent to be computed before dropping models
+    // (burn uses lazy evaluation, so we need to materialize the tensor)
+    let latent_data = latent.clone().into_data();
+
+    // Debug: check latent stats before VAE
+    let lat_vec: Vec<f32> = latent_data.clone().convert::<f32>().to_vec().unwrap();
+    let lat_nan = lat_vec.iter().filter(|x| x.is_nan()).count();
+    let lat_min = lat_vec.iter().cloned().fold(f32::INFINITY, f32::min);
+    let lat_max = lat_vec.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    eprintln!(
+        "[debug] Latent before VAE: min={:.3}, max={:.3}, nan={}/{}",
+        lat_min,
+        lat_max,
+        lat_nan,
+        lat_vec.len()
+    );
+
+    let latent = Tensor::from_data(latent_data, device);
+
+    // Drop models no longer needed to free VRAM before VAE decode
+    // This prevents OOM on cards with limited VRAM (e.g., 12GB)
+    drop(unet);
+    drop(clip_encoder);
+    drop(open_clip_encoder);
+    drop(cond);
+    drop(uncond);
+    drop(add_cond);
+    drop(add_uncond);
+    drop(timestep_tensors);
+    drop(dpm_sampler);
+
+    pb.set_message("Decoding latent...");
+    pb.set_position(95);
+    let start = Instant::now();
+
+    // decode_to_image_sdxl applies SDXL scaling (0.13025) and converts to [0, 255]
+    // Use tiled decode in low_vram mode to avoid large memory allocations
+    let image_tensor = if low_vram {
+        // Tile size 64 with overlap 8 in latent space
+        // This decodes 64x64 latent tiles (512x512 pixels) at a time
+        vae_decoder.decode_to_image_tiled_sdxl(latent, 64, 8)
+    } else {
+        vae_decoder.decode_to_image_sdxl(latent)
+    };
+
+    if debug_flags.timing {
+        eprintln!("[timing] VAE decode: {:?}", start.elapsed());
+    }
+
+    // Step 10: Save image
+    pb.set_message("Saving image...");
+    let start = Instant::now();
+
+    let rgb_data = burn_models::tensor_to_rgb(image_tensor.clone());
+    let [_, _, h, w] = image_tensor.dims();
+
+    let img: ImageBuffer<Rgb<u8>, Vec<u8>> = ImageBuffer::from_raw(w as u32, h as u32, rgb_data)
+        .context("Failed to create image buffer")?;
+    img.save(output)?;
+    if debug_flags.timing {
+        eprintln!("[timing] save image: {:?}", start.elapsed());
+    }
+
+    pb.finish_and_clear();
+    let output_path = output
+        .canonicalize()
+        .unwrap_or_else(|_| output.to_path_buf());
+    println!("\nSaved to: {}", output_path.display());
+
+    if debug_flags.timing {
+        eprintln!("[timing] total: {:?}", total_start.elapsed());
+    }
+
+    Ok(())
+}
+
+/// Embed time IDs (size conditioning) with sinusoidal encoding for SDXL
+#[cfg(feature = "cubecl")]
+fn embed_time_ids<B: burn::prelude::Backend>(
+    time_ids: Tensor<B, 2>,
+    embedding_dim: usize,
+    device: &B::Device,
+) -> Tensor<B, 2> {
+    let [batch, num_ids] = time_ids.dims();
+
+    // Generate frequency basis
+    let half_dim = embedding_dim / 2;
+    let mut freqs_data = Vec::with_capacity(half_dim);
+    for i in 0..half_dim {
+        let freq = (10000.0_f64).powf(-(i as f64) / (half_dim as f64));
+        freqs_data.push(freq as f32);
+    }
+    let freqs: Tensor<B, 1> = Tensor::from_data(TensorData::new(freqs_data, [half_dim]), device);
+
+    // Embed each time ID
+    let mut embeddings = Vec::with_capacity(num_ids);
+    for i in 0..num_ids {
+        let id = time_ids.clone().slice([0..batch, i..i + 1]); // [batch, 1]
+        let id_expanded = id.reshape([batch, 1]).repeat_dim(1, half_dim); // [batch, half_dim]
+        let freqs_expanded = freqs.clone().unsqueeze::<2>().repeat_dim(0, batch); // [batch, half_dim]
+
+        let angles = id_expanded * freqs_expanded;
+        let sin_emb = angles.clone().sin();
+        let cos_emb = angles.cos();
+
+        let emb = Tensor::cat(vec![sin_emb, cos_emb], 1); // [batch, embedding_dim]
+        embeddings.push(emb);
+    }
+
+    Tensor::cat(embeddings, 1) // [batch, num_ids * embedding_dim]
+}
+
 /// Application entry point
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -1563,6 +2422,8 @@ fn main() -> Result<()> {
             device,
             debug,
             flash_attention,
+            low_vram,
+            vae_clamp,
             sampler,
             schedule,
             denoise,
@@ -1593,6 +2454,12 @@ fn main() -> Result<()> {
                     "disabled"
                 }
             );
+            if low_vram {
+                println!("  Low VRAM mode: enabled (skipping VAE attention)");
+            }
+            if vae_clamp {
+                println!("  VAE clamp: enabled (prevents f16 overflow)");
+            }
             println!(
                 "  Vocab:    {}",
                 vocab
@@ -1646,11 +2513,34 @@ fn main() -> Result<()> {
                         denoise,
                     )?;
                 }
-                ModelType::Sdxl | ModelType::SdxlRefiner => {
+                ModelType::Sdxl => {
+                    run_sdxl_generate(
+                        &prompt,
+                        &negative,
+                        &output,
+                        vocab.as_ref(),
+                        &weights,
+                        width,
+                        height,
+                        steps,
+                        guidance,
+                        &loras,
+                        &lora_scales,
+                        precision,
+                        device,
+                        &debug,
+                        flash_attention,
+                        low_vram,
+                        vae_clamp,
+                        sampler,
+                        schedule,
+                        denoise,
+                    )?;
+                }
+                ModelType::SdxlRefiner => {
                     anyhow::bail!(
-                        "SDXL generation is not yet implemented.\n\n\
-                        Currently only SD 1.x models are supported.\n\
-                        Use --model sd1x with a Stable Diffusion 1.x model."
+                        "SDXL Refiner generation is not yet implemented.\n\n\
+                        Use --model sdxl for standard SDXL generation."
                     );
                 }
             }

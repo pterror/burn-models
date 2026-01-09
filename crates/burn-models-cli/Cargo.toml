@@ -18,12 +18,12 @@ path = "src/bin/inspect-safetensors.rs"
 default = ["wgpu", "cpu", "cubecl", "precision-all"]
 # For NVIDIA GPUs, build with: cargo build --features cuda
 
-# Backend features
-cpu = ["burn-cpu"]
-ndarray = ["burn-models/ndarray", "burn-ndarray"]
-tch = ["burn-models/tch"]
-wgpu = ["burn-models/wgpu", "burn-wgpu"]
-cuda = ["burn-models/cuda", "burn-cuda"]
+# Backend features - use burn's own feature flags
+cpu = ["burn/cpu"]
+ndarray = ["burn/ndarray"]
+tch = ["burn/tch"]
+wgpu = ["burn/wgpu"]
+cuda = ["burn/cuda"]
 
 # CubeCL acceleration (flash attention for f16/bf16) - enabled by default
 cubecl = ["burn-models/cubecl", "burn-models-unet/cubecl", "burn-cubecl", "dep:cubecl"]
@@ -58,11 +58,7 @@ memmap2 = "0.9"
 safetensors = "0.5"
 half = "2"
 
-# Backend dependencies (optional)
-burn-ndarray = { workspace = true, optional = true }
-burn-wgpu = { workspace = true, optional = true }
-burn-cuda = { workspace = true, optional = true }
-burn-cpu = { version = "0.20.0-pre.6", optional = true, default-features = false }
+# CubeCL dependencies (optional, for flash attention)
 burn-cubecl = { workspace = true, optional = true }
 cubecl = { version = "0.9.0-pre.6", optional = true, features = ["cuda", "wgpu"] }
 

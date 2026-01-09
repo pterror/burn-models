@@ -24,16 +24,16 @@
 //! ```
 
 #[cfg(feature = "ndarray")]
-pub use burn_ndarray::{NdArray, NdArrayDevice};
+pub use burn::backend::{NdArray, ndarray::NdArrayDevice};
 
 #[cfg(feature = "tch")]
-pub use burn_tch::{LibTorch, LibTorchDevice};
+pub use burn::backend::{LibTorch, libtorch::LibTorchDevice};
 
 #[cfg(feature = "wgpu")]
-pub use burn_wgpu::{Wgpu, WgpuDevice};
+pub use burn::backend::{Wgpu, wgpu::WgpuDevice};
 
 #[cfg(feature = "cuda")]
-pub use burn_cuda::{Cuda, CudaDevice};
+pub use burn::backend::{Cuda, cuda::CudaDevice};
 
 /// Type alias for the default backend when using ndarray feature
 #[cfg(feature = "ndarray")]
@@ -64,7 +64,7 @@ pub fn default_device() -> NdArrayDevice {
 #[cfg(all(feature = "tch", not(feature = "ndarray")))]
 pub fn default_device() -> LibTorchDevice {
     // Try to use CUDA if available, otherwise CPU
-    if burn_tch::is_cuda_available() {
+    if burn::backend::libtorch::is_cuda_available() {
         LibTorchDevice::Cuda(0)
     } else {
         LibTorchDevice::Cpu

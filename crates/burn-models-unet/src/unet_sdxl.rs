@@ -15,7 +15,10 @@ use burn::prelude::*;
 use burn_models_core::groupnorm::GroupNorm;
 use burn_models_core::silu::silu;
 
-use crate::blocks::{Downsample, ResBlock, SpatialTransformer, Upsample, timestep_embedding};
+use crate::blocks::{
+    Downsample, ResBlock, SpatialTransformer, Upsample, timestep_embedding_with_freqs,
+    timestep_freqs,
+};
 
 /// SDXL UNet configuration
 #[derive(Debug, Clone)]
@@ -82,32 +85,38 @@ impl UNetXLConfig {
 /// SDXL UNet
 #[derive(Module, Debug)]
 pub struct UNetXL<B: Backend> {
-    // Time embedding
-    time_embed_0: Linear<B>,
-    time_embed_2: Linear<B>,
+    /// Time embedding first linear layer
+    pub time_embed_0: Linear<B>,
+    /// Time embedding second linear layer
+    pub time_embed_2: Linear<B>,
 
-    // Additional embedding (pooled text + time)
-    add_embed_0: Linear<B>,
-    add_embed_2: Linear<B>,
+    /// Additional embedding first linear (pooled text + size conditioning)
+    pub add_embed_0: Linear<B>,
+    /// Additional embedding second linear
+    pub add_embed_2: Linear<B>,
 
-    // Input
-    conv_in: Conv2d<B>,
+    /// Precomputed timestep embedding frequencies (for performance)
+    pub time_freqs: Tensor<B, 1>,
 
-    // Down blocks
-    down_blocks: Vec<DownBlockXL<B>>,
+    /// Input convolution
+    pub conv_in: Conv2d<B>,
 
-    // Mid block
-    mid_block: MidBlockXL<B>,
+    /// Down blocks (encoder path)
+    pub down_blocks: Vec<DownBlockXL<B>>,
 
-    // Up blocks
-    up_blocks: Vec<UpBlockXL<B>>,
+    /// Middle block
+    pub mid_block: MidBlockXL<B>,
 
-    // Output
-    norm_out: GroupNorm<B>,
-    conv_out: Conv2d<B>,
+    /// Up blocks (decoder path)
+    pub up_blocks: Vec<UpBlockXL<B>>,
 
-    // Config
-    model_channels: usize,
+    /// Output group norm
+    pub norm_out: GroupNorm<B>,
+    /// Output convolution
+    pub conv_out: Conv2d<B>,
+
+    /// Base model channels
+    pub model_channels: usize,
 }
 
 impl<B: Backend> UNetXL<B> {
@@ -128,6 +137,9 @@ impl<B: Backend> UNetXL<B> {
         // Additional embedding MLP
         let add_embed_0 = LinearConfig::new(config.add_emb_dim, time_embed_dim).init(device);
         let add_embed_2 = LinearConfig::new(time_embed_dim, time_embed_dim).init(device);
+
+        // Precompute timestep embedding frequencies
+        let time_freqs = timestep_freqs(ch, device);
 
         // Input conv
         let conv_in = Conv2dConfig::new([config.in_channels, ch], [3, 3])
@@ -223,6 +235,7 @@ impl<B: Backend> UNetXL<B> {
             time_embed_2,
             add_embed_0,
             add_embed_2,
+            time_freqs,
             conv_in,
             down_blocks,
             mid_block,
@@ -250,8 +263,8 @@ impl<B: Backend> UNetXL<B> {
         context: Tensor<B, 3>,
         add_embed: Tensor<B, 2>,
     ) -> Tensor<B, 4> {
-        // Time embedding
-        let t_emb = timestep_embedding(timesteps, self.model_channels, &x.device());
+        // Time embedding (using precomputed frequencies)
+        let t_emb = timestep_embedding_with_freqs(timesteps, self.time_freqs.clone());
         let t_emb = self.time_embed_0.forward(t_emb);
         let t_emb = silu(t_emb);
         let t_emb = self.time_embed_2.forward(t_emb);
@@ -310,12 +323,17 @@ impl<B: Backend> UNetXL<B> {
 
 /// SDXL Down block with variable transformer depth
 #[derive(Module, Debug)]
-struct DownBlockXL<B: Backend> {
-    res1: ResBlock<B>,
-    attn1: Option<SpatialTransformer<B>>,
-    res2: ResBlock<B>,
-    attn2: Option<SpatialTransformer<B>>,
-    downsample: Option<Downsample<B>>,
+pub struct DownBlockXL<B: Backend> {
+    /// First ResNet block
+    pub res1: ResBlock<B>,
+    /// First attention (optional, depends on transformer_depth)
+    pub attn1: Option<SpatialTransformer<B>>,
+    /// Second ResNet block
+    pub res2: ResBlock<B>,
+    /// Second attention (optional)
+    pub attn2: Option<SpatialTransformer<B>>,
+    /// Downsampler (optional, not present on last level)
+    pub downsample: Option<Downsample<B>>,
 }
 
 impl<B: Backend> DownBlockXL<B> {
@@ -412,10 +430,13 @@ impl<B: Backend> DownBlockXL<B> {
 
 /// SDXL Mid block with variable transformer depth
 #[derive(Module, Debug)]
-struct MidBlockXL<B: Backend> {
-    res1: ResBlock<B>,
-    attn: SpatialTransformer<B>,
-    res2: ResBlock<B>,
+pub struct MidBlockXL<B: Backend> {
+    /// First ResNet block
+    pub res1: ResBlock<B>,
+    /// Attention block
+    pub attn: SpatialTransformer<B>,
+    /// Second ResNet block
+    pub res2: ResBlock<B>,
 }
 
 impl<B: Backend> MidBlockXL<B> {
@@ -454,10 +475,13 @@ impl<B: Backend> MidBlockXL<B> {
 
 /// SDXL Up block with variable transformer depth
 #[derive(Module, Debug)]
-struct UpBlockXL<B: Backend> {
-    res: ResBlock<B>,
-    attn: Option<SpatialTransformer<B>>,
-    upsample: Option<Upsample<B>>,
+pub struct UpBlockXL<B: Backend> {
+    /// ResNet block (takes skip connection input)
+    pub res: ResBlock<B>,
+    /// Attention block (optional)
+    pub attn: Option<SpatialTransformer<B>>,
+    /// Upsampler (optional)
+    pub upsample: Option<Upsample<B>>,
 }
 
 impl<B: Backend> UpBlockXL<B> {

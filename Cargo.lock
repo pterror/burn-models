@@ -807,7 +807,6 @@ version = "0.1.0"
 dependencies = [
  "burn",
  "burn-cubecl",
- "burn-cuda",
  "burn-models-clip",
  "burn-models-convert",
  "burn-models-core",
@@ -816,9 +815,6 @@ dependencies = [
  "burn-models-samplers",
  "burn-models-unet",
  "burn-models-vae",
- "burn-ndarray",
- "burn-tch",
- "burn-wgpu",
 ]
 
 [[package]]
@@ -827,9 +823,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "burn",
- "burn-cpu",
  "burn-cubecl",
- "burn-cuda",
  "burn-models",
  "burn-models-clip",
  "burn-models-convert",
@@ -837,8 +831,6 @@ dependencies = [
  "burn-models-samplers",
  "burn-models-unet",
  "burn-models-vae",
- "burn-ndarray",
- "burn-wgpu",
  "clap",
  "cubecl",
  "half",

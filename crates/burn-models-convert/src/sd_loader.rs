@@ -307,6 +307,8 @@ fn detect_clip_prefix(file: &SafeTensorFile) -> String {
         "text_model",
         "text_encoder.text_model",
         "cond_stage_model.transformer.text_model",
+        // SDXL CompVis format (single-file checkpoints)
+        "conditioner.embedders.0.transformer.text_model",
     ];
 
     for prefix in prefixes {
@@ -827,8 +829,9 @@ fn load_conv2d_strided<B: Backend>(
 // ============================================================================
 
 use burn_models_unet::{
-    CrossAttention, DownBlock, Downsample, FeedForward, MidBlock, ResBlock, SpatialTransformer,
-    TransformerBlock, UNet, UNetConfig, UNetXL, UNetXLConfig, UpBlock, Upsample, timestep_freqs,
+    CrossAttention, DownBlock, DownBlockXL, Downsample, FeedForward, MidBlock, MidBlockXL,
+    ResBlock, SpatialTransformer, TransformerBlock, UNet, UNetConfig, UNetXL, UNetXLConfig,
+    UpBlock, UpBlockXL, Upsample, timestep_freqs,
 };
 
 /// Naming convention used in safetensors files
@@ -930,40 +933,415 @@ fn load_unet_from_file<B: Backend>(
     }
 }
 
-/// Load SDXL UNet (UNetXL) from a SafeTensorFile
+/// Load SDXL UNet (UNetXL) from a SafeTensorFile (CompVis format)
 ///
 /// SDXL UNet differs from SD 1.x:
 /// - Has `label_emb` for pooled text + size conditioning
-/// - Variable transformer depths per resolution (1, 2, 10)
+/// - Variable transformer depths per resolution
 /// - Uses CompVis naming (input_blocks, etc.)
 ///
-/// # Block structure
-/// - input_blocks.0.0 = conv_in (handled separately)
-/// - input_blocks.1.0 = res block, input_blocks.1.1 = transformer (depth 1)
-/// - input_blocks.2.0 = res block, input_blocks.2.1 = transformer
-/// - input_blocks.3.0.op = downsample
-/// - etc.
+/// # Block structure (CompVis naming)
+/// - input_blocks.0.0 = conv_in
+/// - Level 0 (no attention): input_blocks.1.0/2.0 = res blocks, 3.0.op = downsample
+/// - Level 1 (depth 2): input_blocks.4.0/.1, 5.0/.1 = res+attn, 6.0.op = downsample
+/// - Level 2 (depth 10): input_blocks.7.0/.1, 8.0/.1 = res+attn, no downsample
 fn load_unet_xl_from_file<B: Backend>(
-    _file: &SafeTensorFile,
-    _config: &UNetXLConfig,
-    _device: &B::Device,
+    file: &SafeTensorFile,
+    config: &UNetXLConfig,
+    device: &B::Device,
 ) -> Result<UNetXL<B>, SdLoadError> {
-    // TODO: Implement SDXL UNet loading
-    //
-    // Key differences from SD 1.x:
-    // 1. Load label_emb (add_embed_0, add_embed_2) from model.diffusion_model.label_emb.0.{0,2}
-    // 2. Different transformer depths per resolution (transformer_depth config)
-    // 3. Block structure: DownBlockXL has res1, attn1, res2, attn2 vs DownBlock's vector layout
-    // 4. Need to make DownBlockXL, MidBlockXL, UpBlockXL public in unet_sdxl.rs
-    //
-    // The CompVis naming maps as:
-    // - input_blocks.1-2 = down block 0 (res + attn + res + attn)
-    // - input_blocks.3 = downsample
-    // - input_blocks.4-5 = down block 1
-    // - etc.
-    Err(SdLoadError::MissingTensor(
-        "SDXL UNet loading not yet implemented. Use SD 1.x models for now.".to_string(),
-    ))
+    let prefix = detect_unet_prefix(file);
+    let ch = config.model_channels;
+    let time_embed_dim = ch * 4;
+
+    // Time embedding (same as SD 1.x CompVis: time_embed.0, time_embed.2)
+    let time_embed_0 = load_linear(
+        file,
+        &format!("{}.time_embed.0.weight", prefix),
+        Some(&format!("{}.time_embed.0.bias", prefix)),
+        ch,
+        time_embed_dim,
+        device,
+    )?;
+
+    let time_embed_2 = load_linear(
+        file,
+        &format!("{}.time_embed.2.weight", prefix),
+        Some(&format!("{}.time_embed.2.bias", prefix)),
+        time_embed_dim,
+        time_embed_dim,
+        device,
+    )?;
+
+    // Label embedding (SDXL-specific: label_emb.0.0, label_emb.0.2)
+    let add_embed_0 = load_linear(
+        file,
+        &format!("{}.label_emb.0.0.weight", prefix),
+        Some(&format!("{}.label_emb.0.0.bias", prefix)),
+        config.add_emb_dim,
+        time_embed_dim,
+        device,
+    )?;
+
+    let add_embed_2 = load_linear(
+        file,
+        &format!("{}.label_emb.0.2.weight", prefix),
+        Some(&format!("{}.label_emb.0.2.bias", prefix)),
+        time_embed_dim,
+        time_embed_dim,
+        device,
+    )?;
+
+    // Input conv (input_blocks.0.0)
+    let conv_in = load_conv2d(
+        file,
+        &format!("{}.input_blocks.0.0.weight", prefix),
+        Some(&format!("{}.input_blocks.0.0.bias", prefix)),
+        config.in_channels,
+        ch,
+        3,
+        1,
+        device,
+    )?;
+
+    // Build down blocks
+    // SDXL Base has 3 levels with channel_mult [1, 2, 4] = [320, 640, 1280]
+    // Block indices: [1,2], [4,5], [7,8] with downsamplers at [3, 6]
+    let mut down_blocks = Vec::new();
+    let mut block_idx = 1; // Start after conv_in
+    let mut ch_in = ch;
+
+    for (level, &mult) in config.channel_mult.iter().enumerate() {
+        let ch_out = ch * mult;
+        let is_last = level == config.channel_mult.len() - 1;
+        let depth = config.transformer_depth.get(level).copied().unwrap_or(0);
+        let num_heads = ch_out / config.head_dim;
+
+        // Check if this level has attention (by checking if transformer key exists)
+        let has_attention = file.contains(&format!(
+            "{}.input_blocks.{}.1.transformer_blocks.0.attn1.to_q.weight",
+            prefix, block_idx
+        ));
+
+        let down_block = load_down_block_xl(
+            file,
+            &prefix,
+            block_idx,
+            ch_in,
+            ch_out,
+            time_embed_dim,
+            num_heads,
+            config.head_dim,
+            config.context_dim,
+            depth,
+            has_attention,
+            !is_last,
+            device,
+        )?;
+
+        down_blocks.push(down_block);
+
+        // Advance block index: 2 res blocks + 1 optional downsample
+        block_idx += 2;
+        if !is_last {
+            block_idx += 1; // downsample
+        }
+        ch_in = ch_out;
+    }
+
+    // Mid block (middle_block)
+    let mid_depth = *config.transformer_depth.last().unwrap_or(&10);
+    let mid_heads = ch_in / config.head_dim;
+    let mid_block = load_mid_block_xl(
+        file,
+        &prefix,
+        ch_in,
+        time_embed_dim,
+        mid_heads,
+        config.head_dim,
+        config.context_dim,
+        mid_depth,
+        device,
+    )?;
+
+    // Build up blocks (output_blocks in reverse order)
+    // SDXL has 9 output blocks (3 per level * 3 levels)
+    let mut up_blocks = Vec::new();
+    let num_up_blocks = 9; // For SDXL Base with 3 levels
+
+    for i in 0..num_up_blocks {
+        let up_block = load_up_block_xl(file, &prefix, i, config, device)?;
+        up_blocks.push(up_block);
+    }
+
+    // Output norm and conv
+    let norm_out = load_group_norm(
+        file,
+        &format!("{}.out.0.weight", prefix),
+        &format!("{}.out.0.bias", prefix),
+        32,
+        device,
+    )?;
+
+    let conv_out = load_conv2d(
+        file,
+        &format!("{}.out.2.weight", prefix),
+        Some(&format!("{}.out.2.bias", prefix)),
+        ch,
+        config.out_channels,
+        3,
+        1,
+        device,
+    )?;
+
+    // Precompute timestep embedding frequencies
+    let time_freqs = timestep_freqs(ch, device);
+
+    Ok(UNetXL {
+        time_embed_0,
+        time_embed_2,
+        add_embed_0,
+        add_embed_2,
+        time_freqs,
+        conv_in,
+        down_blocks,
+        mid_block,
+        up_blocks,
+        norm_out,
+        conv_out,
+        model_channels: ch,
+    })
+}
+
+/// Load SDXL down block from CompVis format
+#[allow(clippy::too_many_arguments)]
+fn load_down_block_xl<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    block_idx: usize,
+    in_ch: usize,
+    out_ch: usize,
+    time_dim: usize,
+    num_heads: usize,
+    head_dim: usize,
+    context_dim: usize,
+    transformer_depth: usize,
+    has_attention: bool,
+    has_downsample: bool,
+    device: &B::Device,
+) -> Result<DownBlockXL<B>, SdLoadError> {
+    // res1 at input_blocks.{block_idx}.0
+    let res1 = load_resblock_compvis(
+        file,
+        &format!("{}.input_blocks.{}.0", prefix, block_idx),
+        in_ch,
+        out_ch,
+        time_dim,
+        device,
+    )?;
+
+    // attn1 at input_blocks.{block_idx}.1 (optional)
+    let attn1 = if has_attention {
+        Some(load_spatial_transformer_compvis(
+            file,
+            &format!("{}.input_blocks.{}.1", prefix, block_idx),
+            out_ch,
+            num_heads,
+            head_dim,
+            context_dim,
+            transformer_depth,
+            device,
+        )?)
+    } else {
+        None
+    };
+
+    // res2 at input_blocks.{block_idx+1}.0
+    let res2 = load_resblock_compvis(
+        file,
+        &format!("{}.input_blocks.{}.0", prefix, block_idx + 1),
+        out_ch,
+        out_ch,
+        time_dim,
+        device,
+    )?;
+
+    // attn2 at input_blocks.{block_idx+1}.1 (optional)
+    let attn2 = if has_attention {
+        Some(load_spatial_transformer_compvis(
+            file,
+            &format!("{}.input_blocks.{}.1", prefix, block_idx + 1),
+            out_ch,
+            num_heads,
+            head_dim,
+            context_dim,
+            transformer_depth,
+            device,
+        )?)
+    } else {
+        None
+    };
+
+    // downsample at input_blocks.{block_idx+2}.0.op (optional)
+    let downsample = if has_downsample {
+        Some(load_downsample_compvis(
+            file,
+            &format!("{}.input_blocks.{}.0.op", prefix, block_idx + 2),
+            out_ch,
+            device,
+        )?)
+    } else {
+        None
+    };
+
+    Ok(DownBlockXL {
+        res1,
+        attn1,
+        res2,
+        attn2,
+        downsample,
+    })
+}
+
+/// Load SDXL mid block from CompVis format
+#[allow(clippy::too_many_arguments)]
+fn load_mid_block_xl<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    channels: usize,
+    time_dim: usize,
+    num_heads: usize,
+    head_dim: usize,
+    context_dim: usize,
+    transformer_depth: usize,
+    device: &B::Device,
+) -> Result<MidBlockXL<B>, SdLoadError> {
+    // middle_block.0 = res1
+    let res1 = load_resblock_compvis(
+        file,
+        &format!("{}.middle_block.0", prefix),
+        channels,
+        channels,
+        time_dim,
+        device,
+    )?;
+
+    // middle_block.1 = attention
+    let attn = load_spatial_transformer_compvis(
+        file,
+        &format!("{}.middle_block.1", prefix),
+        channels,
+        num_heads,
+        head_dim,
+        context_dim,
+        transformer_depth,
+        device,
+    )?;
+
+    // middle_block.2 = res2
+    let res2 = load_resblock_compvis(
+        file,
+        &format!("{}.middle_block.2", prefix),
+        channels,
+        channels,
+        time_dim,
+        device,
+    )?;
+
+    Ok(MidBlockXL { res1, attn, res2 })
+}
+
+/// Load SDXL up block from CompVis format
+fn load_up_block_xl<B: Backend>(
+    file: &SafeTensorFile,
+    prefix: &str,
+    idx: usize,
+    config: &UNetXLConfig,
+    device: &B::Device,
+) -> Result<UpBlockXL<B>, SdLoadError> {
+    let ch = config.model_channels;
+    let time_dim = ch * 4;
+
+    // Determine channels for this block based on position
+    // output_blocks go from high resolution to low: [1280, 1280, 1280, 640, 640, 640, 320, 320, 320]
+    let (in_ch, out_ch, level) = match idx {
+        0..=2 => (ch * 4 + ch * 4, ch * 4, 2), // 1280+1280 -> 1280
+        3..=5 => (ch * 4 + ch * 2, ch * 2, 1), // 1280+640 -> 640
+        6..=8 => (ch * 2 + ch, ch, 0),         // 640+320 -> 320
+        _ => {
+            return Err(SdLoadError::MissingTensor(format!(
+                "Invalid up block index: {}",
+                idx
+            )));
+        }
+    };
+
+    let depth = config.transformer_depth.get(level).copied().unwrap_or(0);
+    let num_heads = if out_ch > 0 {
+        out_ch / config.head_dim
+    } else {
+        1
+    };
+
+    // Check if this block has attention
+    let has_attention = file.contains(&format!(
+        "{}.output_blocks.{}.1.transformer_blocks.0.attn1.to_q.weight",
+        prefix, idx
+    ));
+
+    // res at output_blocks.{idx}.0
+    let res = load_resblock_compvis(
+        file,
+        &format!("{}.output_blocks.{}.0", prefix, idx),
+        in_ch,
+        out_ch,
+        time_dim,
+        device,
+    )?;
+
+    // attn at output_blocks.{idx}.1 (optional)
+    let attn = if has_attention {
+        Some(load_spatial_transformer_compvis(
+            file,
+            &format!("{}.output_blocks.{}.1", prefix, idx),
+            out_ch,
+            num_heads,
+            config.head_dim,
+            config.context_dim,
+            depth,
+            device,
+        )?)
+    } else {
+        None
+    };
+
+    // Detect if upsample exists by checking for the conv weight
+    // Upsample is at .2 if attention exists, else at .1
+    // In SDXL, upsamples are at the end of each resolution level (blocks 2, 5)
+    let upsample_index = if has_attention { 2 } else { 1 };
+    let upsample_key = format!(
+        "{}.output_blocks.{}.{}.conv.weight",
+        prefix, idx, upsample_index
+    );
+    let has_upsample = file.contains(&upsample_key);
+
+    let upsample = if has_upsample {
+        let upsample_prefix = format!("{}.output_blocks.{}.{}.conv", prefix, idx, upsample_index);
+        Some(load_upsample_compvis(
+            file,
+            &upsample_prefix,
+            out_ch,
+            device,
+        )?)
+    } else {
+        None
+    };
+
+    Ok(UpBlockXL {
+        res,
+        attn,
+        upsample,
+    })
 }
 
 /// Load UNet using HuggingFace diffusers naming
@@ -2502,6 +2880,9 @@ fn load_vae_decoder_from_file<B: Backend>(
         up_blocks,
         norm_out,
         conv_out,
+        skip_attention: false,
+        debug: false,
+        clamp_overflow: false,
     })
 }
 

@@ -60,4 +60,4 @@ pub use ip_adapter::{ImageProjection, IpAdapter, IpAdapterConfig, combine_embedd
 pub use stable_cascade::{StageB, StageBConfig, StageBOutput, StageC, StageCConfig, StageCOutput};
 pub use t2i_adapter::{T2IAdapter, T2IAdapterConfig, T2IAdapterOutput};
 pub use unet_sd::{DownBlock, MidBlock, UNet, UNetConfig, UpBlock};
-pub use unet_sdxl::{UNetXL, UNetXLConfig};
+pub use unet_sdxl::{DownBlockXL, MidBlockXL, UNetXL, UNetXLConfig, UpBlockXL};

@@ -56,7 +56,7 @@ pub struct StableDiffusionXL<B: Backend> {
     pub unet: UNetXL<B>,
     pub vae_decoder: Decoder<B>,
     pub scheduler: NoiseSchedule<B>,
-    device: B::Device,
+    pub device: B::Device,
 }
 
 impl<B: Backend> StableDiffusionXL<B> {
@@ -108,9 +108,13 @@ impl<B: Backend> StableDiffusionXL<B> {
         let token_tensor = token_tensor.unsqueeze::<2>(); // [1, 77]
 
         // CLIP encoder output [1, 77, 768]
-        let clip_hidden = self.clip_encoder.forward(token_tensor.clone());
+        // SDXL always uses penultimate layer (clip_skip=2), NOT final layer.
+        // See: https://github.com/Stability-AI/generative-models/issues/37
+        // See: docs/architecture.md "SDXL Text Encoder Details"
+        let clip_hidden = self.clip_encoder.forward_penultimate(token_tensor.clone());
 
         // OpenCLIP encoder outputs [1, 77, 1280] and pooled [1, 1280]
+        // Must use forward_with_pooled() to apply text_projection for pooled output
         let eos_pos = tokens.iter().position(|&t| t == END_OF_TEXT).unwrap_or(76);
         let (open_clip_hidden, pooled) = self
             .open_clip_encoder
@@ -256,8 +260,8 @@ impl<B: Backend> StableDiffusionXL<B> {
     /// Decode latent to image
     pub fn decode(&self, latent: Tensor<B, 4>) -> Tensor<B, 4> {
         // SDXL uses different VAE scaling factor (0.13025 vs 0.18215)
-        let latent = latent / 0.13025;
-        self.vae_decoder.forward(latent)
+        // decode_to_image_sdxl applies correct scaling and converts to [0, 255]
+        self.vae_decoder.decode_to_image_sdxl(latent)
     }
 
     /// Full generation pipeline
@@ -336,7 +340,8 @@ impl<B: Backend> StableDiffusionXLImg2Img<B> {
         );
         let token_tensor = token_tensor.unsqueeze::<2>();
 
-        let clip_hidden = self.clip_encoder.forward(token_tensor.clone());
+        // CLIP encoder output [1, 77, 768] - SDXL uses penultimate layer (clip_skip=2)
+        let clip_hidden = self.clip_encoder.forward_penultimate(token_tensor.clone());
         let eos_pos = tokens.iter().position(|&t| t == END_OF_TEXT).unwrap_or(76);
         let (open_clip_hidden, pooled) = self
             .open_clip_encoder
@@ -466,9 +471,8 @@ impl<B: Backend> StableDiffusionXLImg2Img<B> {
             latent = sampler.step(latent, noise_pred, step_idx);
         }
 
-        // Decode (SDXL scale factor)
-        let latent = latent / 0.13025;
-        self.vae_decoder.forward(latent)
+        // Decode with SDXL scale factor and convert to [0, 255]
+        self.vae_decoder.decode_to_image_sdxl(latent)
     }
 }
 

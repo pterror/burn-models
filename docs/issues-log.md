@@ -8,6 +8,332 @@ Each issue includes:
 - **Fix**: How we resolved it
 - **Prevention**: How to avoid similar issues in the future
 
+## 2026-01-09
+
+### [FIXED] f16 GroupNorm Produces All NaN - Reduction Overflow
+
+**Symptom**: SDXL generation with f16 precision produced 100% NaN output. Debug tracing showed:
+- UNet inputs (latent, timestep, context): all valid (0 NaN)
+- UNet output (noise_pred): 100% NaN
+- First NaN appears in the very first ResBlock's GroupNorm
+
+**Root Cause**: f16 reductions overflow when summing large number of elements.
+
+GroupNorm computes: `mean = sum(x) / N` and `var = sum((x-mean)^2) / N`
+
+For SDXL's first down block, input shape is [1, 320, 128, 128]. With 32 groups:
+- group_size = 320 / 32 = 10
+- elements_per_group = 10 * 128 * 128 = 163,840
+
+Summing 163,840 values with average magnitude ~10 produces sum ~1.6M, but **f16 max is only ~65,504**.
+The sum overflows to Inf, then Inf/N = Inf, and subsequent operations produce NaN.
+
+**Debug Evidence**:
+```
+[groupnorm] input: shape=[1,320,128,128], nan=0, inf=0, min=-31.8, max=35.7
+[groupnorm] mean nan=0, var nan=32, var_min=inf, var_max=-inf   # All 32 groups have NaN variance!
+[groupnorm] after normalize: nan=5242880/5242880                 # 100% NaN
+```
+
+**Fix** (`crates/burn-models-core/src/groupnorm.rs`):
+
+Compute mean and variance in f32, then cast back to original dtype:
+```rust
+pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
+    // ... reshape x ...
+
+    // Workaround: compute mean and var in f32, then cast back
+    use burn::tensor::DType;
+    let original_dtype = x.dtype();
+    let x_f32 = x.clone().cast(DType::F32);
+    let mean_f32 = x_f32.clone().mean_dim(2);
+    let mean_expanded_f32 = mean_f32.clone().unsqueeze::<3>();
+    let diff_f32 = x_f32 - mean_expanded_f32.clone();
+    let var_f32 = (diff_f32.clone() * diff_f32).mean_dim(2);
+
+    // Cast back to original dtype
+    let mean_expanded = mean_expanded_f32.cast(original_dtype);
+    let var = var_f32.cast(original_dtype);
+
+    // ... rest of normalization ...
+}
+```
+
+**Also Added**: Input clamping to prevent Inf values from propagating into GroupNorm:
+```rust
+let x = x.clamp(-65000.0, 65000.0);
+```
+
+**Why var_bias Also Failed**: Burn's `var_bias()` internally uses reduction operations that overflow the same way. Even manual variance computation (`(diff * diff).mean_dim(2)`) fails because `mean_dim` uses sum internally.
+
+**Prevention**:
+- For f16/bf16, normalization layers (GroupNorm, LayerNorm, BatchNorm) should compute statistics in f32
+- This is standard practice in mixed-precision training (PyTorch's autocast does this automatically)
+- Consider adding a `cast_to_f32_for_reduction` utility for reductions over large dimensions
+- burn/cubecl could potentially add automatic upcasting for large reductions
+
+**Status**: Fixed. UNet now produces valid output with f16 precision.
+
+---
+
+### [WIP] f16 VAE Decoder Overflow - Conv Accumulation
+
+**Symptom**: With the GroupNorm fix, UNet works but VAE decoder produces Inf values that spread:
+```
+[vae] up_block_2 has 0 NaN, 11 Inf out of 67108864 values   # Small number of Inf
+[vae] up_block_3 has 14947341 NaN, 18607091 Inf out of 33554432 values  # Explosion!
+```
+
+**Root Cause**: Convolution accumulation can exceed f16 range.
+
+VAE decoder upsamples from 64x64 → 128x128 → 256x256 → 512x512. At larger spatial sizes:
+- More filter taps accumulate
+- Values can exceed f16 max (~65504) → become Inf
+- Inf propagates through subsequent operations
+
+The Inf values from up_block_2 enter up_block_3's GroupNorm. Even with f32 computation in GroupNorm, computing mean of values including Inf produces Inf, which then causes problems.
+
+**Current Workaround**: Added input clamping to GroupNorm:
+```rust
+let x = x.clamp(-65000.0, 65000.0);  // Clamp Inf to valid range
+```
+
+This helps but doesn't fully fix the issue. Some Inf still leak through conv operations.
+
+**Implemented**: Added `--vae-clamp` flag that enables aggressive per-layer clamping in VAE decoder:
+```bash
+burn-models generate --prompt "..." --vae-clamp true
+```
+
+This clamps activations after each major operation (conv_in, mid_blocks, up_blocks, etc.) to prevent f16 overflow from propagating. Helps prevent NaN/Inf explosion.
+
+Also added `--debug=vae` flag to enable VAE debug output for diagnosing f16 issues.
+
+**Proper Solutions** (not yet implemented):
+1. **True VAE in f32**: Load VAE weights in f32 separately from f16 UNet
+2. **bf16 for VAE**: bf16 has f32's exponent range, avoids overflow
+3. **Mixed-precision compute**: Store weights in f16, compute in f32 (requires burn architecture changes)
+
+**Status**: Partially mitigated. `--vae-clamp` adds clamping that helps prevent overflow. Full fix needs true f32 VAE computation.
+
+**Files Modified**:
+- `crates/burn-models-core/src/groupnorm.rs` - f32 computation + clamping
+- `crates/burn-models-vae/src/decoder.rs` - added `clamp_overflow` mode with per-layer clamping
+- `crates/burn-models-cli/src/main.rs` - added `--vae-clamp` and `--debug=vae` flags
+
+---
+
+### [WIP] SDXL VRAM OOM at VAE Decode
+
+**Symptom**: SDXL generation fails with OOM at 95% (VAE decode stage):
+```
+can't allocate buffer of size: 3122610176  (3.1GB)
+```
+This happens on a 12GB RTX 3060.
+
+**Root Cause**: SDXL's 1024x1024 output requires large intermediate tensors during VAE decode:
+- Latent: 128x128x4 → 512x512 → eventually 1024x1024x3
+- Intermediate feature maps at 512/256/128 channels
+- cubecl's matmul workspace allocates large f32 buffers even for f16 operations
+
+**Attempted Fixes**:
+1. **Drop models before VAE**: Drop UNet/CLIP to free VRAM before VAE decode
+   - Result: Still OOM - lazy evaluation means tensors aren't released until materialized
+2. **Materialize latent before dropping**: Force compute with `into_data()` before drops
+   - Result: Helps but still OOM at largest allocation
+3. **Skip VAE attention**: Added `--low-vram` flag to skip attention in VAE mid block
+   - Result: Reduces peak but still OOM in upsample convolutions
+4. **Changed Upsample from repeat_dim to interpolate**: More memory efficient
+   - Result: Reduces peak but convolutions still large
+5. **Tiled VAE decode**: Process latent in tiles (2x2 quadrants of 64x64)
+   - Result: Reduces peak VRAM, but introduces edge artifacts and NaN issues
+
+**Current Workaround**: `--low-vram true` enables:
+- Skipping VAE mid_attn
+- Tiled decode (2x2 quadrants)
+- This works but with quality tradeoffs
+
+**Proper Solutions** (not yet implemented):
+1. **Tiled VAE with overlap**: Use overlapping tiles and blend - standard in ComfyUI
+2. **VAE in f32 only**: Separate precision for VAE (like `--no-half-vae`)
+3. **Gradient checkpointing**: Recompute rather than store intermediates
+4. **Smaller batch sizes in VAE**: Process channels/spatial in chunks
+
+**ComfyUI Approaches** (from Gemini's research):
+- Tiled VAE for VRAM management
+- bf16-vae or no-half-vae options
+- Split attention mechanisms
+
+**Status**: Partially working with `--low-vram`. Full fix needs proper tiled VAE implementation.
+
+---
+
+## 2026-01-08
+
+### [FIXED] SDXL White Output - Multiple Causes
+
+**Symptom**: SDXL generation produced completely white images (all pixels 255,255,255).
+
+**Root Causes**: Three separate issues combined:
+
+1. **Wrong CLIP layer**: SDXL always uses the **penultimate layer** (clip_skip=2) from both text encoders, not the final layer. We were using `forward()` (all 12 layers) instead of `forward_penultimate()` (stops at layer 10). This explains why some checkpoints have NaN in layer 11 but work in ComfyUI - layer 11 is never used!
+
+2. **VAE decode wrong scaling**: `StableDiffusionXL::decode()` was calling `vae_decoder.forward()` which uses SD1.x scaling (0.18215), and then manually dividing by SDXL scaling (0.13025) - double scaling! Also returned [-1, 1] range instead of [0, 255].
+
+3. **Pooled embedding extraction** (flash path): Manual slice extraction `slice([0..1, 76..77, 0..1280])` doesn't apply `text_projection`. Must use `forward_with_pooled()`.
+
+**Debugging Process**:
+```
+[debug] cond_context: 157696 values, 59136 NaN   # 77*768 = CLIP portion all NaN
+[debug] cond_pooled: 1280 values, 0 NaN          # OpenCLIP fine
+```
+59136 NaN = exactly the CLIP encoder's output size. Traced to layer 11 attention producing NaN, then to Q projection weights being all NaN in the safetensors file itself.
+
+**Checkpoint Analysis**:
+```python
+# Many Illustrious-based checkpoints have corrupted layer 11
+waiIllustriousSDXL_v150.safetensors: layer 11 Q nan=589824/589824  # ALL NaN
+novaCrossXL_ilVF.safetensors: layer 11 Q nan=589824/589824         # ALL NaN
+knkLuminai_v10.safetensors: layer 11 Q nan=0/589824                # Valid ✓
+```
+
+**Fixes**:
+
+1. **Use penultimate layer** (`crates/burn-models/src/pipeline/sdxl.rs`, `crates/burn-models-cli/src/main.rs`):
+```rust
+// Before (wrong - uses all 12 layers including potentially corrupted layer 11)
+let clip_hidden = self.clip_encoder.forward(token_tensor.clone());
+
+// After (correct - SDXL uses penultimate layer, clip_skip=2)
+let clip_hidden = self.clip_encoder.forward_penultimate(token_tensor.clone());
+```
+
+2. **VAE decode** (`crates/burn-models/src/pipeline/sdxl.rs`):
+```rust
+// Before (wrong - double scaling, wrong range)
+pub fn decode(&self, latent: Tensor<B, 4>) -> Tensor<B, 4> {
+    let latent = latent / 0.13025;
+    self.vae_decoder.forward(latent)  // Uses SD1.x scaling internally!
+}
+
+// After (correct)
+pub fn decode(&self, latent: Tensor<B, 4>) -> Tensor<B, 4> {
+    self.vae_decoder.decode_to_image_sdxl(latent)  // SDXL scaling + [0,255]
+}
+```
+
+2. **Pooled embedding** (`crates/burn-models-cli/src/main.rs`):
+```rust
+// Before (wrong - no text_projection)
+let pooled_cond = open_clip_cond.slice([0..1, 76..77, 0..1280]).reshape([1, 1280]);
+
+// After (correct - uses text_projection)
+let pos_eos_pos = pos_tokens.iter().position(|&t| t == 49407).unwrap_or(76);
+let (open_clip_cond, pooled_cond) =
+    open_clip_encoder.forward_with_pooled(pos_tensor.unsqueeze::<2>(), &[pos_eos_pos]);
+```
+
+3. **Attention numerical stability** (`crates/burn-models-clip/src/attention.rs`):
+```rust
+// Changed causal mask from -inf to -1e9 for bf16 compatibility
+mask_data[i * max_seq_len + j] = -1e9;  // was f32::NEG_INFINITY
+
+// Added epsilon to prevent division by zero in softmax
+let attn_sum = attn.clone().sum_dim(3) + 1e-8;
+let attn = attn / attn_sum;
+```
+
+**Files Modified**:
+- `crates/burn-models/src/pipeline/sdxl.rs` - VAE decode fix
+- `crates/burn-models-cli/src/main.rs` - Pooled embedding fix
+- `crates/burn-models-clip/src/attention.rs` - Numerical stability
+
+**Prevention**:
+- Validate checkpoint weights on load - warn if NaN detected in text encoder
+- Use `decode_to_image_sdxl()` not manual scaling + `forward()`
+- Always use `forward_with_pooled()` for OpenCLIP pooled output
+- Test SDXL with multiple checkpoints - some have corrupted weights
+- Consider: add `--validate-weights` flag to check for NaN before generation
+
+**Remaining Issue**: ~~With these fixes, SDXL produces colored but noisy output (not recognizable images). Separate issue - likely conditioning or sampler problem.~~ See next entry - was wrong noise schedule.
+
+---
+
+### [FIXED] SDXL Garbled/Noisy Output - Wrong Noise Schedule
+
+**Symptom**: After fixing white output, SDXL produced colorful but completely incoherent/garbled images - noisy patterns instead of recognizable content.
+
+**Root Cause**: `NoiseSchedule::sdxl()` was using a **cosine schedule**, but SDXL actually uses **scaled_linear** (same as SD 1.x).
+
+The cosine schedule produces completely different alpha_cumprod values at each timestep. Since all sampling math depends on these values, the wrong schedule means:
+- Wrong noise levels at each step
+- Wrong denoised predictions
+- Complete sampling failure
+
+**Evidence**: Official SDXL scheduler config from HuggingFace:
+```json
+// https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/scheduler/scheduler_config.json
+{
+  "beta_schedule": "scaled_linear",   // NOT cosine!
+  "beta_start": 0.00085,
+  "beta_end": 0.012,
+  "num_train_timesteps": 1000,
+  "prediction_type": "epsilon"
+}
+```
+
+**Fix** (`crates/burn-models-samplers/src/scheduler.rs`):
+
+1. Added `scaled_linear` schedule (different from regular `linear`):
+```rust
+/// scaled_linear interpolates sqrt(beta) then squares:
+/// `betas = linspace(sqrt(beta_start), sqrt(beta_end), num_steps) ** 2`
+pub fn scaled_linear(num_steps: usize, beta_start: f64, beta_end: f64, device: &B::Device) -> Self {
+    let sqrt_beta_start = beta_start.sqrt();
+    let sqrt_beta_end = beta_end.sqrt();
+
+    let betas: Vec<f32> = (0..num_steps)
+        .map(|i| {
+            let t = i as f64 / (num_steps - 1) as f64;
+            let sqrt_beta = sqrt_beta_start + t * (sqrt_beta_end - sqrt_beta_start);
+            (sqrt_beta * sqrt_beta) as f32
+        })
+        .collect();
+    // ... rest unchanged
+}
+```
+
+2. Fixed `sdxl()` to use scaled_linear:
+```rust
+// Before (WRONG)
+pub fn sdxl(device: &B::Device) -> Self {
+    Self::cosine(&ScheduleConfig::default(), device)
+}
+
+// After (CORRECT)
+pub fn sdxl(device: &B::Device) -> Self {
+    Self::scaled_linear(1000, 0.00085, 0.012, device)
+}
+```
+
+**linear vs scaled_linear**:
+- `linear`: `betas = linspace(beta_start, beta_end, N)`
+- `scaled_linear`: `betas = linspace(sqrt(beta_start), sqrt(beta_end), N) ** 2`
+
+The squared interpolation produces slightly different noise levels, which matters for training/inference consistency.
+
+**Prevention**:
+- Always check official scheduler configs, not just assume based on model name
+- "SDXL = cosine schedule" is a common misconception
+- Validate by comparing alpha_cumprod values against reference at a few timesteps
+- Document noise schedule source with URL in code comments
+
+**Sources**:
+- https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/scheduler/scheduler_config.json
+- https://github.com/huggingface/diffusers/blob/main/src/diffusers/schedulers/scheduling_ddim.py
+
+---
+
 ## 2026-01-07
 
 ### [FIXED] Blurry Output - Missing c_in Input Scaling

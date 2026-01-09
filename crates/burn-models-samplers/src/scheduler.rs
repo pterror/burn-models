@@ -167,7 +167,48 @@ impl<B: Backend> NoiseSchedule<B> {
         }
     }
 
-    /// Create an offset cosine schedule (used by SDXL)
+    /// Create a scaled linear beta schedule (used by SDXL, SD 1.x with scaling)
+    ///
+    /// Unlike linear which interpolates betas directly, scaled_linear interpolates
+    /// sqrt(beta) and then squares the result:
+    /// `betas = linspace(sqrt(beta_start), sqrt(beta_end), num_steps) ** 2`
+    pub fn scaled_linear(
+        num_steps: usize,
+        beta_start: f64,
+        beta_end: f64,
+        device: &B::Device,
+    ) -> Self {
+        let sqrt_beta_start = beta_start.sqrt();
+        let sqrt_beta_end = beta_end.sqrt();
+
+        let betas: Vec<f32> = (0..num_steps)
+            .map(|i| {
+                let t = i as f64 / (num_steps - 1) as f64;
+                let sqrt_beta = sqrt_beta_start + t * (sqrt_beta_end - sqrt_beta_start);
+                (sqrt_beta * sqrt_beta) as f32
+            })
+            .collect();
+
+        let alphas: Vec<f32> = betas.iter().map(|b| 1.0 - b).collect();
+
+        // Cumulative product
+        let mut alphas_cumprod = Vec::with_capacity(num_steps);
+        let mut cumprod = 1.0f32;
+        for alpha in alphas {
+            cumprod *= alpha;
+            alphas_cumprod.push(cumprod);
+        }
+
+        let data = TensorData::new(alphas_cumprod, [num_steps]);
+        Self {
+            alphas_cumprod: Tensor::from_data(data, device),
+            num_train_steps: num_steps,
+        }
+    }
+
+    /// Create an offset cosine schedule (used by some models like Imagen, DeepFloyd IF)
+    ///
+    /// Note: SDXL does NOT use cosine schedule - it uses scaled_linear.
     pub fn cosine(config: &ScheduleConfig, device: &B::Device) -> Self {
         let n = config.num_train_steps;
         let min_rate = config.min_signal_rate;
@@ -203,8 +244,16 @@ impl<B: Backend> NoiseSchedule<B> {
     }
 
     /// Create the default SDXL schedule
+    ///
+    /// SDXL uses a scaled_linear beta schedule (same parameters as SD 1.x):
+    /// - beta_start: 0.00085
+    /// - beta_end: 0.012
+    /// - num_train_steps: 1000
+    /// - prediction_type: epsilon
+    ///
+    /// See: https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/blob/main/scheduler/scheduler_config.json
     pub fn sdxl(device: &B::Device) -> Self {
-        Self::cosine(&ScheduleConfig::default(), device)
+        Self::scaled_linear(1000, 0.00085, 0.012, device)
     }
 
     /// Get alpha_cumprod at a specific timestep

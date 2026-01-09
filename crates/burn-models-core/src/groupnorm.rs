@@ -63,20 +63,39 @@ impl<B: Backend> GroupNorm<B> {
         let [batch, channels, height, width] = x.dims();
         let group_size = channels / self.num_groups;
 
+        // Clamp input to prevent Inf from propagating
+        // This handles cases where preceding operations produced Inf
+        let x = x.clamp(-65000.0, 65000.0);
+
         // Reshape to [batch, num_groups, group_size * height * width]
         let x = x.reshape([batch, self.num_groups, group_size * height * width]);
 
-        // Compute mean and variance over the last dimension
-        // Use var_bias (population variance, N) to match PyTorch's GroupNorm
-        let mean = x.clone().mean_dim(2); // [batch, num_groups]
-        let var = x.clone().var_bias(2); // [batch, num_groups] - population variance without Bessel's correction
+        // For f16/bf16, variance computation can overflow in large reductions.
+        // We compute variance using a numerically stable two-pass algorithm
+        // that divides by N progressively to keep values in range.
 
-        // Expand for broadcasting: [batch, num_groups, 1]
-        let mean = mean.unsqueeze::<3>(); // [batch, num_groups, 1]
+        // Compute mean using stable algorithm (sum/N element-wise to avoid overflow)
+        // Instead of sum_dim followed by divide, we use mean_dim which internally
+        // should handle this better. But mean_dim also fails on cubecl f16.
+
+        // Workaround: compute mean and var in f32, then cast back
+        use burn::tensor::DType;
+        let original_dtype = x.dtype();
+        let x_f32 = x.clone().cast(DType::F32);
+        let mean_f32 = x_f32.clone().mean_dim(2);
+        let mean_expanded_f32 = mean_f32.clone().unsqueeze::<3>();
+        let diff_f32 = x_f32 - mean_expanded_f32.clone();
+        let var_f32 = (diff_f32.clone() * diff_f32).mean_dim(2);
+
+        // Cast back to original dtype
+        let mean_expanded = mean_expanded_f32.cast(original_dtype);
+        let var = var_f32.cast(original_dtype);
+
+        // Expand var for broadcasting
         let var = var.unsqueeze::<3>(); // [batch, num_groups, 1]
 
         // Normalize
-        let x = (x - mean) / (var + self.eps).sqrt();
+        let x = (x - mean_expanded) / (var + self.eps).sqrt();
 
         // Reshape back to [batch, channels, height, width]
         let x = x.reshape([batch, channels, height, width]);
@@ -85,6 +104,10 @@ impl<B: Backend> GroupNorm<B> {
         let weight = self.weight.clone().reshape([1, channels, 1, 1]);
         let bias = self.bias.clone().reshape([1, channels, 1, 1]);
 
-        x * weight + bias
+        let x = x * weight + bias;
+
+        // Clamp to prevent f16 overflow (max ~65504)
+        // This is a common practice in mixed-precision inference
+        x.clamp(-65000.0, 65000.0)
     }
 }

@@ -847,3 +847,263 @@ pub fn convert_unet<R: CubeRuntime, F: FloatElement, I: IntElement, BT: BoolElem
         conv_out: unet.conv_out.clone(),
     }
 }
+
+// ============================================================================
+// UNetXL (SDXL) with Flash Attention
+// ============================================================================
+
+/// CubeCL-accelerated SDXL down block with Flash Attention
+#[derive(Debug)]
+pub struct DownBlockXLCubeCL<
+    R: CubeRuntime,
+    F: FloatElement = f32,
+    I: IntElement = i32,
+    BT: BoolElement = u32,
+> {
+    res1: crate::blocks::ResBlock<CubeBackend<R, F, I, BT>>,
+    attn1: Option<SpatialTransformerCubeCL<R, F, I, BT>>,
+    res2: crate::blocks::ResBlock<CubeBackend<R, F, I, BT>>,
+    attn2: Option<SpatialTransformerCubeCL<R, F, I, BT>>,
+    downsample: Option<crate::blocks::Downsample<CubeBackend<R, F, I, BT>>>,
+}
+
+impl<R: CubeRuntime, F: FloatElement, I: IntElement, BT: BoolElement>
+    DownBlockXLCubeCL<R, F, I, BT>
+{
+    /// Forward pass with flash attention, returns output and skip connections
+    #[allow(clippy::type_complexity)]
+    pub fn forward(
+        &self,
+        x: Tensor<CubeBackend<R, F, I, BT>, 4>,
+        t_emb: Tensor<CubeBackend<R, F, I, BT>, 2>,
+        context: Tensor<CubeBackend<R, F, I, BT>, 3>,
+    ) -> (
+        Tensor<CubeBackend<R, F, I, BT>, 4>,
+        Vec<Tensor<CubeBackend<R, F, I, BT>, 4>>,
+    ) {
+        let mut skips = Vec::new();
+
+        let h = self.res1.forward(x, t_emb.clone());
+        let h = if let Some(attn) = &self.attn1 {
+            attn.forward(h, context.clone())
+        } else {
+            h
+        };
+        skips.push(h.clone());
+
+        let h = self.res2.forward(h, t_emb);
+        let h = if let Some(attn) = &self.attn2 {
+            attn.forward(h, context)
+        } else {
+            h
+        };
+        skips.push(h.clone());
+
+        let h = if let Some(ds) = &self.downsample {
+            let h = ds.forward(h);
+            skips.push(h.clone());
+            h
+        } else {
+            h
+        };
+
+        (h, skips)
+    }
+}
+
+/// Convert an SDXL DownBlockXL to CubeCL-accelerated version
+pub fn convert_down_block_xl<R: CubeRuntime, F: FloatElement, I: IntElement, BT: BoolElement>(
+    block: &crate::unet_sdxl::DownBlockXL<CubeBackend<R, F, I, BT>>,
+) -> DownBlockXLCubeCL<R, F, I, BT> {
+    DownBlockXLCubeCL {
+        res1: block.res1.clone(),
+        attn1: block.attn1.as_ref().map(convert_spatial_transformer),
+        res2: block.res2.clone(),
+        attn2: block.attn2.as_ref().map(convert_spatial_transformer),
+        downsample: block.downsample.clone(),
+    }
+}
+
+/// CubeCL-accelerated SDXL mid block with Flash Attention
+#[derive(Debug)]
+pub struct MidBlockXLCubeCL<
+    R: CubeRuntime,
+    F: FloatElement = f32,
+    I: IntElement = i32,
+    BT: BoolElement = u32,
+> {
+    res1: crate::blocks::ResBlock<CubeBackend<R, F, I, BT>>,
+    attn: SpatialTransformerCubeCL<R, F, I, BT>,
+    res2: crate::blocks::ResBlock<CubeBackend<R, F, I, BT>>,
+}
+
+impl<R: CubeRuntime, F: FloatElement, I: IntElement, BT: BoolElement>
+    MidBlockXLCubeCL<R, F, I, BT>
+{
+    /// Forward pass with flash attention
+    pub fn forward(
+        &self,
+        x: Tensor<CubeBackend<R, F, I, BT>, 4>,
+        t_emb: Tensor<CubeBackend<R, F, I, BT>, 2>,
+        context: Tensor<CubeBackend<R, F, I, BT>, 3>,
+    ) -> Tensor<CubeBackend<R, F, I, BT>, 4> {
+        let h = self.res1.forward(x, t_emb.clone());
+        let h = self.attn.forward(h, context);
+        self.res2.forward(h, t_emb)
+    }
+}
+
+/// Convert an SDXL MidBlockXL to CubeCL-accelerated version
+pub fn convert_mid_block_xl<R: CubeRuntime, F: FloatElement, I: IntElement, BT: BoolElement>(
+    block: &crate::unet_sdxl::MidBlockXL<CubeBackend<R, F, I, BT>>,
+) -> MidBlockXLCubeCL<R, F, I, BT> {
+    MidBlockXLCubeCL {
+        res1: block.res1.clone(),
+        attn: convert_spatial_transformer(&block.attn),
+        res2: block.res2.clone(),
+    }
+}
+
+/// CubeCL-accelerated SDXL up block with Flash Attention
+#[derive(Debug)]
+pub struct UpBlockXLCubeCL<
+    R: CubeRuntime,
+    F: FloatElement = f32,
+    I: IntElement = i32,
+    BT: BoolElement = u32,
+> {
+    res: crate::blocks::ResBlock<CubeBackend<R, F, I, BT>>,
+    attn: Option<SpatialTransformerCubeCL<R, F, I, BT>>,
+    upsample: Option<crate::blocks::Upsample<CubeBackend<R, F, I, BT>>>,
+}
+
+impl<R: CubeRuntime, F: FloatElement, I: IntElement, BT: BoolElement> UpBlockXLCubeCL<R, F, I, BT> {
+    /// Forward pass with flash attention
+    pub fn forward(
+        &self,
+        x: Tensor<CubeBackend<R, F, I, BT>, 4>,
+        t_emb: Tensor<CubeBackend<R, F, I, BT>, 2>,
+        context: Tensor<CubeBackend<R, F, I, BT>, 3>,
+    ) -> Tensor<CubeBackend<R, F, I, BT>, 4> {
+        let h = self.res.forward(x, t_emb);
+        let h = if let Some(attn) = &self.attn {
+            attn.forward(h, context)
+        } else {
+            h
+        };
+
+        if let Some(up) = &self.upsample {
+            up.forward(h)
+        } else {
+            h
+        }
+    }
+}
+
+/// Convert an SDXL UpBlockXL to CubeCL-accelerated version
+pub fn convert_up_block_xl<R: CubeRuntime, F: FloatElement, I: IntElement, BT: BoolElement>(
+    block: &crate::unet_sdxl::UpBlockXL<CubeBackend<R, F, I, BT>>,
+) -> UpBlockXLCubeCL<R, F, I, BT> {
+    UpBlockXLCubeCL {
+        res: block.res.clone(),
+        attn: block.attn.as_ref().map(convert_spatial_transformer),
+        upsample: block.upsample.clone(),
+    }
+}
+
+/// CubeCL-accelerated SDXL UNet with Flash Attention
+///
+/// This is a drop-in replacement for [`crate::unet_sdxl::UNetXL`] that uses
+/// flash attention in all attention blocks, preventing f16 overflow.
+#[derive(Debug)]
+pub struct UNetXLCubeCL<
+    R: CubeRuntime,
+    F: FloatElement = f32,
+    I: IntElement = i32,
+    BT: BoolElement = u32,
+> {
+    time_embed_0: Linear<CubeBackend<R, F, I, BT>>,
+    time_embed_2: Linear<CubeBackend<R, F, I, BT>>,
+    add_embed_0: Linear<CubeBackend<R, F, I, BT>>,
+    add_embed_2: Linear<CubeBackend<R, F, I, BT>>,
+    time_freqs: Tensor<CubeBackend<R, F, I, BT>, 1>,
+    conv_in: Conv2d<CubeBackend<R, F, I, BT>>,
+    down_blocks: Vec<DownBlockXLCubeCL<R, F, I, BT>>,
+    mid_block: MidBlockXLCubeCL<R, F, I, BT>,
+    up_blocks: Vec<UpBlockXLCubeCL<R, F, I, BT>>,
+    norm_out: burn_models_core::groupnorm::GroupNorm<CubeBackend<R, F, I, BT>>,
+    conv_out: Conv2d<CubeBackend<R, F, I, BT>>,
+}
+
+impl<R: CubeRuntime, F: FloatElement, I: IntElement, BT: BoolElement> UNetXLCubeCL<R, F, I, BT> {
+    /// Forward pass with flash attention in all attention blocks
+    ///
+    /// Same interface as [`crate::unet_sdxl::UNetXL::forward`].
+    pub fn forward(
+        &self,
+        x: Tensor<CubeBackend<R, F, I, BT>, 4>,
+        timesteps: Tensor<CubeBackend<R, F, I, BT>, 1>,
+        context: Tensor<CubeBackend<R, F, I, BT>, 3>,
+        add_embed: Tensor<CubeBackend<R, F, I, BT>, 2>,
+    ) -> Tensor<CubeBackend<R, F, I, BT>, 4> {
+        // Time embedding
+        let t_emb =
+            crate::blocks::timestep_embedding_with_freqs(timesteps, self.time_freqs.clone());
+        let t_emb = self.time_embed_0.forward(t_emb);
+        let t_emb = burn_models_core::silu::silu(t_emb);
+        let t_emb = self.time_embed_2.forward(t_emb);
+
+        // Additional embedding (pooled text + size conditioning)
+        let add_emb = self.add_embed_0.forward(add_embed);
+        let add_emb = burn_models_core::silu::silu(add_emb);
+        let add_emb = self.add_embed_2.forward(add_emb);
+
+        // Combine time and additional embeddings
+        let t_emb = t_emb + add_emb;
+
+        // Input
+        let mut h = self.conv_in.forward(x);
+
+        // Down blocks with skip connections
+        let mut skips = vec![h.clone()];
+        for block in &self.down_blocks {
+            let (out, block_skips) = block.forward(h, t_emb.clone(), context.clone());
+            h = out;
+            skips.extend(block_skips);
+        }
+
+        // Mid block (with flash attention)
+        h = self.mid_block.forward(h, t_emb.clone(), context.clone());
+
+        // Up blocks with skip connections
+        for block in &self.up_blocks {
+            let skip = skips.pop().unwrap();
+            h = Tensor::cat(vec![h, skip], 1);
+            h = block.forward(h, t_emb.clone(), context.clone());
+        }
+
+        // Output
+        h = self.norm_out.forward(h);
+        h = burn_models_core::silu::silu(h);
+        self.conv_out.forward(h)
+    }
+}
+
+/// Convert an SDXL UNetXL to CubeCL-accelerated version with flash attention
+pub fn convert_unet_xl<R: CubeRuntime, F: FloatElement, I: IntElement, BT: BoolElement>(
+    unet: &crate::unet_sdxl::UNetXL<CubeBackend<R, F, I, BT>>,
+) -> UNetXLCubeCL<R, F, I, BT> {
+    UNetXLCubeCL {
+        time_embed_0: unet.time_embed_0.clone(),
+        time_embed_2: unet.time_embed_2.clone(),
+        add_embed_0: unet.add_embed_0.clone(),
+        add_embed_2: unet.add_embed_2.clone(),
+        time_freqs: unet.time_freqs.clone(),
+        conv_in: unet.conv_in.clone(),
+        down_blocks: unet.down_blocks.iter().map(convert_down_block_xl).collect(),
+        mid_block: convert_mid_block_xl(&unet.mid_block),
+        up_blocks: unet.up_blocks.iter().map(convert_up_block_xl).collect(),
+        norm_out: unet.norm_out.clone(),
+        conv_out: unet.conv_out.clone(),
+    }
+}

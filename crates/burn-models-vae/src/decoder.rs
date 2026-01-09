@@ -75,6 +75,13 @@ pub struct Decoder<B: Backend> {
     pub up_blocks: Vec<DecoderBlock<B>>,
     pub norm_out: GroupNorm<B>,
     pub conv_out: Conv2d<B>,
+    /// Skip attention in mid-block to reduce VRAM (minimal quality impact)
+    pub skip_attention: bool,
+    /// Enable debug output
+    pub debug: bool,
+    /// Enable aggressive clamping to prevent f16 overflow
+    /// Clamps activations after each operation to stay within f16 range.
+    pub clamp_overflow: bool,
 }
 
 impl<B: Backend> Decoder<B> {
@@ -134,6 +141,36 @@ impl<B: Backend> Decoder<B> {
             up_blocks,
             norm_out,
             conv_out,
+            skip_attention: false,
+            debug: false,
+            clamp_overflow: false,
+        }
+    }
+
+    /// Set whether to skip mid-block attention (reduces VRAM usage)
+    pub fn with_skip_attention(mut self, skip: bool) -> Self {
+        self.skip_attention = skip;
+        self
+    }
+
+    /// Enable debug output
+    pub fn with_debug(mut self, debug: bool) -> Self {
+        self.debug = debug;
+        self
+    }
+
+    /// Enable aggressive clamping to prevent f16 overflow
+    pub fn with_clamp_overflow(mut self, clamp: bool) -> Self {
+        self.clamp_overflow = clamp;
+        self
+    }
+
+    /// Clamp tensor to prevent f16 overflow (when clamp_overflow is enabled)
+    fn clamp_if_enabled(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
+        if self.clamp_overflow {
+            x.clamp(-65000.0, 65000.0)
+        } else {
+            x
         }
     }
 
@@ -142,29 +179,131 @@ impl<B: Backend> Decoder<B> {
     /// Input: [batch, 4, h, w] latent (already unscaled)
     /// Output: [batch, 3, h*8, w*8] image (values in [-1, 1])
     pub fn forward_raw(&self, z: Tensor<B, 4>) -> Tensor<B, 4> {
+        if self.debug {
+            eprintln!("[vae] forward_raw input: {:?}", z.dims());
+            Self::check_nan("input_latent", &z);
+
+            // Check input stats
+            let in_data: Vec<f32> = z.clone().into_data().convert::<f32>().to_vec().unwrap();
+            let in_min = in_data.iter().cloned().fold(f32::INFINITY, f32::min);
+            let in_max = in_data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            eprintln!(
+                "[vae] input latent stats: min={:.3}, max={:.3}",
+                in_min, in_max
+            );
+        }
+
         // Apply post_quant_conv if present (transforms latent before decoding)
         let z = match &self.post_quant_conv {
-            Some(conv) => conv.forward(z),
+            Some(conv) => {
+                if self.debug {
+                    eprintln!("[vae] applying post_quant_conv");
+                }
+                let out = conv.forward(z);
+                if self.debug {
+                    Self::check_nan("post_quant_conv", &out);
+                }
+                out
+            }
             None => z,
         };
 
         // Input conv
+        if self.debug {
+            eprintln!("[vae] conv_in...");
+        }
         let mut h = self.conv_in.forward(z);
+        h = self.clamp_if_enabled(h);
+        if self.debug {
+            Self::check_nan("conv_in", &h);
+        }
 
         // Mid blocks
+        if self.debug {
+            eprintln!("[vae] mid_block1...");
+        }
         h = self.mid_block1.forward(h);
-        h = self.mid_attn.forward(h);
+        h = self.clamp_if_enabled(h);
+        if self.debug {
+            Self::check_nan("mid_block1", &h);
+        }
+
+        if !self.skip_attention {
+            if self.debug {
+                eprintln!("[vae] mid_attn...");
+            }
+            h = self.mid_attn.forward(h);
+            h = self.clamp_if_enabled(h);
+            if self.debug {
+                Self::check_nan("mid_attn", &h);
+            }
+        } else if self.debug {
+            eprintln!("[vae] skipping mid_attn");
+        }
+
+        if self.debug {
+            eprintln!("[vae] mid_block2...");
+        }
         h = self.mid_block2.forward(h);
+        h = self.clamp_if_enabled(h);
+        if self.debug {
+            Self::check_nan("mid_block2", &h);
+        }
 
         // Up blocks
-        for block in &self.up_blocks {
+        for (i, block) in self.up_blocks.iter().enumerate() {
+            if self.debug {
+                eprintln!("[vae] up_block {}...", i);
+            }
             h = block.forward(h);
+            h = self.clamp_if_enabled(h);
+            if self.debug {
+                Self::check_nan(&format!("up_block_{}", i), &h);
+            }
         }
 
         // Output
+        if self.debug {
+            eprintln!("[vae] norm_out...");
+        }
         h = self.norm_out.forward(h);
+        h = self.clamp_if_enabled(h);
+        if self.debug {
+            Self::check_nan("norm_out", &h);
+        }
+
+        if self.debug {
+            eprintln!("[vae] silu...");
+        }
         h = silu(h);
-        self.conv_out.forward(h)
+        h = self.clamp_if_enabled(h);
+        if self.debug {
+            Self::check_nan("silu", &h);
+        }
+
+        if self.debug {
+            eprintln!("[vae] conv_out...");
+        }
+        let out = self.conv_out.forward(h);
+        if self.debug {
+            Self::check_nan("conv_out", &out);
+        }
+        out
+    }
+
+    fn check_nan(name: &str, t: &Tensor<B, 4>) {
+        let data: Vec<f32> = t.clone().into_data().convert::<f32>().to_vec().unwrap();
+        let nan_count = data.iter().filter(|x| x.is_nan()).count();
+        let inf_count = data.iter().filter(|x| x.is_infinite()).count();
+        if nan_count > 0 || inf_count > 0 {
+            eprintln!(
+                "[vae] WARNING: {} has {} NaN, {} Inf out of {} values",
+                name,
+                nan_count,
+                inf_count,
+                data.len()
+            );
+        }
     }
 
     /// Decode latent to image with SD 1.x scaling
@@ -198,6 +337,120 @@ impl<B: Backend> Decoder<B> {
     /// Decode and convert to [0, 255] range (SDXL scaling)
     pub fn decode_to_image_sdxl(&self, z: Tensor<B, 4>) -> Tensor<B, 4> {
         let img = self.forward_sdxl(z);
+        (img + 1.0) * 127.5
+    }
+
+    /// Decode latent using simple 2x2 quadrant tiling to reduce VRAM usage
+    ///
+    /// Splits the 128x128 latent into 4 quadrants of 64x64 each,
+    /// decodes separately, and stitches together.
+    pub fn forward_tiled(
+        &self,
+        z: Tensor<B, 4>,
+        _tile_size: usize,
+        _overlap: usize,
+    ) -> Tensor<B, 4> {
+        let [batch, channels, height, width] = z.dims();
+        assert_eq!(batch, 1, "Tiled decode only supports batch size 1");
+
+        // For 128x128 latent, split into 2x2 grid of 64x64 tiles
+        let half_h = height / 2;
+        let half_w = width / 2;
+
+        if self.debug {
+            eprintln!(
+                "[vae] Tiled decode: {}x{} latent -> 2x2 grid of {}x{} tiles",
+                height, width, half_h, half_w
+            );
+        }
+
+        // Decode each quadrant
+        if self.debug {
+            eprintln!("[vae] Decoding quadrant 0 (top-left)...");
+        }
+        let q0 = z.clone().slice([0..1, 0..channels, 0..half_h, 0..half_w]);
+        let d0 = self.forward_raw(q0);
+        if self.debug {
+            Self::debug_tensor_stats("quadrant 0", &d0);
+        }
+
+        if self.debug {
+            eprintln!("[vae] Decoding quadrant 1 (top-right)...");
+        }
+        let q1 = z
+            .clone()
+            .slice([0..1, 0..channels, 0..half_h, half_w..width]);
+        let d1 = self.forward_raw(q1);
+        if self.debug {
+            Self::debug_tensor_stats("quadrant 1", &d1);
+        }
+
+        if self.debug {
+            eprintln!("[vae] Decoding quadrant 2 (bottom-left)...");
+        }
+        let q2 = z
+            .clone()
+            .slice([0..1, 0..channels, half_h..height, 0..half_w]);
+        let d2 = self.forward_raw(q2);
+        if self.debug {
+            Self::debug_tensor_stats("quadrant 2", &d2);
+        }
+
+        if self.debug {
+            eprintln!("[vae] Decoding quadrant 3 (bottom-right)...");
+        }
+        let q3 = z
+            .clone()
+            .slice([0..1, 0..channels, half_h..height, half_w..width]);
+        let d3 = self.forward_raw(q3);
+        if self.debug {
+            Self::debug_tensor_stats("quadrant 3", &d3);
+        }
+
+        // Stitch together: concat horizontally then vertically
+        if self.debug {
+            eprintln!("[vae] Stitching quadrants...");
+        }
+        let top_row = Tensor::cat(vec![d0, d1], 3); // concat along width
+        let bottom_row = Tensor::cat(vec![d2, d3], 3); // concat along width
+        let result = Tensor::cat(vec![top_row, bottom_row], 2); // concat along height
+
+        if self.debug {
+            Self::debug_tensor_stats("final stitched", &result);
+        }
+        result
+    }
+
+    fn debug_tensor_stats(name: &str, t: &Tensor<B, 4>) {
+        let data: Vec<f32> = t.clone().into_data().convert::<f32>().to_vec().unwrap();
+        let min = data.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max = data.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let nan_count = data.iter().filter(|x| x.is_nan()).count();
+        eprintln!(
+            "[vae] {} stats: min={:.3}, max={:.3}, nan={}",
+            name, min, max, nan_count
+        );
+    }
+
+    /// Decode with tiled processing and SDXL scaling
+    pub fn forward_tiled_sdxl(
+        &self,
+        z: Tensor<B, 4>,
+        tile_size: usize,
+        overlap: usize,
+    ) -> Tensor<B, 4> {
+        let z = z / scaling::SDXL;
+        self.forward_tiled(z, tile_size, overlap)
+    }
+
+    /// Decode to image with tiled processing (SDXL)
+    pub fn decode_to_image_tiled_sdxl(
+        &self,
+        z: Tensor<B, 4>,
+        tile_size: usize,
+        overlap: usize,
+    ) -> Tensor<B, 4> {
+        let img = self.forward_tiled_sdxl(z, tile_size, overlap);
         (img + 1.0) * 127.5
     }
 }
@@ -329,13 +582,17 @@ impl<B: Backend> Upsample<B> {
 
     /// Forward pass with nearest neighbor upsampling and convolution
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
-        let [b, c, h, w] = x.dims();
+        use burn::tensor::module::interpolate;
+        use burn::tensor::ops::{InterpolateMode, InterpolateOptions};
 
-        // Nearest neighbor upsampling 2x
-        // Reshape and repeat: [b, c, h, w] -> [b, c, h, 1, w, 1] -> [b, c, h, 2, w, 2] -> [b, c, h*2, w*2]
-        let x = x.reshape([b, c, h, 1, w, 1]);
-        let x = x.repeat_dim(3, 2).repeat_dim(5, 2);
-        let x = x.reshape([b, c, h * 2, w * 2]);
+        let [_b, _c, h, w] = x.dims();
+
+        // Use interpolate for memory-efficient nearest neighbor upsampling
+        let x = interpolate(
+            x,
+            [h * 2, w * 2],
+            InterpolateOptions::new(InterpolateMode::Nearest),
+        );
 
         self.conv.forward(x)
     }

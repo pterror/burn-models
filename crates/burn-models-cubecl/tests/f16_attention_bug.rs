@@ -13,9 +13,9 @@
 
 #![cfg(feature = "cuda")]
 
+use burn::backend::cuda::CudaDevice;
 use burn::tensor::{DType, Shape};
 use burn_cubecl::ops::numeric::empty_device_dtype;
-use burn_cuda::CudaDevice;
 use cubecl::Runtime;
 use cubecl::cuda::CudaRuntime;
 use cubek::attention::{

@@ -8,7 +8,7 @@
 #![cfg(all(feature = "cpu", target_os = "linux"))]
 
 use burn::prelude::*;
-use burn_cpu::{Cpu, CpuDevice};
+use burn_cubecl::CubeBackend;
 use burn_cubecl::tensor::CubeTensor;
 use burn_models_cubecl::{
     Conv3dOptimizedOptions, Conv3dOptions, FlashAttentionOptions, GroupNormSiLuOptions, Layout,
@@ -16,9 +16,10 @@ use burn_models_cubecl::{
     max_pool3d,
 };
 use burn_ndarray::NdArray;
-use cubecl::cpu::CpuRuntime;
+use cubecl::cpu::{CpuDevice, CpuRuntime};
 
-type TestBackend = Cpu;
+// Use CubeBackend directly to avoid Fusion wrapper
+type TestBackend = CubeBackend<CpuRuntime, f32, i32, u8>;
 type RefBackend = NdArray<f32>;
 
 /// Reference im2col-based 3D convolution for verification

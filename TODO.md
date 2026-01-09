@@ -390,31 +390,44 @@ See [docs/issues-log.md](docs/issues-log.md) for detailed tracking of issues enc
 |-------|--------|------------|
 | f16 produces NaN in UNet | Low priority (bf16 works) | Use `--precision bf16` (default) or `--precision f32` |
 | CompVis single-file checkpoints | Backlog | Use HuggingFace diffusers format |
-| SDXL CLI not implemented | In progress | Use SD 1.x for now |
+| SDXL inference slow | Flash attention not yet wired | Use SD 1.x for faster testing |
 
-### SDXL Weight Loading (Blocking CLI)
+### SDXL Weight Loading ✅ COMPLETE (2026-01-08)
 
-The SDXL pipeline code exists in `pipeline/sdxl.rs` but weight loading is partially implemented:
+SDXL pipeline is fully working with CompVis single-file checkpoints (CivitAI format):
 
-1. **OpenCLIP text encoder** ✅ DONE
+1. **CLIP text encoder** ✅ DONE
+   - Tensor prefix auto-detected: `conditioner.embedders.0.transformer.text_model.*` (SDXL single-file)
+   - Loader: `SdWeightLoader::load_clip_text_encoder()`
+
+2. **OpenCLIP text encoder** ✅ DONE
    - Tensor prefix: `conditioner.embedders.1.model.*` (single-file) or `text_encoder_2/*` (diffusers)
    - Handles fused QKV weights (`in_proj_weight`) by splitting into Q/K/V
    - Loader: `SdWeightLoader::load_open_clip_text_encoder()`
 
-2. **UNetXL** - TODO (stub returns error)
+3. **UNetXL** ✅ DONE
    - Tensor prefix: `model.diffusion_model.*` (single-file)
-   - Complex block mapping: DownBlockXL has (res1, attn1, res2, attn2) vs SD 1.x vector layout
-   - Need to make `DownBlockXL`, `MidBlockXL`, `UpBlockXL` public in unet_sdxl.rs
-   - Need to map CompVis naming to Rust block structure:
-     - `input_blocks.1-2` → down block 0 (res + attn + res + attn)
+   - Full block mapping for CompVis naming:
+     - `input_blocks.1-2` → down block 0 (res + attn)
      - `input_blocks.3.0.op` → downsample
-     - `input_blocks.4-5` → down block 1
-     - etc.
-   - Also needs `label_emb` loading for add_embed
+     - Auto-detects transformer depth and upsample locations
+   - `label_emb` loading for add_embed
+   - Made `DownBlockXL`, `MidBlockXL`, `UpBlockXL` public
+   - Loader: `SdWeightLoader::load_unet_xl()`
 
-3. **CLI integration** - Wire `run_sdxl_generate()` similar to `run_sd1x_generate()`
+4. **VAE decoder** ✅ DONE (shared with SD 1.x)
 
-For now, use SD 1.x models with `--model sd1x`. SDXL needs UNetXL loader implementation.
+5. **CLI integration** ✅ DONE
+   - `run_sdxl_generate()` implemented
+   - Use `--model sdxl` (default) with any SDXL checkpoint
+
+**Performance Note**:
+- SDXL with flash attention: **~0.6s/step** (bf16, 512x512)
+- [x] Flash attention for SDXL UNet ✅ DONE (2026-01-08)
+
+6. **Diffusers format support** - Backlog
+   - Multi-file HuggingFace style (text_encoder/, unet/, vae/ directories)
+   - Lower priority since CivitAI models are single-file CompVis format
 
 ### Upstream Dependencies to Track
 
